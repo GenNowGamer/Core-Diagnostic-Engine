@@ -12,6 +12,16 @@ CDE is a bootable USB diagnostic suite built on Windows PE. It boots via UEFI fr
 
 The project mirrors the architecture of the proven MRI diagnostic platform while integrating CDE-specific tooling including the Core Hardware Utility (CHU) UEFI application and the Core Security Tool (CST) PowerShell module.
 
+**Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
+
+## Session Update (2026-07-03)
+
+- **CdeCpuSimdCli** — Real CPU SIMD tests on PowerShell 5.1 (Win10/11 inbox). Published self-contained beside `ToolkitGUI.exe`; `HardwareTestEngine.ps1` invokes CLI on PS 5.1. Regression: `Scripts/Tests/Test-CpuSimdEnginePs5.ps1`.
+- **CST remediation** — `CstRemediationService.cs` fixed for USB toolkit at drive root (`TOOLKIT_ROOT=G:\`).
+- **Diag & Repair CST row** — Warnings show **Warn** (not **N/A**); `WorkflowViewModels.FinalizeCstTestFromReport`.
+- **Git** — Single-repo layout (no nested `Toolkit/.git`); slim GitHub history; large artifacts gitignored — see repo root `.gitignore`.
+- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; `SyncUSB.bat` before field USB tests.
+
 ## Session Update (2026-07-01)
 
 - **Removable media hardware policy** — Diag & Repair storage, S.M.A.R.T. Analyzer, and CHU storage tests exclude USB flash, memory cards, and boot USB. CDE: `Scripts/Core/PhysicalDiskCatalog.psm1` + `PhysicalDiskCatalogHelper.cs`. CHU: `StorageDrive.c` filters `RemovableMedia` at enumeration. Disk & Boot Repair still lists all disks. See `Docs/UserGuide/04_Diagnostics.md`.

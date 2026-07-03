@@ -1,7 +1,16 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-01  
+**Last updated:** 2026-07-03  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-03 update — SIMD CLI, CST fixes, GitHub source publish
+
+- **CPU SIMD on PowerShell 5.1** — New `Toolkit\App\CdeCpuSimdCli\` console (full `CpuSimdEngine.cs` intrinsics). `HardwareTestEngine.ps1` prefers `CdeCpuSimdCli.exe` from the published GUI folder on PS 5.1; falls back to Add-Type compat/stub. Canonical publish builds CdeCpuSimdCli **self-contained** into the GUI payload. Test: `Scripts\Tests\Test-CpuSimdEnginePs5.ps1`.
+- **CST remediation (USB drive root)** — `CstRemediationService.cs` no longer calls `Directory.GetParent("")` when `TOOLKIT_ROOT` is a drive root (`G:\`); uses `ToolkitPaths.GetToolkitRoot()`.
+- **Diag & Repair CST row N/A** — `WorkflowViewModels.cs`: `LooksLikeCstNoTargetResult()` matches `No Eligible Targets: True` only; CST **Warn** maps to **Warn** (not Skipped/N/A).
+- **GitHub** — Slim single-repo history for `https://github.com/GenNowGamer/Core-Diagnostic-Engine` (~50 MB source). Large artifacts excluded via root `.gitignore` (`boot.wim`, deploy ISOs, `memtest86-usb.img`, `CDE.exe`, publish staging). After clone: run `Publish-ToolkitGUI.ps1` and acquire binaries per `Toolkit\Tools\PLACEHOLDER_ACQUISITION.md`.
+- **Publish** — `Toolkit\App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (2026-07-03). Run `SyncUSB.bat` before USB field tests.
+- Full notes: `Toolkit\session_handoff.md` (2026-07-03 sections).
 
 ## 2026-07-01 update — Removable media excluded from hardware testing
 

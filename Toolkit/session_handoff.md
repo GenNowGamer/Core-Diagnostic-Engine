@@ -1,6 +1,43 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-01
+**Last updated:** 2026-07-03
+
+---
+
+## 2026-07-03 — CPU SIMD CLI (PowerShell 5.1)
+
+| Change | Detail |
+|--------|--------|
+| Project | `App/CdeCpuSimdCli/` — .NET 8 console; `probe` → `{"isStubEngine":false}`; `run Sse2` etc. exit 0/1 |
+| Loader | `Scripts/Core/HardwareTestEngine.ps1` — on PS 5.1, prefers `CdeCpuSimdCli.exe` beside published `ToolkitGUI.exe`; Add-Type compat/stub fallback |
+| Workflows | `Scripts/Workflows/HardwareCpuTests.ps1` via `Invoke-CpuSimdEngineTest` |
+| Publish | `Publish-ToolkitGUI.ps1` copies **self-contained** `CdeCpuSimdCli.exe` into GUI payload (framework-dependent failed on USB without shared runtime) |
+| Regression | `Scripts/Tests/Test-CpuSimdEnginePs5.ps1` in suite |
+| Child env | `PowerShellService.cs` always sets `TOOLKIT_ROOT` on workflow child processes |
+| User guide | `Docs/UserGuide/04_Diagnostics.md`, `10_Reference.md` |
+
+---
+
+## 2026-07-03 — CST remediation + Diag & Repair CST status
+
+| Change | Detail |
+|--------|--------|
+| Remediation path | `Services/CstRemediationService.cs` — `ResolveCoreSecurityToolPath()` safe when `TOOLKIT_ROOT` is USB drive root (`G:\`) |
+| CST row N/A | `ViewModels/WorkflowViewModels.cs` — `FinalizeCstTestFromReport` / `LooksLikeCstNoTargetResult()`; Warn → **Warn** label/brush (not Skipped → N/A) |
+| Field note | Defender `UpdatePlatform.exe` access denied during remediation is expected OS protection, not a CDE bug |
+
+---
+
+## 2026-07-03 — GitHub source repository (slim history)
+
+| Change | Detail |
+|--------|--------|
+| Remote | `https://github.com/GenNowGamer/Core-Diagnostic-Engine` (private) |
+| Layout | Single repo — removed nested `Toolkit/.git`; all toolkit source under `Toolkit/` |
+| Excluded | Root `.gitignore`: `sources/boot.wim`, `Deploy/`, `Mount/`, `*.iso`, `memtest86-usb.img`, `CDE.exe`, `CDE/Runtime/`, `bin/`/`obj/`, Firefox payload, etc. |
+| Clone workflow | `git clone` → `App/Publish-ToolkitGUI.ps1` → acquire large tools per `Tools/PLACEHOLDER_ACQUISITION.md` → `Customize-WinPE.ps1` + `SyncUSB.bat` for USB |
+| Push size | ~50 MB (was ~2.9 GB before history rewrite) |
+| Docs | `README.md` (Source repository), `Tools/PLACEHOLDER_ACQUISITION.md`, `Docs/DEVELOPER_QUALITY.md` |
 
 ---
 

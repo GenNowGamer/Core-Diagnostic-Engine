@@ -28,6 +28,7 @@
 |------|---------|
 | **BCD** | Boot Configuration Data — Windows boot settings database |
 | **CHU** | Core Hardware Utility — UEFI pre-boot hardware diagnostics (`CoreDiag.efi`) |
+| **CdeCpuSimdCli** | Small .NET helper beside published `ToolkitGUI.exe`; runs real CPU SIMD tests when CDE uses PowerShell 5.1 |
 | **CST** | Core Security Tool — CDE malware scan engine |
 | **DISM** | Deployment Image Servicing and Management — repairs Windows component store |
 | **Hive** | A registry database file loaded offline in WinPE (e.g. customer's SOFTWARE) |

@@ -78,6 +78,10 @@ This chapter covers the main **find problems** tools in the MAIN sidebar section
 
 > **Removable media:** Storage tests run only on **fixed testable** drives. USB flash sticks, SD/microSD cards, and the toolkit boot USB are excluded automatically. If no fixed drives are present, storage discovery **fails** with no physical drives detected.
 
+### CPU tests (PowerShell 5.1)
+
+On Windows 10/11, CDE runs under **PowerShell 5.1**. CPU SIMD line tests (MMX, SSE, SSE2, …) use **`CdeCpuSimdCli.exe`**, published self-contained next to `ToolkitGUI.exe`. You should see **Pass** or **Fail** per row — not a permanent **Warn** with “stub engine.” If every SIMD row warns about a stub, republish with `Publish-ToolkitGUI.ps1` and run `SyncUSB.bat`.
+
 ---
 
 ## Testable drive policy (Diag & Repair, S.M.A.R.T., CHU)

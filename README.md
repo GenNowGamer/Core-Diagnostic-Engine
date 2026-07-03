@@ -36,6 +36,17 @@ Current field status:
 - **MSIX startup signing + Process Analyzer Investigation UI** (2026-06-30): Startup Manager resolves MSIX startup-task executables from Appx manifest and shows `Package (Publisher)` when WindowsApps blocks file access; Process Analyzer hides investigation status banner so Tree view / Deep scan stay usable. See `Toolkit\session_handoff.md`.
 - **Hijack & Scam Repair + reports** (2026-06-30): HiJackThis-style scanner under sidebar **REPAIR** with selective repair, Startup Manager integration, persistent scan results, and **Open Report** (PDF) via `TabularScanReportService`. See `Toolkit\session_handoff.md`.
 - **Work-order recording fix** (2026-06-26): `Add-WorkOrderRun` dedupe bug fixed — workflows like Temp File Cleaner no longer fail after successful completion when a work order is active.
+- **CPU SIMD on PowerShell 5.1** (2026-07-03): `CdeCpuSimdCli.exe` (published with ToolkitGUI) runs real MMX/SSE tests on Win10/11 inbox PS 5.1; Diag & Repair CPU rows show Pass/Fail instead of stub **Warn**. See `Toolkit\session_handoff.md`.
+- **CST remediation USB root** (2026-07-03): Malware Cleanup remediation works when the toolkit runs from a drive-letter USB root (`G:\`).
+- **Diag & Repair CST status** (2026-07-03): CST scans with warnings show **Warn** in the results table (not **N/A**).
+- **GitHub source** (2026-07-03): `https://github.com/GenNowGamer/Core-Diagnostic-Engine` — source-only clone (~50 MB). Rebuild with `Toolkit\App\Publish-ToolkitGUI.ps1`; large binaries not in git — see `Toolkit\Tools\PLACEHOLDER_ACQUISITION.md`.
+
+## Session status (2026-07-03)
+
+- **CdeCpuSimdCli** — `Toolkit\App\CdeCpuSimdCli\`; self-contained publish into GUI payload; `Test-CpuSimdEnginePs5.ps1`.
+- **CST** — `CstRemediationService` drive-root fix; `WorkflowViewModels` CST Warn/N/A fix.
+- **Git** — Slim orphan history; nested `Toolkit/.git` removed; expanded root `.gitignore`.
+- **Publish** — `Toolkit\App\Publish-ToolkitGUI.ps1` → canonical `Toolkit\CDE.exe`; `SyncUSB.bat` before USB tests.
 
 ## Session status (2026-06-30)
 
@@ -241,6 +252,7 @@ Set **`TOOLKIT_ROOT`** to the folder that contains `Scripts`, `Config`, and `App
 Toolkit/
 ├── App/
 │   ├── ToolkitGUI/           # WPF app (sln, csproj, Views, ViewModels, Services/)
+│   ├── CdeCpuSimdCli/        # PS 5.1 SIMD probe helper (published self-contained with GUI)
 │   └── UserGuideGenerator/   # Markdig + QuestPDF → HALP/CDE_User_Guide.pdf (publish step)
 ├── Docs/UserGuide/           # User guide Markdown source + manifest.json
 ├── HALP/                     # CDE_User_Guide.pdf, oscdimg.exe, help links
@@ -253,6 +265,28 @@ Toolkit/
 ├── WinPE/                    # build_winpe.ps1 and related helpers
 └── Logs/                     # Operator PDF reports (internal JSON under CDE/Runtime/Data/)
 ```
+
+---
+
+## Source repository
+
+**GitHub (private):** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine)
+
+The clone is **source only** (~50 MB). It does not include WinPE images, deploy ISOs, the 1 GB MemTest USB image, or published `CDE.exe` / GUI binaries.
+
+```powershell
+git clone https://github.com/GenNowGamer/Core-Diagnostic-Engine.git
+cd Core-Diagnostic-Engine
+powershell -NoProfile -ExecutionPolicy Bypass -File "Toolkit\App\Publish-ToolkitGUI.ps1"
+```
+
+After clone:
+
+1. **Publish** — `Toolkit\App\Publish-ToolkitGUI.ps1` → canonical `Toolkit\CDE.exe` and self-contained GUI + `CdeCpuSimdCli.exe`.
+2. **Large binaries** — Place vendor payloads per `Toolkit\Tools\PLACEHOLDER_ACQUISITION.md` and run `Toolkit\Tools\update_tools_manifest.ps1` (notably `sources\boot.wim`, optional `Diagnostics\Memory\MemTest86\memtest86-usb.img`).
+3. **USB media** — `Customize-WinPE.ps1` (admin) → `SyncUSB.bat`.
+
+Excluded paths are listed in the repo root `.gitignore` (`Toolkit/Deploy/`, `Toolkit/Mount/`, `*.iso`, `Toolkit/CDE/Runtime/`, etc.).
 
 ---
 

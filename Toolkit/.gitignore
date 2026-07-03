@@ -7,9 +7,14 @@ Logs/
 # Large binary — rebuilt by Customize-WinPE.ps1
 sources/boot.wim
 
+# Large binary — not in Git; optional vendor USB image
+Diagnostics/Memory/MemTest86/memtest86-usb.img
+
 # .NET build outputs
 App/ToolkitGUI/bin/
 App/ToolkitGUI/obj/
+App/CdeCpuSimdCli/bin/
+App/CdeCpuSimdCli/obj/
 App/CDELauncher/bin/
 App/CDELauncher/obj/
 CDE/ToolkitGUI/bin/

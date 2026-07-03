@@ -20,6 +20,8 @@ The Tools launcher expands these tokens in a tool's `arguments` before launch, s
 Example (portable Firefox browser, registered native): `arguments="-profile &quot;{TOOLDIR}\Data\Profile&quot; -no-remote"` keeps the profile alongside the binary (on the USB) rather than the volatile WinPE RAM disk.
 
 ## Current catalog boot asset (until replaced)
-- `Boot/MemTest86/memtest86-usb.img`
+- `Diagnostics/Memory/MemTest86/memtest86-usb.img` (optional ~1 GB USB image — **not in Git**; vendor download per `MemTest86/readme.txt`)
+
+Primary onboarded memory boot paths use `memtest.efi` (`Ensure-BootArtifacts.ps1`, `EFI/CDE/memtest.efi`) and UEFI CHU (`CoreDiag.efi`).
 
 Use `tools_manifest.json` as the single source of expected payload paths/status.

@@ -163,7 +163,7 @@ Diagnostics/
 │   ├── CoreHardwareUtility/ # UEFI diagnostics (moved from Tools/Boot/)
 │   │   └── CoreDiag.efi
 │   ├── MemTest86/          # Memory test boot image (moved from Tools/Boot/)
-│   │   └── memtest86-usb.img
+│   │   └── memtest86-usb.img   # optional vendor USB image — not in Git (~1 GB)
 │   └── WinMemoryDiag/      # Windows memory diagnostic (moved from Tools/Boot/)
 │       └── memtest.efi
 ├── Storage/                # Storage/disk utilities (empty - ready for expansion)

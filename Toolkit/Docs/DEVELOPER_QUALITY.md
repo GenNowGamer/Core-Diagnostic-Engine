@@ -15,3 +15,10 @@
 
 - Run `Toolkit\Scripts\Tests\Invoke-CdeRegressionSuite.ps1` before handoff.
 - Run `Toolkit\App\Publish-Verify-Toolkit.ps1` after canonical publish.
+
+## Source control
+
+- **GitHub:** `https://github.com/GenNowGamer/Core-Diagnostic-Engine` (private) — source-only clone; no `boot.wim`, deploy ISOs, or published `CDE.exe` in git.
+- **Publish before USB tests:** `powershell -NoProfile -ExecutionPolicy Bypass -File Toolkit\App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`.
+- **Large binaries:** `Toolkit\Tools\PLACEHOLDER_ACQUISITION.md` + `update_tools_manifest.ps1` after copying vendor payloads.
+- Do not commit `Toolkit\CDE\Runtime\`, `Logs\`, `Deploy\`, or nested `.git` under `Toolkit/`.
