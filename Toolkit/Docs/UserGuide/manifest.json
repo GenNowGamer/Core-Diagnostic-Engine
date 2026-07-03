@@ -1,0 +1,17 @@
+{
+  "title": "Core Diagnostic Engine User Guide",
+  "subtitle": "Diagnosing and Repairing Windows PCs",
+  "chapters": [
+    { "file": "00_Cover.md", "title": "Cover", "includeInToc": false },
+    { "file": "01_Introduction.md", "title": "Introduction" },
+    { "file": "02_Getting_Started.md", "title": "Getting Started" },
+    { "file": "03_Recommended_Workflow.md", "title": "Recommended Repair Workflow" },
+    { "file": "04_Diagnostics.md", "title": "Diagnostics" },
+    { "file": "05_Security.md", "title": "Security" },
+    { "file": "06_Repair.md", "title": "Repair" },
+    { "file": "07_Maintenance_Utilities.md", "title": "Maintenance and Utilities" },
+    { "file": "08_Tools_Library_Settings.md", "title": "Tools Library and Settings" },
+    { "file": "09_Understanding_Reports.md", "title": "Understanding Reports" },
+    { "file": "10_Reference.md", "title": "Reference" }
+  ]
+}

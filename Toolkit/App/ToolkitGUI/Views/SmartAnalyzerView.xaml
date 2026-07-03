@@ -1,0 +1,153 @@
+<UserControl x:Class="ToolkitGUI.Views.SmartAnalyzerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:ToolkitGUI.Controls"
+             Background="{StaticResource BackgroundDarkBrush}"
+             TextElement.Foreground="{StaticResource TextPrimaryBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <Style x:Key="GridRowStyle" TargetType="DataGridRow">
+            <Setter Property="Background" Value="White"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#E3F0FB"/>
+                </Trigger>
+                <Trigger Property="AlternationIndex" Value="1">
+                    <Setter Property="Background" Value="#F8FAFC"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+            <Grid>
+                <StackPanel>
+                    <TextBlock Text="💾  S.M.A.R.T. Analyzer" FontSize="22" FontWeight="Bold"/>
+                    <TextBlock Text="Read true S.M.A.R.T. attributes from SATA, NVMe, and USB drives (native, no third-party tools)."
+                               FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+                <controls:ResponsiveToolbar HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <!-- Overall health badge -->
+                    <Border CornerRadius="4" Padding="12,6" Margin="0,0,12,6" VerticalAlignment="Center"
+                            Background="{Binding OverallHealthColor}">
+                        <TextBlock Text="{Binding OverallHealth}" FontSize="12" FontWeight="Bold"
+                                   Foreground="White"/>
+                    </Border>
+                    <Button Content="↻  Scan" Style="{StaticResource ActionButtonStyle}"
+                            Command="{Binding ScanCommand}" Padding="18,9" Margin="0,0,8,6"/>
+                    <Button Content="Open Report" Style="{StaticResource ActionButtonStyle}"
+                            Command="{Binding OpenReportCommand}" Padding="18,9" Margin="0,0,0,6"
+                            IsEnabled="{Binding CanOpenReport}"/>
+                </controls:ResponsiveToolbar>
+            </Grid>
+        </Border>
+
+        <!-- Toolbar: drive selector + status -->
+        <Border Grid.Row="1" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="14,8">
+            <Grid>
+                <controls:ResponsiveToolbar>
+                    <TextBlock Text="Drive:" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,6"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <ComboBox Width="360" MinWidth="200" Height="30" VerticalContentAlignment="Center" Margin="0,0,0,6"
+                              ItemsSource="{Binding Drives}"
+                              SelectedItem="{Binding SelectedDrive}"
+                              DisplayMemberPath="DisplayName"/>
+                    <Border CornerRadius="3" Padding="8,3" Margin="0,0,12,6" VerticalAlignment="Center"
+                            Background="{Binding SelectedDrive.OverallColor}"
+                            Visibility="{Binding SelectedDrive.Supported, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding SelectedDrive.Overall}" FontSize="10" FontWeight="Bold"
+                                   Foreground="White"/>
+                    </Border>
+                    <TextBlock Margin="0,0,12,6" VerticalAlignment="Center" FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Text="{Binding SelectedDrive.TempDisplay, StringFormat=Temp: {0}}"/>
+                    <TextBlock Margin="0,0,12,6" VerticalAlignment="Center" FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Text="{Binding SelectedDrive.Serial, StringFormat=S/N: {0}}"/>
+                    <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" FontSize="13" Margin="0,0,0,6"
+                               Foreground="{StaticResource AccentBlueBrush}" FontWeight="SemiBold"/>
+                </controls:ResponsiveToolbar>
+            </Grid>
+        </Border>
+
+        <!-- Attribute Grid -->
+        <DataGrid x:Name="AttrGrid" Grid.Row="2"
+                  ItemsSource="{Binding SelectedDrive.Attributes}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  SelectionMode="Single"
+                  AlternationCount="2"
+                  RowStyle="{StaticResource GridRowStyle}"
+                  Background="White" BorderThickness="0"
+                  ColumnHeaderHeight="34"
+                  GridLinesVisibility="Horizontal"
+                  HorizontalGridLinesBrush="{StaticResource BorderBrush}"
+                  CanUserResizeRows="False">
+            <DataGrid.ColumnHeaderStyle>
+                <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                    <Setter Property="FontWeight" Value="Bold"/>
+                    <Setter Property="FontSize" Value="11"/>
+                    <Setter Property="Padding" Value="10,0"/>
+                    <Setter Property="Height" Value="34"/>
+                </Style>
+            </DataGrid.ColumnHeaderStyle>
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="ID"        Binding="{Binding IdDisplay}"        Width="50"/>
+                <DataGridTextColumn Header="ATTRIBUTE" Binding="{Binding Name}"             Width="*"/>
+                <DataGridTextColumn Header="CURRENT"   Binding="{Binding CurrentDisplay}"   Width="80"/>
+                <DataGridTextColumn Header="WORST"     Binding="{Binding WorstDisplay}"     Width="80"/>
+                <DataGridTextColumn Header="THRESHOLD" Binding="{Binding ThresholdDisplay}" Width="90"/>
+                <DataGridTextColumn Header="RAW"       Binding="{Binding RawDisplay}"       Width="140"/>
+                <DataGridTemplateColumn Header="STATUS" Width="90">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Status}" FontWeight="Bold"
+                                       VerticalAlignment="Center" Margin="10,0"
+                                       Foreground="{Binding StatusColor}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Empty / unsupported note -->
+        <TextBlock Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
+                   MaxWidth="520" TextAlignment="Center"
+                   Text="{Binding SelectedDrive.Note}">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedDrive.Supported}" Value="False">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
+        <!-- Loading overlay -->
+        <Border Grid.Row="2" Background="#80FFFFFF"
+                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="Reading S.M.A.R.T. data..." FontSize="16" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBlueBrush}" HorizontalAlignment="Center"/>
+                <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,12,0,0"
+                             Foreground="{StaticResource AccentBlueBrush}" BorderThickness="0"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

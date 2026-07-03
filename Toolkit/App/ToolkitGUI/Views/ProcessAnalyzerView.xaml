@@ -1,0 +1,269 @@
+﻿<UserControl x:Class="ToolkitGUI.Views.ProcessAnalyzerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:ToolkitGUI.ViewModels"
+             Background="{StaticResource BackgroundDarkBrush}"
+             TextElement.Foreground="{StaticResource TextPrimaryBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <Style x:Key="GridRowStyle" TargetType="DataGridRow">
+            <Setter Property="Background" Value="White"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#E3F0FB"/>
+                </Trigger>
+                <Trigger Property="AlternationIndex" Value="1">
+                    <Setter Property="Background" Value="#F8FAFC"/>
+                </Trigger>
+                <DataTrigger Binding="{Binding RiskBand}" Value="Warning">
+                    <Setter Property="Background" Value="#FFF4E5"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsNew}" Value="True">
+                    <Setter Property="Background" Value="#FEE2E2"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="2*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+            <Grid>
+                <StackPanel>
+                    <TextBlock Text="Process Analyzer" FontSize="22" FontWeight="Bold"/>
+                    <TextBlock Text="Live process triage with CPU/RAM, risk flags, parent chain, CST path scan, and PDF report."
+                               FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+                <WrapPanel HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Content="Refresh" Style="{StaticResource ActionButtonStyle}"
+                            Command="{Binding RefreshCommand}" Padding="14,8" Margin="0,0,6,6"/>
+                    <Button Content="{Binding AutoRefreshLabel}" Padding="14,8" Margin="0,0,6,6"
+                            Command="{Binding ToggleAutoRefreshCommand}" Cursor="Hand"
+                            BorderThickness="0" FontSize="13" FontWeight="SemiBold" Foreground="White"
+                            Background="{StaticResource AccentBlueBrush}"/>
+                    <Button Content="{Binding FreezeLabel}" Padding="14,8" Margin="0,0,6,6"
+                            Command="{Binding ToggleFreezeCommand}" Style="{StaticResource ActionButtonStyle}"/>
+                    <Button Padding="14,8" Margin="0,0,6,6"
+                            Command="{Binding ToggleInvestigationCommand}" Cursor="Hand"
+                            ToolTip="Watch for processes that start after you enable this mode. Refreshes every 3 seconds and highlights new rows in red.">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding InvestigationMode}" Value="True">
+                                        <Setter Property="Background" Value="{StaticResource AccentBlueBrush}"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <TextBlock Text="{Binding InvestigationLabel}"/>
+                    </Button>
+                    <Button Content="Open Report" Padding="14,8" Margin="0,0,6,6"
+                            Command="{Binding OpenReportCommand}" Style="{StaticResource ActionButtonStyle}"
+                            IsEnabled="{Binding CanViewSnapshotReport}"/>
+                    <Button x:Name="KillBtn" Content="Terminate"
+                            Style="{StaticResource ActionButtonStyle}"
+                            Background="{StaticResource AccentRedBrush}"
+                            Click="KillSelected_Click" Padding="14,8" Margin="0,0,6,6"/>
+                </WrapPanel>
+            </Grid>
+        </Border>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="1" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="14,8">
+            <DockPanel LastChildFill="True">
+                <TextBlock DockPanel.Dock="Right"
+                           Text="{Binding StatusText}" VerticalAlignment="Center"
+                           Margin="12,0,0,0" FontSize="13" MaxWidth="420"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{StaticResource AccentBlueBrush}" FontWeight="SemiBold"
+                           Visibility="{Binding InvestigationMode, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBox Width="220" Height="30"
+                             Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                             Padding="8,6" FontSize="13" Margin="0,0,8,0"
+                             Background="{StaticResource BackgroundLightBrush}"
+                             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"/>
+                    <ComboBox Width="200" Height="30" Margin="0,0,8,0" VerticalAlignment="Top"
+                              ItemsSource="{Binding FilterPresetOptions}"
+                              DisplayMemberPath="Label"
+                              SelectedValuePath="Value"
+                              SelectedValue="{Binding FilterPreset}"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <CheckBox Content="Tree view" IsChecked="{Binding TreeViewMode}" Margin="0,0,0,2"/>
+                        <CheckBox Content="Deep scan (signatures)" IsChecked="{Binding DeepScanEnabled}"/>
+                    </StackPanel>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- List / Tree -->
+        <Grid Grid.Row="2" MinHeight="120">
+            <DataGrid x:Name="ProcessGrid"
+                      ItemsSource="{Binding FilteredProcesses}"
+                      SelectedItem="{Binding SelectedProcess, Mode=TwoWay}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      SelectionMode="Single"
+                      AlternationCount="2"
+                      RowStyle="{StaticResource GridRowStyle}"
+                      Background="White" BorderThickness="0"
+                      ColumnHeaderHeight="34"
+                      GridLinesVisibility="Horizontal"
+                      HorizontalGridLinesBrush="{StaticResource BorderBrush}"
+                      CanUserResizeRows="False"
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                <DataGrid.Style>
+                    <Style TargetType="DataGrid">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding TreeViewMode}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.Style>
+                <DataGrid.ColumnHeaderStyle>
+                    <Style TargetType="DataGridColumnHeader">
+                        <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
+                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                        <Setter Property="FontWeight" Value="Bold"/>
+                        <Setter Property="FontSize" Value="11"/>
+                        <Setter Property="Padding" Value="10,0"/>
+                        <Setter Property="Height" Value="34"/>
+                    </Style>
+                </DataGrid.ColumnHeaderStyle>
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="NEW" Binding="{Binding NewDisplay}" Width="48"/>
+                    <DataGridTextColumn Header="NAME" Binding="{Binding Name}" Width="130"/>
+                    <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="55"/>
+                    <DataGridTextColumn Header="CPU" Binding="{Binding CpuDisplay}" Width="60"/>
+                    <DataGridTextColumn Header="RAM" Binding="{Binding RamDisplay}" Width="80"/>
+                    <DataGridTextColumn Header="RISK" Binding="{Binding RiskBand}" Width="70"/>
+                    <DataGridTextColumn Header="STATUS" Binding="{Binding Status}" Width="90"/>
+                    <DataGridTextColumn Header="SIGNED" Binding="{Binding SignedDisplay}" Width="60"/>
+                    <DataGridTextColumn Header="COMPANY" Binding="{Binding Company}" Width="120"/>
+                    <DataGridTextColumn Header="FLAGS" Binding="{Binding RiskFlags}" Width="140"/>
+                    <DataGridTextColumn Header="PATH" Binding="{Binding FilePath}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <TreeView x:Name="ProcessTree"
+                      ItemsSource="{Binding ProcessTreeRoots}"
+                      Background="White" BorderThickness="0"
+                      SelectedItemChanged="ProcessTree_SelectedItemChanged">
+                <TreeView.Style>
+                    <Style TargetType="TreeView">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding TreeViewMode}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TreeView.Style>
+                <TreeView.ItemTemplate>
+                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                        <TextBlock Text="{Binding DisplayName}" FontSize="13"/>
+                    </HierarchicalDataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
+
+            <Border Background="#80FFFFFF"
+                    Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="Loading processes..." FontSize="16" FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBlueBrush}" HorizontalAlignment="Center"/>
+                    <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,12,0,0"
+                                 Foreground="{StaticResource AccentBlueBrush}" BorderThickness="0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <GridSplitter Grid.Row="3" Height="6" HorizontalAlignment="Stretch"
+                      Background="{StaticResource BorderBrush}" ResizeDirection="Rows"/>
+
+        <!-- Detail panel -->
+        <Border Grid.Row="4" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                    <TextBlock Text="{Binding DetailStatusText}" FontWeight="SemiBold" DockPanel.Dock="Left"/>
+                    <WrapPanel HorizontalAlignment="Right">
+                        <Button Content="Open location" Command="{Binding OpenFileLocationCommand}"
+                                Style="{StaticResource ActionButtonStyle}" Padding="10,6" Margin="4,0,0,0"/>
+                        <Button Content="Copy path" Command="{Binding CopyPathCommand}"
+                                Style="{StaticResource ActionButtonStyle}" Padding="10,6" Margin="4,0,0,0"/>
+                        <Button Content="CST scan file" Command="{Binding CstScanSelectedCommand}"
+                                Style="{StaticResource ActionButtonStyle}" Padding="10,6" Margin="4,0,0,0"/>
+                        <Button Content="Startup Manager" Command="{Binding OpenStartupManagerCommand}"
+                                Style="{StaticResource ActionButtonStyle}" Padding="10,6" Margin="4,0,0,0"/>
+                        <Button Content="Malware Cleanup" Command="{Binding OpenMalwareCleanupCommand}"
+                                Style="{StaticResource ActionButtonStyle}" Padding="10,6" Margin="4,0,0,0"/>
+                    </WrapPanel>
+                </DockPanel>
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <StackPanel DataContext="{Binding SelectedDetail}">
+                        <TextBlock Text="Command line" FontWeight="Bold" Margin="0,0,0,4"/>
+                        <TextBlock Text="{Binding CommandLineDisplay, Mode=OneWay}"
+                                   TextWrapping="Wrap" Margin="0,0,0,10"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Background="{StaticResource BackgroundLightBrush}"
+                                   Padding="8,6"/>
+                        <UniformGrid Columns="2" Margin="0,0,0,10">
+                            <TextBlock Text="{Binding ParentPidDisplay, Mode=OneWay, StringFormat='Parent PID: {0}'}" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SessionDisplay, Mode=OneWay, StringFormat='Session: {0}'}" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding StartTimeDisplay, Mode=OneWay, StringFormat='Started: {0}'}" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SignedDisplay, Mode=OneWay, StringFormat='Signed: {0}'}" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding InStartup, Mode=OneWay, StringFormat='In startup: {0}'}" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding RamDisplay, Mode=OneWay, StringFormat='RAM: {0}'}" Margin="0,0,0,4"/>
+                        </UniformGrid>
+                        <TextBlock Text="Parent chain" FontWeight="Bold" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding ParentChain}" Margin="0,0,0,10">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayLine}" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Services (svchost)" FontWeight="Bold" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding Services}" Margin="0,0,0,10">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" Margin="0,0,0,2"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Loaded modules (top)" FontWeight="Bold" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding Modules}" Margin="0,0,0,10">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,0,0,2" FontSize="12"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="SHA256" FontWeight="Bold" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding Sha256, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                                 Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

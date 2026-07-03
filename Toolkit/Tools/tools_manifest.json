@@ -1,0 +1,39 @@
+﻿{
+    "manifestVersion":  2,
+    "manifestSchemaVersion":  "2.0.0",
+    "generatedUtc":  "2026-05-05T08:02:19Z",
+    "generatedBy":  "CDE Tools Onboarding Pipeline",
+    "checksumAlgorithm":  "SHA256",
+    "sourcePolicy":  "official_only",
+    "notes":  "Use official project/vendor sources only. manual_required indicates user-supplied artifact is needed.",
+    "entries":  [
+                    {
+                        "name":  "Core Hardware Utility (UEFI)",
+                        "relativePath":  "Boot/CoreHardwareUtility/CoreDiag.efi",
+                        "executionMode":  "boot_efi",
+                        "sourceUrl":  "",
+                        "preferredVersion":  "CURRENT",
+                        "pinned":  true,
+                        "monetizationApproved":  true,
+                        "approvalSource":  "OwnerApprovedAllowlist",
+                        "approvedOn":  "2026-05-05",
+                        "status":  "acquired",
+                        "sha256":  "54288CCBCCA263A4A7C08648D0FB296A83B1E38D97A1885C35CF01009E8868A5",
+                        "sizeBytes":  275968
+                    },
+                    {
+                        "name":  "Windows Memory Diagnostic (Microsoft memtest.efi)",
+                        "relativePath":  "Boot/WinMemoryDiag/memtest.efi",
+                        "executionMode":  "boot_efi",
+                        "sourceUrl":  "https://learn.microsoft.com/windows-hardware/",
+                        "preferredVersion":  "FROM_OS_MEDIA",
+                        "pinned":  true,
+                        "monetizationApproved":  true,
+                        "approvalSource":  "OwnerApprovedAllowlist",
+                        "approvedOn":  "2026-05-04",
+                        "status":  "acquired",
+                        "sha256":  "3D91DA0DD1B4F5A771A51192B5F5AEF6D9B9E5DADBF0A490B7554FC21ECC3F54",
+                        "sizeBytes":  2610664
+                    }
+                ]
+}

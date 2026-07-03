@@ -1,0 +1,411 @@
+<views:WorkflowViewBase x:Class="ToolkitGUI.Views.SystemHealthView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:ToolkitGUI.ViewModels"
+             xmlns:views="clr-namespace:ToolkitGUI.Views"
+             xmlns:models="clr-namespace:ToolkitGUI.Models"
+             xmlns:controls="clr-namespace:ToolkitGUI.Controls"
+             Background="{StaticResource BackgroundDarkBrush}">
+    <views:WorkflowViewBase.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <models:InverseBooleanConverter x:Key="InverseBool"/>
+        <models:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
+    </views:WorkflowViewBase.Resources>
+    <views:WorkflowViewBase.DataContext>
+        <vm:SystemHealthViewModel/>
+    </views:WorkflowViewBase.DataContext>
+
+    <Grid>
+        <!-- Picker -->
+        <Grid Visibility="{Binding IsPickerVisible, Converter={StaticResource BoolToVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+                <Grid>
+                    <StackPanel>
+                        <TextBlock Text="System Health Check" FontSize="22" FontWeight="Bold"/>
+                        <TextBlock Text="Select diagnostic checks to run. Use presets or pick individual items."
+                                   FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <Button Content="Run Health Check" Style="{StaticResource ActionButtonStyle}"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Command="{Binding RunHealthCheckCommand}" Padding="20,10"/>
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="1" Background="{StaticResource BackgroundMidBrush}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+                <controls:ResponsiveToolbar VerticalAlignment="Center">
+                    <Button Content="Recommended" Command="{Binding SelectRecommendedCommand}"
+                            Margin="0,0,8,6" Padding="12,6" Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
+                    <Button Content="Quick Vitals" Command="{Binding SelectQuickVitalsCommand}"
+                            Margin="0,0,8,6" Padding="12,6" Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
+                    <Button Content="Deep System" Command="{Binding SelectDeepSystemCommand}"
+                            Margin="0,0,8,6" Padding="12,6" Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
+                    <Button Content="Full Audit" Command="{Binding SelectFullAuditCommand}"
+                            Margin="0,0,8,6" Padding="12,6" Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
+                    <Button Content="Select All" Command="{Binding SelectAllCommand}"
+                            Margin="0,0,8,6" Padding="12,6" Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
+                    <Button Content="Clear All" Command="{Binding ClearAllCommand}"
+                            Margin="0,0,8,6" Padding="12,6" Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
+                    <TextBlock Text="{Binding EstimatedMinutesDisplay}" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,6"/>
+                </controls:ResponsiveToolbar>
+            </Border>
+
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="16">
+                <ItemsControl ItemsSource="{Binding Categories}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,16">
+                                <TextBlock Text="{Binding Label}" FontSize="11" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                                <ItemsControl ItemsSource="{Binding Checks}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="White" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="5" Padding="12,10" Margin="0,0,0,6">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                              IsEnabled="{Binding IsAvailable}" VerticalAlignment="Top" Margin="0,2,12,0"/>
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Text="{Binding Label}" FontSize="14" FontWeight="SemiBold"/>
+                                                        <TextBlock Text="{Binding Description}" FontSize="12"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                                        <TextBlock Text="{Binding UnavailableReason}" FontSize="11"
+                                                                   Foreground="{StaticResource AccentYellowBrush}"
+                                                                   Visibility="{Binding IsUnavailable, Converter={StaticResource BoolToVis}}"
+                                                                   Margin="0,4,0,0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- Running -->
+        <Grid Visibility="{Binding IsRunningVisible, Converter={StaticResource BoolToVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+                <StackPanel>
+                    <TextBlock Text="Running Health Check..." FontSize="22" FontWeight="Bold"/>
+                    <TextBlock Text="{Binding PhaseLabel}" FontSize="13"
+                               Foreground="{StaticResource AccentBlueBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Row="1" Background="{StaticResource BackgroundMidBrush}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+                <StackPanel>
+                    <TextBlock Text="{Binding ProgressCaption}" FontSize="13" Margin="0,0,0,8"/>
+                    <ProgressBar Value="{Binding Progress}" Maximum="100" Height="8"
+                                 Background="{StaticResource BackgroundLightBrush}"
+                                 Foreground="{StaticResource AccentBlueBrush}" BorderThickness="0"/>
+                </StackPanel>
+            </Border>
+            <Grid Grid.Row="2" Background="{StaticResource LogBgBrush}">
+                <TextBox Text="{Binding LogText, Mode=OneWay}" FontFamily="Cascadia Code, Consolas, Courier New"
+                         FontSize="13" Foreground="{StaticResource LogTextBrush}" Background="Transparent"
+                         BorderThickness="0" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                         Padding="20" VerticalScrollBarVisibility="Auto"/>
+            </Grid>
+        </Grid>
+
+        <!-- Results -->
+        <Grid Visibility="{Binding IsResultsVisible, Converter={StaticResource BoolToVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+                <Grid>
+                    <StackPanel>
+                        <TextBlock Text="Health Check Results" FontSize="22" FontWeight="Bold"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="Overall:" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <Border Padding="10,4" CornerRadius="4" Background="{Binding OverallHealthBrush}">
+                                <TextBlock Text="{Binding OverallHealthDisplay}" Foreground="White" FontWeight="SemiBold"/>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button Content="Open Report" Command="{Binding OpenReportCommand}"
+                                IsEnabled="{Binding CanOpenPdfReport}"
+                                Margin="0,0,8,0" Padding="12,8" Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
+                        <Button Content="New Check" Command="{Binding BackToPickerCommand}"
+                                Padding="12,8" Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.4*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0" Margin="16,16,8,16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="FINDINGS" FontSize="10" FontWeight="Bold"
+                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding Findings}"
+                             SelectedItem="{Binding SelectedFinding, Mode=TwoWay}"
+                             BorderThickness="0" Background="Transparent"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="0,0,0,8"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <ContentPresenter/>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="White" BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1" CornerRadius="5" Padding="12" Cursor="Hand">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                                                                 Value="True">
+                                                        <Setter Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
+                                                        <Setter Property="BorderThickness" Value="2"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding CheckLabel}" FontWeight="SemiBold" FontSize="14"/>
+                                                <Border Margin="8,0,0,0" Padding="6,2" CornerRadius="3"
+                                                        Background="{Binding StatusBrush}">
+                                                    <TextBlock Text="{Binding Status}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding CategoryLabel}" FontSize="10"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                                            <TextBlock Text="{Binding DetailOverview}" FontSize="12" TextWrapping="Wrap"
+                                                       Margin="0,6,0,0" MaxHeight="72" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+
+                <Border Grid.Column="1" Background="{StaticResource BackgroundMidBrush}"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0"
+                        Margin="0,0,0,0">
+                    <Grid>
+                        <StackPanel Margin="20" VerticalAlignment="Center"
+                                    Visibility="{Binding HasSelectedFinding, Converter={StaticResource InverseBoolToVis}}">
+                            <TextBlock Text="REVIEW" FontSize="10" FontWeight="Bold"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                            <TextBlock Text="Select a finding"
+                                       FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <TextBlock Text="Click a result card on the left to see the full scan summary and recommended actions for that check."
+                                       FontSize="13" TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </StackPanel>
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20"
+                                      Visibility="{Binding HasSelectedFinding, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <TextBlock Text="REVIEW" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+
+                                <StackPanel DataContext="{Binding SelectedFinding}">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <TextBlock Text="{Binding CheckLabel}" FontSize="18" FontWeight="Bold"/>
+                                        <Border Margin="10,0,0,0" Padding="8,3" CornerRadius="4"
+                                                VerticalAlignment="Center" Background="{Binding StatusBrush}">
+                                            <TextBlock Text="{Binding Status}" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding CategoryLabel}" FontSize="11"
+                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                                </StackPanel>
+
+                                <TextBlock Text="OVERVIEW" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                                <TextBlock Text="{Binding SelectedFindingHeadline}" FontSize="13" TextWrapping="Wrap"
+                                           Margin="0,0,0,16"/>
+
+                                <TextBlock Text="DETAILED RESULTS" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,0,0,8"
+                                           Visibility="{Binding HasSelectedFindingDetail, Converter={StaticResource BoolToVis}}"/>
+                                <Border Margin="0,0,0,16"
+                                        Padding="12"
+                                        Background="White"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Visibility="{Binding HasSelectedFindingPlainText, Converter={StaticResource BoolToVis}}">
+                                    <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
+                                        <TextBlock Text="{Binding SelectedFindingPlainText}"
+                                                   FontFamily="Consolas, Courier New"
+                                                   FontSize="12"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    </ScrollViewer>
+                                </Border>
+
+                                <TextBlock Text="ITEMS TO ADDRESS" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,0,0,8"
+                                           Visibility="{Binding HasSelectedAttentionItems, Converter={StaticResource BoolToVis}}"/>
+                                <ItemsControl ItemsSource="{Binding SelectedAttentionItems}" Margin="0,0,0,16"
+                                              ItemTemplate="{StaticResource FormattedResultItemTemplate}">
+                                    <ItemsControl.Style>
+                                        <Style TargetType="ItemsControl">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasSelectedAttentionItems}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ItemsControl.Style>
+                                </ItemsControl>
+
+                                <TextBlock Text="DETAILED RESULTS" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,0,0,8"
+                                           Visibility="{Binding HasSelectedFindingSections, Converter={StaticResource BoolToVis}}"/>
+                                <ItemsControl ItemsSource="{Binding SelectedFindingSections}" Margin="0,0,0,16">
+                                    <ItemsControl.Style>
+                                        <Style TargetType="ItemsControl">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasSelectedFindingSections}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ItemsControl.Style>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#FBFCFE"
+                                                    BorderBrush="#E8EDF3"
+                                                    BorderThickness="1"
+                                                    CornerRadius="4"
+                                                    Padding="12"
+                                                    Margin="0,0,0,12">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
+                                                               Foreground="{StaticResource TextPrimaryBrush}"
+                                                               Margin="0,0,0,8"
+                                                               Visibility="{Binding HasTitle, Converter={StaticResource BoolToVis}}"/>
+                                                    <ItemsControl ItemsSource="{Binding Items}"
+                                                                  ItemTemplate="{StaticResource FormattedResultItemTemplate}"/>
+                                                    <ItemsControl ItemsSource="{Binding PropertyLines}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Grid Margin="0,0,0,4">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="150"/>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Grid.Column="0"
+                                                                               Text="{Binding Label}"
+                                                                               FontSize="12"
+                                                                               FontWeight="SemiBold"
+                                                                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                                    <TextBlock Grid.Column="1"
+                                                                               Text="{Binding Value}"
+                                                                               FontSize="12"
+                                                                               TextWrapping="Wrap"
+                                                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="RECOMMENDED ACTIONS" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,0,0,8"
+                                           Visibility="{Binding HasSelectedFindingActions, Converter={StaticResource BoolToVis}}"/>
+                                <ItemsControl ItemsSource="{Binding SelectedFindingActions}" Margin="0,0,0,8">
+                                    <ItemsControl.Style>
+                                        <Style TargetType="ItemsControl">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasSelectedFindingActions}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ItemsControl.Style>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Content="{Binding Label}" Command="{Binding Command}"
+                                                    HorizontalAlignment="Left" Padding="12,8" Margin="0,0,8,8"
+                                                    Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="{Binding SelectedFindingGuidance}" FontSize="13" TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,8,0,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedFindingGuidance}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</views:WorkflowViewBase>

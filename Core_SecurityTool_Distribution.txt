@@ -1,0 +1,71 @@
+Best distribution strategy is a two-track release:
+
+	1. Standard Installer (primary for most users)
+	2. Portable Package (for tech/support workflows)
+
+How to distribute CDE for easy use
+
+   1. Installer channel (recommended default)
+
+	Build an installer that includes all required runtime dependencies.
+	Install to Program Files, add Start Menu shortcut, optional desktop shortcut.
+	Include first-run checks for admin rights, Defender/AV compatibility, and required services.
+	Bundle your tool modules and rule packs.
+	Use auto-update for app + rules.
+	Best tools for this on Windows: MSIX or MSI/Inno Setup/WiX.
+
+   2. Portable channel (advanced users/field techs)
+	Zip-based portable folder with executable, scripts, rules, and tools.
+	No install required.
+	Include launcher that verifies prerequisites and paths.
+	Useful for USB deployment, diagnostics, and environments with install restrictions.
+	Keep updates manual or via in-app “Check for update” that downloads in-place.
+   3. WinPE channel (service/repair use)
+	Separate WinPE build artifact with CDE preloaded.
+	Version this separately from normal Windows desktop release.
+	Include offline signature/rule update import from USB.
+
+Commercialization-ready packaging checklist
+
+   1. Code signing
+	Sign EXE, DLL, scripts, and installers with an EV/OV certificate.
+	This reduces SmartScreen friction and increases trust.
+
+   2. Licensing/activation
+	Add license tiers: personal, technician, enterprise.
+	Decide online activation vs offline key file.
+	Add grace period and clear reactivation flow.
+
+   3. Update architecture
+	App updates: stable channel with rollback.
+	Rules/signatures updates: frequent, signed, and independently updatable.
+	Offline update bundle support for restricted environments.
+
+   4. Dependency control
+	Bundle exact runtime versions you need.
+	Do not depend on host machine PowerShell modules being present unpredictably.
+	Keep a startup diagnostic panel that tells users exactly what is missing.
+   5. Security and legal readiness
+	EULA, privacy policy, and telemetry opt-in.
+	Third-party license compliance for every dependency/tool.
+	Explicit “detect-only” vs “remediation” behavior disclosure.
+
+   6. Supportability
+	One-click export of logs and scan reports.
+	Crash-safe session logs.
+	“Health check” button to validate installation integrity.
+
+Recommended release model for you
+
+   1. Core Security Tool as separate engine, bundled inside CDE installer.
+   2. CDE as signed installer-first product.
+   3. Portable technician edition as secondary download.
+   4. WinPE media as a third, separately versioned artifact.
+	5. CST operator UI and remediation workflow should be treated as first-class product surface inside CDE Malware Cleanup, while the engine remains separately versioned under the CST workspace.
+	6. If you want, I can draft a concrete release blueprint next:
+
+Folder/package layout
+Installer contents
+Update endpoints and versioning scheme
+Licensing flow
+“Day-1” distribution pipeline (build, sign, publish, auto-update).

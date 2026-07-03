@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "flows": [
+    {
+      "id": "slow_pc",
+      "label": "Slow PC",
+      "summary": "High CPU or RAM use, heavy startup load, or low disk space.",
+      "keywords": ["slow", "sluggish", "lag", "lagging", "freeze", "freezing", "frozen", "hang", "hanging", "cpu", "ram", "memory", "disk space", "startup", "boot slow"],
+      "healthPreset": "slow_pc",
+      "followUps": [
+        { "target": "ProcessAnalyzer:HighCpu", "label": "Process Analyzer (CPU)" },
+        { "target": "TempFileCleaner", "label": "Temp File Cleaner" }
+      ]
+    },
+    {
+      "id": "suspected_malware",
+      "label": "Suspected Malware",
+      "summary": "Pop-ups, unknown startup items, or suspicious browser behavior.",
+      "keywords": ["malware", "virus", "trojan", "adware", "popup", "pop-up", "popups", "pop-ups", "browser", "redirect", "hijack", "suspicious", "unknown program", "web site", "website"],
+      "healthPreset": "suspected_malware",
+      "followUps": [
+        { "target": "MalwareCleanup", "label": "Malware Cleanup" },
+        { "target": "HijackRepair", "label": "Hijack & Scam Repair" },
+        { "target": "PostOp", "label": "Post-Op Cleanup" },
+        { "target": "StartupManager", "label": "Startup Manager" }
+      ]
+    },
+    {
+      "id": "tech_support_scam",
+      "label": "Tech Support Scam",
+      "summary": "Unexpected remote access, browser lockouts, or disabled security after a scam call.",
+      "keywords": ["scam", "tech support", "remote access", "anydesk", "teamviewer", "screen connect", "locked browser", "call center", "microsoft called", "virus warning"],
+      "healthPreset": "tech_support_scam",
+      "followUps": [
+        { "target": "HijackRepair", "label": "Hijack & Scam Repair" },
+        { "target": "MalwareCleanup", "label": "Malware Cleanup" },
+        { "target": "UninstallManager", "label": "Uninstall Manager" }
+      ]
+    },
+    {
+      "id": "network_issues",
+      "label": "Network Issues",
+      "summary": "No internet, adapter problems, or hosts-file redirects.",
+      "keywords": ["network", "internet", "wifi", "wi-fi", "ethernet", "no connection", "dns", "adapter", "offline", "can't connect", "cannot connect", "hosts file"],
+      "healthPreset": "network_issues",
+      "followUps": [
+        { "target": "HijackRepair", "label": "Hijack & Scam Repair" },
+        { "target": "FastFixes", "label": "Fast Fixes" },
+        { "target": "OSRepair", "label": "OS Repair" }
+      ]
+    },
+    {
+      "id": "wont_boot",
+      "label": "Won't Boot",
+      "summary": "Boot failures, disk layout problems, or hardware suspicion before Windows loads.",
+      "keywords": ["won't boot", "wont boot", "no boot", "boot failure", "boot loop", "bsod", "blue screen", "black screen", "startup repair", "disk error", "mbr", "gpt", "uefi"],
+      "healthPreset": "wont_boot",
+      "followUps": [
+        { "target": "BootloaderRepair", "label": "Disk & Boot Repair" },
+        { "target": "ChuResults", "label": "CHU Pre-Boot Results" },
+        { "target": "DiagAndRepair", "label": "Diag & Repair (Storage)" }
+      ]
+    }
+  ]
+}

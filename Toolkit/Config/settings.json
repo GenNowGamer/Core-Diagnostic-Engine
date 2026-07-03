@@ -1,0 +1,18 @@
+﻿{
+    "ToolkitVersion":  "1.0.1",
+    "ToolkitRoot":  "$TOOLKIT_ROOT",
+    "LogsRoot":  "$TOOLKIT_ROOT\\Logs",
+    "ToolsRoot":  "$TOOLKIT_ROOT",
+    "DiagnosticsRoot":  "$TOOLKIT_ROOT\\Diagnostics",
+    "WindowsToolsRoot":  "$TOOLKIT_ROOT\\Windows Tools",
+    "LogLevel":  "Info",
+    "AutoOpenReport":  true,
+    "MaxLogAgeDays":  30,
+    "DefaultBackupDestination":  "",
+    "RobocopyThreads":  8,
+    "ScanTargetDrive":  "C:\\",
+    "BootFilesRoot":  "$TOOLKIT_ROOT\\boot",
+    "WinPERoot":  "$TOOLKIT_ROOT\\WinPE",
+    "DeployRoot":  "$TOOLKIT_ROOT\\Deploy",
+    "WorkflowTimeoutMinutes":  120
+}

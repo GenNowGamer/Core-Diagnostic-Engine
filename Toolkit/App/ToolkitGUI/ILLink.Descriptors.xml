@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<linker>
+  <assembly fullname="ToolkitGUI">
+    <type fullname="ToolkitGUI.Models.ProcessEntry" preserve="all" />
+    <type fullname="ToolkitGUI.Models.ProcessDetail" preserve="all" />
+    <type fullname="ToolkitGUI.Models.ProcessParentLink" preserve="all" />
+  </assembly>
+</linker>

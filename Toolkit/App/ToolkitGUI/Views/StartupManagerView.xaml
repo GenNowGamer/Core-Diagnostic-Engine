@@ -1,0 +1,377 @@
+﻿<UserControl x:Class="ToolkitGUI.Views.StartupManagerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:ToolkitGUI.Controls"
+             HorizontalAlignment="Stretch"
+             VerticalAlignment="Stretch"
+             Background="{StaticResource BackgroundDarkBrush}"
+             TextElement.Foreground="{StaticResource TextPrimaryBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <Style x:Key="TabBtnStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0,0,0,2"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="Padding" Value="18,10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="TabBtnActiveStyle" TargetType="Button" BasedOn="{StaticResource TabBtnStyle}">
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource AccentBlueBrush}"/>
+        </Style>
+        <Style x:Key="GridRowStyle" TargetType="DataGridRow">
+            <Setter Property="Background" Value="White"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#E3F0FB"/>
+                </Trigger>
+                <Trigger Property="AlternationIndex" Value="1">
+                    <Setter Property="Background" Value="#F8FAFC"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="DeviatedTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsDeviated}" Value="True">
+                    <Setter Property="Foreground" Value="#C62828"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="AnalysisCellStyle" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="ToolTip" Value="{Binding AnalysisDetail}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasAnalysisWarning}" Value="True">
+                    <Setter Property="Text" Value="⚠"/>
+                    <Setter Property="Foreground" Value="#C62828"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding AnalysisLevel}" Value="Caution">
+                    <Setter Property="Text" Value="⚠"/>
+                    <Setter Property="Foreground" Value="#926800"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding AnalysisLevel}" Value="NA">
+                    <Setter Property="Text" Value="—"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SignedCellStyle" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Text" Value="{Binding SignedDisplay}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="ToolTip" Value="{Binding SignedBy}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSigned}" Value="True">
+                    <Setter Property="Foreground" Value="#0D7A3E"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="PackagePublisher">
+                    <Setter Property="Foreground" Value="#1565C0"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignedDisplay}" Value="Unsigned">
+                    <Setter Property="Foreground" Value="#C62828"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignedDisplay}" Value="Not found">
+                    <Setter Property="Foreground" Value="#C62828"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignedDisplay}" Value="Compromised">
+                    <Setter Property="Foreground" Value="#C62828"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+            <Grid>
+                <StackPanel>
+                    <TextBlock Text="🚀  Startup Manager" FontSize="22" FontWeight="Bold"/>
+                    <TextBlock Text="View, enable, disable, or delete startup entries — Run keys (including GPO), folders, MSIX tasks, scheduled logon tasks, services, and more."
+                               FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+                <Button Content="↻  Refresh" Style="{StaticResource ActionButtonStyle}"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Command="{Binding RefreshCommand}" Padding="18,9"/>
+            </Grid>
+        </Border>
+
+        <!-- Tabs -->
+        <Border Grid.Row="1" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+            <controls:ResponsiveToolbar>
+                <Button x:Name="TabStartup" Content="User logon"
+                        Click="TabStartup_Click"
+                        Style="{StaticResource TabBtnActiveStyle}"/>
+            <Button x:Name="TabDrivers" Content="Drivers"
+                Click="TabDrivers_Click"
+                Style="{StaticResource TabBtnStyle}"/>
+            <Button x:Name="TabExtensions" Content="Extensions"
+                Click="TabExtensions_Click"
+                Style="{StaticResource TabBtnStyle}"/>
+                <Button x:Name="TabServices" Content="Services"
+                        Click="TabServices_Click"
+                        Style="{StaticResource TabBtnStyle}"/>
+            </controls:ResponsiveToolbar>
+        </Border>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="2" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="14,8">
+            <controls:ResponsiveToolbar>
+                <TextBlock Text="🔍" FontSize="14" VerticalAlignment="Center" Margin="0,0,6,6"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBox x:Name="FilterBox" Width="280" MinWidth="160" Height="30" Margin="0,0,0,6"
+                         Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                         Padding="8,6" FontSize="13"
+                         Background="{StaticResource BackgroundLightBrush}"
+                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"/>
+                <CheckBox x:Name="IncludeWindowsTasksBox"
+                          Content="Include Windows scheduled tasks"
+                          IsChecked="{Binding IncludeWindowsScheduledTasks, Mode=TwoWay}"
+                          Checked="IncludeWindowsTasks_Changed"
+                          Unchecked="IncludeWindowsTasks_Changed"
+                          Margin="0,0,16,6"
+                          VerticalAlignment="Center"
+                          FontSize="12"
+                          Foreground="{StaticResource TextSecondaryBrush}"
+                          ToolTip="Shows read-only \Microsoft\ scheduled tasks (OS maintenance). Hidden by default to match Task Manager startup scope."/>
+                <CheckBox Content="Suspicious only"
+                          IsChecked="{Binding ShowSuspiciousOnly, Mode=TwoWay}"
+                          Margin="0,0,16,6"
+                          VerticalAlignment="Center"
+                          FontSize="12"
+                          Foreground="{StaticResource TextSecondaryBrush}"
+                          ToolTip="Show only entries that match Hijack &amp; Scam Repair startup heuristics."/>
+                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" FontSize="13" Margin="0,0,0,6"
+                           Foreground="{StaticResource AccentBlueBrush}" FontWeight="SemiBold"/>
+            </controls:ResponsiveToolbar>
+        </Border>
+
+        <!-- User logon grid -->
+        <DataGrid x:Name="StartupGrid" Grid.Row="3"
+              ItemsSource="{Binding FilteredEntries}"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Stretch"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  SelectionMode="Single"
+                  AlternationCount="2"
+                  RowStyle="{StaticResource GridRowStyle}"
+                  Background="White" BorderThickness="0"
+                  ColumnHeaderHeight="34"
+                  GridLinesVisibility="Horizontal"
+                  HorizontalGridLinesBrush="{StaticResource BorderBrush}"
+                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  CanUserResizeRows="False"
+                  CanUserReorderColumns="False">
+            <DataGrid.ColumnHeaderStyle>
+                <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                    <Setter Property="FontWeight" Value="Bold"/>
+                    <Setter Property="FontSize" Value="11"/>
+                    <Setter Property="Padding" Value="10,0"/>
+                    <Setter Property="Height" Value="34"/>
+                </Style>
+            </DataGrid.ColumnHeaderStyle>
+            <DataGrid.Columns>
+                <DataGridTextColumn  Header="STATUS"    Binding="{Binding IsEnabled}" Width="62" MinWidth="62"/>
+                <DataGridTextColumn  Header="NAME"      Binding="{Binding Name}"      Width="130"
+                                     ElementStyle="{StaticResource DeviatedTextStyle}"/>
+                <DataGridTemplateColumn Header="ANALYSIS" Width="82" MinWidth="82">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Style="{StaticResource AnalysisCellStyle}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="SIGNED" Width="140">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Style="{StaticResource SignedCellStyle}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn  Header="USER"      Binding="{Binding User}"       Width="100"/>
+                <DataGridTextColumn  Header="PUBLISHER" Binding="{Binding Publisher}"  Width="120"/>
+                <DataGridTextColumn  Header="SOURCE"    Binding="{Binding SourceGroup}" Width="140"/>
+                <DataGridTextColumn  Header="RELATED"   Binding="{Binding CorrelationSummary}" Width="150">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource DeviatedTextStyle}">
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                            <Setter Property="ToolTip" Value="{Binding CorrelationSummary}"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn  Header="RISK"      Binding="{Binding RiskLevel}"  Width="60"
+                                     ElementStyle="{StaticResource DeviatedTextStyle}"/>
+                <DataGridTextColumn  Header="PATH"      Binding="{Binding FilePath}"   Width="*"
+                                     ElementStyle="{StaticResource DeviatedTextStyle}"/>
+                <DataGridTemplateColumn Header="ACTIONS" Width="220">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="2,2">
+                                <Button Content="Enable" Tag="{Binding}" Click="Enable_Click"
+                                        IsEnabled="{Binding SupportsEnable}"
+                                        Visibility="{Binding SupportsEnable, Converter={StaticResource BoolToVis}}"
+                                        Padding="6,3" Margin="0,0,3,0" FontSize="10"
+                                        Background="{StaticResource AccentGreenBrush}" Foreground="White"
+                                        BorderThickness="0" Cursor="Hand"/>
+                                <Button Content="Disable" Tag="{Binding}" Click="Disable_Click"
+                                        IsEnabled="{Binding SupportsDisable}"
+                                        Visibility="{Binding SupportsDisable, Converter={StaticResource BoolToVis}}"
+                                        Padding="6,3" Margin="0,0,3,0" FontSize="10"
+                                        Background="{StaticResource AccentYellowBrush}" Foreground="White"
+                                        BorderThickness="0" Cursor="Hand"/>
+                                <Button Content="Delete" Tag="{Binding}" Click="Delete_Click"
+                                        IsEnabled="{Binding SupportsDelete}"
+                                        Visibility="{Binding SupportsDelete, Converter={StaticResource BoolToVis}}"
+                                        Padding="6,3" Margin="0,0,3,0" FontSize="10"
+                                        Background="{StaticResource AccentRedBrush}" Foreground="White"
+                                        BorderThickness="0" Cursor="Hand"/>
+                                <Button Content="Reset" Tag="{Binding}" Click="Reset_Click"
+                                        IsEnabled="{Binding SupportsReset}"
+                                        Padding="6,3" Margin="0,0,3,0" FontSize="10"
+                                        Background="#B71C1C" Foreground="White"
+                                        BorderThickness="0" Cursor="Hand"/>
+                                <Button Content="Undo" Tag="{Binding}" Click="Undo_Click"
+                                        IsEnabled="{Binding SupportsUndo}"
+                                        Padding="6,3" FontSize="10"
+                                        Background="{StaticResource AccentBlueBrush}" Foreground="White"
+                                        BorderThickness="0" Cursor="Hand"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Services Grid -->
+        <DataGrid x:Name="ServicesGrid" Grid.Row="3"
+                  ItemsSource="{Binding FilteredServices}"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Stretch"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="False"
+                  SelectionMode="Single"
+                  AlternationCount="2"
+                  RowStyle="{StaticResource GridRowStyle}"
+                  Visibility="Collapsed"
+                  Background="White" BorderThickness="0"
+                  ColumnHeaderHeight="34"
+                  GridLinesVisibility="Horizontal"
+                  HorizontalGridLinesBrush="{StaticResource BorderBrush}"
+                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  CanUserResizeRows="False">
+            <DataGrid.ColumnHeaderStyle>
+                <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                    <Setter Property="FontWeight" Value="Bold"/>
+                    <Setter Property="FontSize" Value="11"/>
+                    <Setter Property="Padding" Value="10,0"/>
+                    <Setter Property="Height" Value="34"/>
+                </Style>
+            </DataGrid.ColumnHeaderStyle>
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="STATUS"       Binding="{Binding Status}"      Width="90"/>
+                <DataGridTextColumn Header="NAME"         Binding="{Binding ServiceName}" Width="160"/>
+                <DataGridTextColumn Header="DISPLAY NAME" Binding="{Binding DisplayName}" Width="200"/>
+                <DataGridTemplateColumn Header="ANALYSIS" Width="82" MinWidth="82">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Style="{StaticResource AnalysisCellStyle}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="SIGNED" Width="140">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Style="{StaticResource SignedCellStyle}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="USER"         Binding="{Binding User}"        Width="100"/>
+                <DataGridTemplateColumn Header="STARTUP TYPE" Width="130">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <ComboBox SelectedItem="{Binding StartupType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      SelectionChanged="StartupType_SelectionChanged"
+                                      FontSize="12"
+                                      Padding="2"
+                                      Margin="2,0">
+                                <sys:String xmlns:sys="clr-namespace:System;assembly=mscorlib">Automatic</sys:String>
+                                <sys:String xmlns:sys="clr-namespace:System;assembly=mscorlib">Manual</sys:String>
+                                <sys:String xmlns:sys="clr-namespace:System;assembly=mscorlib">Disabled</sys:String>
+                            </ComboBox>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="DESCRIPTION"  Binding="{Binding Description}" Width="*"/>
+                <DataGridTemplateColumn Header="ACTIONS" Width="210">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="4,2">
+                                <Button Content="Start" Tag="{Binding}" Click="StartSvc_Click"
+                                        Padding="8,4" Margin="0,0,4,0" FontSize="11"
+                                        Background="{StaticResource AccentGreenBrush}" Foreground="White"
+                                        BorderThickness="0" Cursor="Hand"/>
+                                <Button Content="Stop" Tag="{Binding}" Click="StopSvc_Click"
+                                        Padding="8,4" Margin="0,0,4,0" FontSize="11"
+                                        Background="{StaticResource AccentRedBrush}" Foreground="White"
+                                        BorderThickness="0" Cursor="Hand"/>
+                                <Button Content="Restart" Tag="{Binding}" Click="RestartSvc_Click"
+                                    Padding="8,4" Margin="0,0,4,0" FontSize="11"
+                                        Background="{StaticResource AccentYellowBrush}" Foreground="White"
+                                        BorderThickness="0" Cursor="Hand"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Loading overlay -->
+        <Border Grid.Row="3" Background="#80FFFFFF"
+                Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="Loading..." FontSize="16" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBlueBrush}"
+                           HorizontalAlignment="Center"/>
+                <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,12,0,0"
+                             Foreground="{StaticResource AccentBlueBrush}" BorderThickness="0"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

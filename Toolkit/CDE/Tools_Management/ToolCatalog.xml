@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ToolCatalog>
+  <!-- Boot-class payloads are staged onto USB via tools_manifest (Boot\*) and Prepare-BootableUSB / SyncUSB. -->
+  <Category name="BOOT ENVIRONMENT TOOLS">
+    <Tool name="Core Hardware Utility (UEFI)"
+          description="Core Hardware Utility UEFI pre-boot diagnostic application."
+          relativePath="Boot\CoreHardwareUtility\CoreDiag.efi"
+          dlUrl=""
+          dlFile=""
+          downloadType="file"
+          memberPath=""
+          executionMode="boot_efi"
+          windowsBcdSupport="no"
+          winpeSupport="boot_only"
+          monetizationApproved="true"
+          approvalSource="OwnerApprovedAllowlist"
+          approvedOn="2026-05-05"
+          requiresAdmin="true"
+          requiresNetwork="false"
+          licenseNote="Built in-house from the Core Hardware Utility project; stage CoreDiag.efi into Toolkit\Tools\Boot\CoreHardwareUtility\."
+          sourceUrl="" />
+    <Tool name="Windows Memory Diagnostic (Microsoft memtest.efi)"
+          description="Microsoft Windows Memory Diagnostic EFI loader for UEFI BCD boot."
+          relativePath="Boot\WinMemoryDiag\memtest.efi"
+          dlUrl=""
+          dlFile=""
+          downloadType="file"
+          memberPath=""
+          executionMode="boot_efi"
+          windowsBcdSupport="yes"
+          winpeSupport="boot_only"
+          monetizationApproved="true"
+          approvalSource="OwnerApprovedAllowlist"
+          approvedOn="2026-05-04"
+          requiresAdmin="true"
+          requiresNetwork="false"
+          licenseNote="Microsoft Windows component; run Toolkit\Tools\Ensure-BootArtifacts.ps1 or copy %Windir%\Boot\EFI\memtest.efi"
+          sourceUrl="https://learn.microsoft.com/windows-hardware/" />
+  </Category>
+</ToolCatalog>

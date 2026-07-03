@@ -1,0 +1,121 @@
+# Diagnostics
+
+This chapter covers the main **find problems** tools in the MAIN sidebar section.
+
+## System Health Check
+
+**What this does:** Runs a catalog of automated checks (vitals, deep system info, audits, security reviews) and presents easy-to-read grouped results with a PDF report.
+
+### When to use it
+
+- First pass on any machine (quick overview)
+- Before and after major repairs (before/after comparison)
+- When you need one report covering many areas
+
+### Steps
+
+1. Sidebar → **System Health Check**
+2. Use a preset (**Recommended**, **Quick Vitals**, **Deep System**, **Full Audit**) or tick individual checks in the category list (**Select All** / **Clear All** as needed)
+3. Click **Run Health Check**
+4. Review grouped cards — green Pass, yellow Warn, red Fail
+5. Click **Open Report** for a printable PDF summary (`Logs\`)
+
+### What is included
+
+| Category | Examples |
+|----------|----------|
+| Quick Vitals | OS version, CPU load, RAM, disk space, activation, recent errors |
+| Deep System | Drivers, Windows Update stack, network adapters, GPU, critical events |
+| System Audit | Installed software, services, startup entries, event logs, partitions |
+| Security Audits | Autoruns, hosts file, browser extensions, scheduled tasks, browser hijack, network hijack, security tampering, remote access |
+
+> **Important:** Heavy scans (SMART deep tests, Defender, line-item hardware tests) are **not** in Health Check — use **S.M.A.R.T. Analyzer**, **Diag & Repair**, and **Malware Cleanup** instead.
+
+---
+
+## S.M.A.R.T. Analyzer
+
+**What this does:** Reads disk self-monitoring data (SMART) for fixed internal and external drives and shows health attributes.
+
+> **Removable media:** USB flash drives, memory cards, and other removable media are **not** listed or scanned (including the CDE boot USB in WinPE). USB external hard drives that report as fixed media may still appear.
+
+### Steps
+
+1. Sidebar → **S.M.A.R.T. Analyzer**
+2. Select a drive from the list
+3. Click **Scan** (or refresh)
+4. Review overall health badge and attribute table
+5. **Open Report** if you need a PDF record (`Logs\`)
+
+### Next steps
+
+- Failing SMART → recommend drive replacement; run **Diag & Repair → Storage** for read tests
+- Healthy SMART but slow disk → check free space (Health Check) and temp files (**Temp File Cleaner**)
+
+---
+
+## Diag & Repair
+
+**What this does:** Runs detailed line-by-line hardware tests (CPU, memory, storage) plus an optional **Core Security Tool** scan-only pass — similar to commercial PC diagnostic suites.
+
+### Profiles
+
+| Profile | Use when |
+|---------|----------|
+| **Quick** | Bench triage; shorter run times |
+| **Extended** | Deeper stress; more thorough disk and CPU work |
+
+### Steps
+
+1. Sidebar → **Diag & Repair**
+2. Choose **Quick** or **Extended**
+3. Click **Run All Tests** or run **CPU Tests**, **Memory Tests**, **Storage Tests**, or **CST Scan** individually
+4. Watch the live results table as each sub-test completes
+5. After CST scan, review the post-scan dialog for detections (remediation optional)
+6. A PDF report is saved under `Logs\` when the run finishes. With an active work order, use **Dashboard → Case timeline → Open Report**; there is no **Open Report** button on the Diag & Repair screen itself
+
+> **Tip:** Run CDE as Administrator for full storage physical-read tests. In WinPE with offline Windows loaded, CST can scan the customer's volume.
+
+> **Removable media:** Storage tests run only on **fixed testable** drives. USB flash sticks, SD/microSD cards, and the toolkit boot USB are excluded automatically. If no fixed drives are present, storage discovery **fails** with no physical drives detected.
+
+---
+
+## Testable drive policy (Diag & Repair, S.M.A.R.T., CHU)
+
+CDE and CHU use the same intent: **do not hardware-test removable media.**
+
+| Surface | What is excluded | What may still be tested |
+|---------|------------------|---------------------------|
+| **Diag & Repair → Storage** | Removable media (`Win32_DiskDrive.MediaType` / `Get-Disk.IsRemovable`) | Internal SATA/NVMe; many USB external HDDs (fixed media) |
+| **S.M.A.R.T. Analyzer** | Same filter via `PhysicalDiskCatalog.psm1` | Same |
+| **CHU (UEFI)** | `EFI_BLOCK_IO_MEDIA.RemovableMedia` at drive enumeration | Fixed disks only in the storage test tree |
+
+**Not affected:** Disk & Boot Repair still lists all disks (including removable) for layout and repair work. System Health disk inventory is unchanged.
+
+---
+
+## CHU Pre-Boot Results
+
+**What this does:** Shows JSON results from **Core Hardware Utility** (`CoreDiag.efi`) after you run pre-boot hardware tests from the rEFInd menu.
+
+### Steps
+
+1. Boot USB → rEFInd → **Core Hardware Utility**
+2. Run memory, storage, or CPU tests (or Run All) — storage tests target **fixed** drives only (boot USB and other removable media are not listed)
+3. Boot back into CDE WinPE or Windows
+4. Sidebar → **CHU Pre-Boot Results** → **Refresh**
+
+Results are stored on the toolkit volume under `EFI\CoreDiag\Results`.
+
+The status bar shows a **rollup** (pass / warn / fail counts). When a test maps to the hardware catalog, the row shows the catalog display name. For warned or failed tests, use **Open matching Diag & Repair test** to jump to the same test in Diag & Repair (highlighted, no auto-run). With an active work order, loading results also adds a **CHU pre-boot** entry to the Dashboard case timeline.
+
+---
+
+## CHU vs Diag & Repair
+
+| Tool | When it runs | Best for |
+|------|--------------|----------|
+| **CHU (UEFI)** | Before Windows starts | Raw hardware validation, no OS interference |
+| **Diag & Repair (WinPE/Windows)** | Inside CDE GUI | Technician workflow, combined with CST, live progress in CDE |
+
+Use both when a machine has intermittent hardware faults — CHU for pre-boot proof, Diag & Repair for documented in-session runs with PDF workflow output.

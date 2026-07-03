@@ -1,0 +1,67 @@
+﻿{
+    "manifestVersion":  2,
+    "manifestSchemaVersion":  "2.0.0",
+    "generatedUtc":  "2026-05-05T08:02:19Z",
+    "generatedBy":  "CDE Tools Onboarding Pipeline",
+    "checksumAlgorithm":  "SHA256",
+    "sourcePolicy":  "official_only",
+    "notes":  "Use official project/vendor sources only. manual_required indicates user-supplied artifact is needed.",
+    "entries":  [
+                    {
+                        "name":  "Core Hardware Utility (UEFI)",
+                        "relativePath":  "Diagnostics/Memory/CoreHardwareUtility/CoreDiag.efi",
+                        "executionMode":  "boot_efi",
+                        "sourceUrl":  "",
+                        "preferredVersion":  "CURRENT",
+                        "pinned":  true,
+                        "monetizationApproved":  true,
+                        "approvalSource":  "OwnerApprovedAllowlist",
+                        "approvedOn":  "2026-05-05",
+                        "status":  "acquired",
+                        "sha256":  "3C9A0DD03691E59A67FC37292C79B937C7A8B520AF81ED8819FF5F8135B1788F",
+                        "sizeBytes":  65024
+                    },
+                    {
+                        "name":  "Windows Memory Diagnostic (Microsoft memtest.efi)",
+                        "relativePath":  "Diagnostics/Memory/WinMemoryDiag/memtest.efi",
+                        "executionMode":  "boot_efi",
+                        "sourceUrl":  "https://learn.microsoft.com/windows-hardware/",
+                        "preferredVersion":  "FROM_OS_MEDIA",
+                        "pinned":  true,
+                        "monetizationApproved":  true,
+                        "approvalSource":  "OwnerApprovedAllowlist",
+                        "approvedOn":  "2026-05-04",
+                        "status":  "acquired",
+                        "sha256":  "3D91DA0DD1B4F5A771A51192B5F5AEF6D9B9E5DADBF0A490B7554FC21ECC3F54",
+                        "sizeBytes":  2610664
+                    },
+                    {
+                        "name":  "MemTest86 (Memory Diagnostic Boot Image)",
+                        "relativePath":  "Diagnostics/Memory/MemTest86/memtest86-usb.img",
+                        "executionMode":  "boot_bios",
+                        "sourceUrl":  "https://www.memtest86.com/",
+                        "preferredVersion":  "LATEST",
+                        "pinned":  false,
+                        "monetizationApproved":  true,
+                        "approvalSource":  "OwnerApprovedAllowlist",
+                        "approvedOn":  "2026-05-04",
+                        "status":  "acquired",
+                        "sha256":  "0",
+                        "sizeBytes":  0
+                    },
+                    {
+                        "name":  "7-Zip Command Line Tool",
+                        "relativePath":  "Windows Tools/Utilities/7Zip/7z.exe",
+                        "executionMode":  "utility",
+                        "sourceUrl":  "https://www.7-zip.org/",
+                        "preferredVersion":  "24.x+",
+                        "pinned":  false,
+                        "monetizationApproved":  true,
+                        "approvalSource":  "OpenSourceAllowlist",
+                        "approvedOn":  "2026-05-04",
+                        "status":  "acquired",
+                        "sha256":  "0",
+                        "sizeBytes":  0
+                    }
+                ]
+}

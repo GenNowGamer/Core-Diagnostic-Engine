@@ -1,0 +1,46 @@
+{
+  "ScanMode": "ThreatScan",
+  "GeneratedAt": "2026-06-26T12:00:00Z",
+  "ScanConfiguration": {
+    "Mode": "ThreatScan",
+    "DetectionScope": "Standard"
+  },
+  "Summary": {
+    "ItemsScanned": 42,
+    "ThreatCount": 1,
+    "WarningCount": 1,
+    "ThreatsFound": 1,
+    "WarningsFound": 1
+  },
+  "Findings": [
+    {
+      "Type": "Malware",
+      "Severity": "High",
+      "Name": "Test.Malware",
+      "Detector": "Hash",
+      "Confidence": 0.99,
+      "Location": "C:\\temp\\bad.exe",
+      "Evidence": "hash match"
+    },
+    {
+      "Type": "Suspicious",
+      "Severity": "Medium",
+      "Name": "Test.Suspicious",
+      "Detector": "PathHeuristic",
+      "Confidence": 0.72,
+      "Location": "C:\\temp\\odd.exe",
+      "Evidence": "heuristic"
+    }
+  ],
+  "SuppressedAuditFindings": [
+    {
+      "Type": "Audit",
+      "Severity": "Low",
+      "Name": "Test.Audit",
+      "Detector": "StartupAudit",
+      "Confidence": 0.80,
+      "Location": "HKLM\\Software",
+      "Evidence": "audit only"
+    }
+  ]
+}

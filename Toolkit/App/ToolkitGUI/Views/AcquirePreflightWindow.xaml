@@ -1,0 +1,62 @@
+<Window x:Class="ToolkitGUI.Views.AcquirePreflightWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Acquire Preflight"
+        Height="560"
+        Width="880"
+        MinHeight="480"
+        MinWidth="760"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Review acquire details before continuing."
+                   FontSize="15"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,10"/>
+
+        <TextBox x:Name="SummaryTextBox"
+                 Grid.Row="1"
+                 IsReadOnly="True"
+                 TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 AcceptsReturn="True"/>
+
+        <Grid Grid.Row="2" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="1"
+                    Content="Copy"
+                    MinWidth="90"
+                    Margin="0,0,8,0"
+                    Padding="12,6"
+                    Click="CopyButton_Click"/>
+            <Button Grid.Column="2"
+                    Content="Cancel"
+                    MinWidth="90"
+                    Margin="0,0,8,0"
+                    Padding="12,6"
+                    IsCancel="True"
+                    Click="CancelButton_Click"/>
+            <Button Grid.Column="3"
+                    Content="Proceed"
+                    MinWidth="90"
+                    Padding="12,6"
+                    IsDefault="True"
+                    Click="ProceedButton_Click"/>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,40 @@
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                  CDE Diagnostic Suite - Boot Menu                         ║
+║                       Windows PE 10 (x64 Edition)                         ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+[DEFAULT]   CDE Diagnostic Suite (Recommended)
+            Boots Windows PE with ToolkitGUI diagnostic interface.
+            Provides full system diagnostics, repair tools, and utilities.
+
+[SHELL]     CDE Command Shell (Advanced Users)
+            Boots to command prompt for manual system troubleshooting.
+            Direct kernel and system access for advanced diagnostics.
+
+[MEMTEST]   Memory Diagnostic Tool
+            Comprehensive memory testing utility.
+            Tests system RAM for hardware errors.
+
+[HD]        Boot from Hard Drive
+            Exits diagnostic environment and boots installed Windows.
+            Use if you need to restore normal operation immediately.
+
+[REBOOT]    Reboot System
+            Immediately reboots the computer.
+            Safe option for exiting without booting an OS.
+
+────────────────────────────────────────────────────────────────────────────
+
+USAGE:
+  • Type the bracketed label above (e.g., DEFAULT, SHELL, MEMTEST)
+  • Or use arrow keys to highlight and press ENTER
+  • Press TAB to edit boot command line (advanced)
+  • Press ESC to cancel
+
+Boot will proceed automatically in 25 seconds.
+
+────────────────────────────────────────────────────────────────────────────
+CDE Beta Test v1.0.0 | MRI-Compatible Architecture | Diagnostic Toolkit
+═══════════════════════════════════════════════════════════════════════════════
+

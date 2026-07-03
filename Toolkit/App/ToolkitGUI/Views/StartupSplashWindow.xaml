@@ -1,0 +1,33 @@
+<Window x:Class="ToolkitGUI.Views.StartupSplashWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Core Diagnostic Engine"
+        Width="720"
+        Height="405"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        WindowStartupLocation="CenterScreen"
+        Background="Black"
+        MouseDown="Splash_MouseDown">
+    <Grid>
+        <Image Source="/ToolkitGUI;component/Assets/splash_1920x1080.png"
+               Stretch="UniformToFill"
+               Opacity="0.95" />
+        <Border VerticalAlignment="Bottom"
+                Background="#B30B111A"
+                Padding="28,20">
+            <StackPanel>
+                <TextBlock Text="Core Diagnostic Engine"
+                           Foreground="White"
+                           FontSize="28"
+                           FontWeight="SemiBold" />
+                <TextBlock x:Name="VersionText"
+                           Margin="0,6,0,0"
+                           Foreground="#CCFFFFFF"
+                           FontSize="14" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

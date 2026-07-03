@@ -1,0 +1,6 @@
+[autorun]
+open=CDE.exe
+icon=CDE.exe,0
+label=CDE Diagnostic Suite
+useAutoPlay=1
+

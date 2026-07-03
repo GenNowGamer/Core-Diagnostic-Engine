@@ -1,0 +1,57 @@
+# WinPE DISM mount point — transient working directory
+Mount/
+
+# Runtime logs
+Logs/
+
+# Large binary — rebuilt by Customize-WinPE.ps1
+sources/boot.wim
+
+# .NET build outputs
+App/ToolkitGUI/bin/
+App/ToolkitGUI/obj/
+App/CDELauncher/bin/
+App/CDELauncher/obj/
+CDE/ToolkitGUI/bin/
+CDE/ToolkitGUI/obj/
+**/*.user
+**/.vs/
+
+# OS artifacts
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Generated ISO images (rebuilt by CreateISO.ps1 / PrepareUSB.vbs)
+Deploy/*.iso
+
+# BCD runtime log files written by Windows bootloader
+EFI/microsoft/boot/BCD.LOG
+EFI/microsoft/boot/BCD.LOG1
+EFI/microsoft/boot/BCD.LOG2
+
+# Temporary script output captures
+script_output.txt
+
+# Deploy tools (large binaries, not source-controlled)
+Tools/Deploy/
+
+# Portable Firefox ESR browser payload (large binaries, deployed via SyncUSB.bat)
+Tools/Firefox/
+
+# Local workspace/editor settings
+.vscode/settings.json
+
+# Local one-off maintenance helpers
+do_update.ps1
+update_script.ps1
+
+# Temporary image export artifacts
+EFI/boot/icons/*.tmp.png
+
+# Mirrored launcher output copied by publish script
+CDE.exe
+CDE/CDE.exe
+
+# Mirrored CST generated release gate artifacts
+Security/CST/perf_reports/release_gate_*

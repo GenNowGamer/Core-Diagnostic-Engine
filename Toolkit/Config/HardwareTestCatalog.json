@@ -1,0 +1,447 @@
+﻿{
+    "tests":  [
+                  {
+                      "id":  "cpu_level2_cache",
+                      "displayName":  "Level 2 Cache Test",
+                      "category":  "CPU",
+                      "order":  1,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunCacheTest",
+                                              "uefi":  "CpuRunCacheTest"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_register",
+                      "displayName":  "Register Test",
+                      "category":  "CPU",
+                      "order":  2,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunRegisterTest",
+                                              "uefi":  "CpuRunRegisterTest"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_mmx",
+                      "displayName":  "MMX Test",
+                      "category":  "CPU",
+                      "order":  3,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunMmxTest",
+                                              "uefi":  "CpuRunMmxTest"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_sse",
+                      "displayName":  "SSE Test",
+                      "category":  "CPU",
+                      "order":  4,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunSseTest",
+                                              "uefi":  "CpuRunSseTest"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_sse2",
+                      "displayName":  "SSE2 Test",
+                      "category":  "CPU",
+                      "order":  5,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunSse2Test",
+                                              "uefi":  "CpuRunSse2Test"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_sse3",
+                      "displayName":  "SSE3 Test",
+                      "category":  "CPU",
+                      "order":  6,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunSse3Test",
+                                              "uefi":  "CpuRunSse3Test"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_ssse3",
+                      "displayName":  "SSSE3 Test",
+                      "category":  "CPU",
+                      "order":  7,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunSsse3Test",
+                                              "uefi":  "CpuRunSsse3Test"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_sse41",
+                      "displayName":  "SSE4.1 Test",
+                      "category":  "CPU",
+                      "order":  8,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunSse41Test",
+                                              "uefi":  "CpuRunSse41Test"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_sse42",
+                      "displayName":  "SSE4.2 Test",
+                      "category":  "CPU",
+                      "order":  9,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunSse42Test",
+                                              "uefi":  "CpuRunSse42Test"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_math_register",
+                      "displayName":  "Math Register Test",
+                      "category":  "CPU",
+                      "order":  10,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunMathRegisterTest",
+                                              "uefi":  "CpuRunMathRegisterTest"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_prime",
+                      "displayName":  "Prime Number Generation Test",
+                      "category":  "CPU",
+                      "order":  11,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunPrimeGenerationTest",
+                                              "uefi":  "CpuRunPrimeTest"
+                                          }
+                  },
+                  {
+                      "id":  "cpu_fpu",
+                      "displayName":  "Floating Point Unit Test",
+                      "category":  "CPU",
+                      "order":  12,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunFpuTest",
+                                              "uefi":  "CpuRunFpuTest"
+                                          }
+                  },
+                  {
+                      "id":  "mem_address",
+                      "displayName":  "Address Test",
+                      "category":  "Memory",
+                      "order":  1,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "AddressTest",
+                                              "uefi":  "MemRunAddressTest"
+                                          }
+                  },
+                  {
+                      "id":  "mem_aux_pattern",
+                      "displayName":  "Auxiliary Pattern Test",
+                      "category":  "Memory",
+                      "order":  2,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "AuxPatternTest",
+                                              "uefi":  "MemRunAuxPatternTest"
+                                          }
+                  },
+                  {
+                      "id":  "mem_bit_high",
+                      "displayName":  "Bit High Test",
+                      "category":  "Memory",
+                      "order":  3,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "BitHighTest",
+                                              "uefi":  "MemRunFillFF"
+                                          }
+                  },
+                  {
+                      "id":  "mem_bit_low",
+                      "displayName":  "Bit Low Test",
+                      "category":  "Memory",
+                      "order":  4,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "BitLowTest",
+                                              "uefi":  "MemRunFill00"
+                                          }
+                  },
+                  {
+                      "id":  "mem_checkerboard",
+                      "displayName":  "Checkerboard Test",
+                      "category":  "Memory",
+                      "order":  5,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "CheckerboardTest",
+                                              "uefi":  "MemRunCheckerboard"
+                                          }
+                  },
+                  {
+                      "id":  "mem_modulo20",
+                      "displayName":  "Modulo20 Test",
+                      "category":  "Memory",
+                      "order":  6,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "Modulo20Test",
+                                              "uefi":  "MemRunModulo20"
+                                          }
+                  },
+                  {
+                      "id":  "mem_moving_inversion",
+                      "displayName":  "Moving Inversion Test",
+                      "category":  "Memory",
+                      "order":  7,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "MovingInversionTest",
+                                              "uefi":  "MemRunMovingInversion"
+                                          }
+                  },
+                  {
+                      "id":  "mem_nibble_move",
+                      "displayName":  "Nibble Move Test",
+                      "category":  "Memory",
+                      "order":  8,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "NibbleMoveTest",
+                                              "uefi":  "MemRunNibbleMove"
+                                          }
+                  },
+                  {
+                      "id":  "mem_walking_left",
+                      "displayName":  "Walking Ones Left Test",
+                      "category":  "Memory",
+                      "order":  9,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "WalkingOnesLeftTest",
+                                              "uefi":  "MemRunWalkingLeft"
+                                          }
+                  },
+                  {
+                      "id":  "mem_walking_right",
+                      "displayName":  "Walking Ones Right Test",
+                      "category":  "Memory",
+                      "order":  10,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "WalkingOnesRightTest",
+                                              "uefi":  "MemRunWalkingRight"
+                                          }
+                  },
+                  {
+                      "id":  "stor_smart_thresholds",
+                      "displayName":  "SMART Thresholds Test",
+                      "category":  "HardDrive",
+                      "order":  1,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "SmartThresholds",
+                                              "uefi":  "StorRunSmartThresholds"
+                                          }
+                  },
+                  {
+                      "id":  "stor_smart_status",
+                      "displayName":  "SMART Status Test",
+                      "category":  "HardDrive",
+                      "order":  2,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "SmartStatus",
+                                              "uefi":  "StorRunSmartStatus"
+                                          }
+                  },
+                  {
+                      "id":  "stor_targeted_read",
+                      "displayName":  "Targeted Read Test",
+                      "category":  "HardDrive",
+                      "order":  3,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "TargetedRead",
+                                              "uefi":  "StorRunTargetedRead"
+                                          }
+                  },
+                  {
+                      "id":  "stor_linear_read",
+                      "displayName":  "Linear Read Test",
+                      "category":  "HardDrive",
+                      "order":  4,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "LinearRead",
+                                              "uefi":  "StorRunLinearRead"
+                                          }
+                  },
+                  {
+                      "id":  "stor_linear_read_end",
+                      "displayName":  "Linear Read Test (2)",
+                      "category":  "HardDrive",
+                      "order":  5,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "LinearReadEnd",
+                                              "uefi":  "StorRunLinearReadEnd"
+                                          }
+                  },
+                  {
+                      "id":  "stor_smart_self_test",
+                      "displayName":  "SMART Short Self Test",
+                      "category":  "HardDrive",
+                      "order":  6,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "SmartSelfTest",
+                                              "uefi":  "StorRunSmartSelfTest"
+                                          }
+                  }
+              ],
+    "profiles":  {
+                     "quick":  {
+                                   "registerIterations":  25000000,
+                                   "cacheSizeBytes":  33554432,
+                                   "cachePasses":  3,
+                                   "primeLimit":  50000,
+                                   "expectedPrimeCount":  5133,
+                                   "fpuLoops":  75000,
+                                   "memoryPatternPasses":  2,
+                                   "memoryBlockCount":  2,
+                                   "memorySizeCapMb":  192,
+                                   "memorySizeFloorMb":  96,
+                                   "memoryFreePercent":  0.12,
+                                   "memoryWinPeMb":  192,
+                                   "storageRandomReads":  64,
+                                   "storageLinearReadMb":  32,
+                                   "cpuStressSeconds":  20,
+                                   "smartSelfTestTimeoutSec":  120,
+                                   "failOnSkipInExtended":  false,
+                                   "movingInversionPatterns":  [
+                                                                   0,
+                                                                   255
+                                                               ]
+                               },
+                     "extended":  {
+                                      "registerIterations":  100000000,
+                                      "cacheSizeBytes":  67108864,
+                                      "cachePasses":  5,
+                                      "primeLimit":  1000000,
+                                      "expectedPrimeCount":  78498,
+                                      "fpuLoops":  500000,
+                                      "memoryPatternPasses":  4,
+                                      "memoryBlockCount":  6,
+                                      "memorySizeCapMb":  768,
+                                      "memorySizeFloorMb":  384,
+                                      "memoryFreePercent":  0.25,
+                                      "memoryWinPeMb":  384,
+                                      "storageRandomReads":  256,
+                                      "storageLinearReadMb":  512,
+                                      "cpuStressSeconds":  120,
+                                      "smartSelfTestTimeoutSec":  300,
+                                      "failOnSkipInExtended":  true,
+                                      "movingInversionPatterns":  [
+                                                                      0,
+                                                                      255
+                                                                  ]
+                                  }
+                 },
+    "version":  1,
+    "source":  "D:\\Robert\\Desktop\\App Project Builds\\Core Hardware Utility\\Core_Hardware_Utility.json",
+    "syncedAt":  "2026-07-03T12:31:26.8849374-05:00"
+}

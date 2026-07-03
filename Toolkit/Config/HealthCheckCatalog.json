@@ -1,0 +1,309 @@
+{
+  "version": 1,
+  "categories": [
+    {
+      "id": "quick_vitals",
+      "label": "Quick Vitals",
+      "checks": [
+        { "id": "os_version", "label": "OS Version", "description": "Windows edition and build number.", "estimatedMinutes": 0.1, "winPe": "available" },
+        { "id": "cpu_load", "label": "CPU Load Snapshot", "description": "Current processor load percentage.", "estimatedMinutes": 0.1, "winPe": "available" },
+        { "id": "ram", "label": "RAM Availability", "description": "Physical memory used and free.", "estimatedMinutes": 0.1, "winPe": "available" },
+        { "id": "disk_space", "label": "Disk Free Space", "description": "Free space on all file-system drives.", "estimatedMinutes": 0.2, "winPe": "available" },
+        { "id": "activation", "label": "Windows Activation", "description": "Whether Windows is activated.", "estimatedMinutes": 0.2, "winPe": "windows_only" },
+        { "id": "event_errors_24h", "label": "System Event Errors (24h)", "description": "Count of System log errors in the last 24 hours.", "estimatedMinutes": 0.5, "winPe": "windows_only" }
+      ]
+    },
+    {
+      "id": "deep_system",
+      "label": "Deep System",
+      "checks": [
+        { "id": "system_info", "label": "System Information", "description": "CPU, RAM, and motherboard summary.", "estimatedMinutes": 0.2, "winPe": "available" },
+        { "id": "driver_signature_audit", "label": "Driver Signature Audit", "description": "PnP signed drivers and unsigned count.", "estimatedMinutes": 1.0, "winPe": "windows_only" },
+        { "id": "windows_update_service", "label": "Windows Update Service", "description": "wuauserv, UsoSvc, BITS, and WaaSMedicSvc status and startup type.", "estimatedMinutes": 0.2, "winPe": "windows_only" },
+        { "id": "network_adapters", "label": "Network Adapters", "description": "Present adapters and link status.", "estimatedMinutes": 0.3, "winPe": "available" },
+        { "id": "gpu_info", "label": "GPU Information", "description": "Video controllers and driver versions.", "estimatedMinutes": 0.2, "winPe": "available" },
+        { "id": "critical_events_7d", "label": "Critical Events (7 days)", "description": "Critical and error events from System and Application logs.", "estimatedMinutes": 1.0, "winPe": "windows_only" }
+      ]
+    },
+    {
+      "id": "system_audit",
+      "label": "System Audit",
+      "checks": [
+        { "id": "audit_system_info", "label": "System Information (audit)", "description": "Formatted OS, CPU, RAM, and board details.", "estimatedMinutes": 0.3, "winPe": "available" },
+        { "id": "audit_installed_software", "label": "Installed Software", "description": "Applications from registry uninstall keys.", "estimatedMinutes": 1.0, "winPe": "available" },
+        { "id": "audit_drivers", "label": "Drivers (state/start mode)", "description": "System drivers; flags stopped auto-start drivers.", "estimatedMinutes": 0.5, "winPe": "available" },
+        { "id": "audit_pnp_devices", "label": "PnP Devices", "description": "Plug-and-play devices with driver problems.", "estimatedMinutes": 1.0, "winPe": "unavailable" },
+        { "id": "audit_services", "label": "Services", "description": "Auto-start services and stopped ones.", "estimatedMinutes": 0.5, "winPe": "available" },
+        { "id": "audit_startup", "label": "Startup Entry Audit", "description": "Auto-start entries with risk assessment.", "estimatedMinutes": 1.0, "winPe": "available" },
+        { "id": "audit_network_config", "label": "Network Configuration", "description": "IP configuration per adapter.", "estimatedMinutes": 0.3, "winPe": "available" },
+        { "id": "audit_event_logs", "label": "Event Logs (24h, deduped)", "description": "Unique System and Application errors in 24h.", "estimatedMinutes": 1.0, "winPe": "available" },
+        { "id": "audit_partition_table", "label": "Partition Table", "description": "Disk partition layout.", "estimatedMinutes": 0.3, "winPe": "available" }
+      ]
+    },
+    {
+      "id": "security",
+      "label": "Security Audits",
+      "checks": [
+        { "id": "sec_autoruns", "label": "Autoruns Audit", "description": "Startup locations for suspicious paths.", "estimatedMinutes": 1.0, "winPe": "offline_registry" },
+        { "id": "sec_hosts", "label": "Hosts File Check", "description": "Non-default hosts file entries.", "estimatedMinutes": 0.2, "winPe": "available" },
+        { "id": "sec_browser_extensions", "label": "Browser Extensions Scan", "description": "Installed browser extensions inventory.", "estimatedMinutes": 1.0, "winPe": "unavailable" },
+        { "id": "sec_scheduled_tasks", "label": "Scheduled Tasks Audit", "description": "Non-Microsoft scheduled tasks review.", "estimatedMinutes": 1.0, "winPe": "unavailable" },
+        { "id": "sec_browser_hijack", "label": "Browser Hijack Audit", "description": "Homepage, search provider, startup URLs, and browser policy overrides.", "estimatedMinutes": 0.5, "winPe": "unavailable" },
+        { "id": "sec_network_hijack", "label": "Network Hijack Audit", "description": "Proxy, PAC, DNS servers, and NRPT rules.", "estimatedMinutes": 0.3, "winPe": "available" },
+        { "id": "sec_security_tampering", "label": "Security Tampering Audit", "description": "Defender, firewall, UAC, and SmartScreen drift.", "estimatedMinutes": 0.3, "winPe": "unavailable" },
+        { "id": "sec_remote_access", "label": "Remote Access Inventory", "description": "Remote support tools and RDP exposure.", "estimatedMinutes": 0.5, "winPe": "unavailable" }
+      ]
+    }
+  ],
+  "presets": {
+    "recommended": [
+      "cpu_load",
+      "ram",
+      "disk_space",
+      "audit_startup"
+    ],
+    "quick_vitals": [
+      "os_version",
+      "cpu_load",
+      "ram",
+      "disk_space",
+      "activation",
+      "event_errors_24h"
+    ],
+    "deep_system": [
+      "system_info",
+      "driver_signature_audit",
+      "windows_update_service",
+      "network_adapters",
+      "gpu_info",
+      "critical_events_7d"
+    ],
+    "full_audit": [
+      "audit_system_info",
+      "audit_installed_software",
+      "audit_drivers",
+      "audit_pnp_devices",
+      "audit_services",
+      "audit_startup",
+      "audit_network_config",
+      "audit_event_logs",
+      "audit_partition_table"
+    ],
+    "slow_pc": [
+      "cpu_load",
+      "ram",
+      "disk_space",
+      "audit_startup",
+      "audit_event_logs",
+      "audit_services"
+    ],
+    "suspected_malware": [
+      "sec_autoruns",
+      "sec_hosts",
+      "sec_browser_extensions",
+      "sec_browser_hijack",
+      "sec_network_hijack",
+      "sec_security_tampering",
+      "sec_remote_access",
+      "sec_scheduled_tasks",
+      "audit_startup"
+    ],
+    "tech_support_scam": [
+      "sec_remote_access",
+      "sec_browser_hijack",
+      "sec_network_hijack",
+      "sec_security_tampering",
+      "sec_autoruns",
+      "sec_scheduled_tasks"
+    ],
+    "network_issues": [
+      "network_adapters",
+      "audit_network_config",
+      "sec_hosts",
+      "sec_network_hijack",
+      "windows_update_service"
+    ],
+    "wont_boot": [
+      "os_version",
+      "audit_system_info",
+      "disk_space",
+      "audit_partition_table"
+    ]
+  },
+  "recommendations": [
+    {
+      "whenCheckId": "disk_space",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Free disk space",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "TempFileCleaner", "label": "Temp File Cleaner" },
+        { "type": "shell", "target": "cleanmgr", "label": "Disk Cleanup (Windows)" }
+      ]
+    },
+    {
+      "whenCheckId": "audit_startup",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review startup entries",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "StartupManager", "label": "Startup Manager" },
+        { "type": "shell", "target": "taskmgr", "label": "Task Manager (Startup tab)" }
+      ]
+    },
+    {
+      "whenCheckId": "driver_signature_audit",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review driver signatures",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "SystemHealth", "label": "System Health Check" }
+      ]
+    },
+    {
+      "whenCheckId": "audit_drivers",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review system drivers",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "SystemHealth", "label": "System Health Check" },
+        { "type": "shell", "target": "devmgmt.msc", "label": "Device Manager" }
+      ]
+    },
+    {
+      "whenCheckId": "activation",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Check activation fixes",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "FastFixes", "label": "Fast Fixes" },
+        { "type": "shell", "target": "ms-settings:activation", "label": "Activation Settings" }
+      ]
+    },
+    {
+      "whenCheckId": "windows_update_service",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Fix Windows Update stack",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "FastFixes", "label": "Fast Fixes (Enable Windows Update Svc)" },
+        { "type": "cde", "target": "WindowsUpdateRepair", "label": "Windows Update Repair" },
+        { "type": "shell", "target": "services.msc", "label": "Services (Windows)" }
+      ]
+    },
+    {
+      "whenCheckId": "sec_autoruns",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review autoruns",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "SystemHealth", "label": "System Health Check" }
+      ]
+    },
+    {
+      "whenCheckId": "sec_browser_extensions",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review browser extensions",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "HijackRepair", "label": "Hijack & Scam Repair" },
+        { "type": "cde", "target": "SystemHealth", "label": "System Health Check" }
+      ]
+    },
+    {
+      "whenCheckId": "sec_hosts",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Repair hosts file redirect",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "PostOp", "label": "Post-Op Cleanup (Restore Hosts)" },
+        { "type": "cde", "target": "HijackRepair", "label": "Hijack & Scam Repair" }
+      ]
+    },
+    {
+      "whenCheckId": "sec_browser_hijack",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Repair browser hijack",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "HijackRepair", "label": "Hijack & Scam Repair" }
+      ]
+    },
+    {
+      "whenCheckId": "sec_network_hijack",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Repair network hijack",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "HijackRepair", "label": "Hijack & Scam Repair" },
+        { "type": "cde", "target": "PostOp", "label": "Post-Op Cleanup" }
+      ]
+    },
+    {
+      "whenCheckId": "sec_security_tampering",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Restore security settings",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "HijackRepair", "label": "Hijack & Scam Repair" },
+        { "type": "cde", "target": "FastFixes", "label": "Fast Fixes (Enable Defender)" }
+      ]
+    },
+    {
+      "whenCheckId": "sec_remote_access",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review remote access tools",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "UninstallManager", "label": "Uninstall Manager" },
+        { "type": "cde", "target": "StartupManager", "label": "Startup Manager" }
+      ]
+    },
+    {
+      "whenCheckId": "critical_events_7d",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review critical events",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "shell", "target": "eventvwr.msc", "label": "Event Viewer" }
+      ]
+    },
+    {
+      "whenCheckId": "audit_event_logs",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review event logs",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "shell", "target": "eventvwr.msc", "label": "Event Viewer" }
+      ]
+    },
+    {
+      "whenCheckId": "event_errors_24h",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review system errors",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "SystemHealth", "label": "System Health Check" },
+        { "type": "shell", "target": "eventvwr.msc", "label": "Event Viewer" }
+      ]
+    },
+    {
+      "whenCheckId": "cpu_load",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Inspect high CPU processes",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "ProcessAnalyzer:HighCpu", "label": "Process Analyzer (high CPU)" }
+      ]
+    },
+    {
+      "whenCheckId": "ram",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Inspect high memory processes",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "ProcessAnalyzer:HighRam", "label": "Process Analyzer (high RAM)" }
+      ]
+    }
+  ]
+}

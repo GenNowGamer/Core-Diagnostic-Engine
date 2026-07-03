@@ -1,0 +1,244 @@
+<Window x:Class="ToolkitGUI.Views.CstFindingsOperatorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Core Security Tool Findings"
+        Height="760"
+        Width="1180"
+        MinHeight="700"
+        MinWidth="1020"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        Background="{StaticResource BackgroundDarkBrush}">
+    <Window.Resources>
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
+            <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#D7DFEA"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#E1E6EF"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#CCD4E0"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Style="{StaticResource CardStyle}"
+                Padding="20">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Post-Scan Operator Actions"
+                               FontSize="24"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock x:Name="SummaryText"
+                               Margin="0,6,0,0"
+                               FontSize="13"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <Border Grid.Column="1"
+                        Padding="12,8"
+                        CornerRadius="16"
+                        Background="{StaticResource AccentBlueBrush}"
+                        VerticalAlignment="Top">
+                    <TextBlock Text="Review Ready"
+                               Foreground="White"
+                               FontWeight="SemiBold"
+                               FontSize="12"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1"
+                Margin="0,14,0,0"
+                Style="{StaticResource CardStyle}"
+                Padding="18,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Selection Controls" Style="{StaticResource SectionHeaderStyle}"/>
+                    <TextBlock x:Name="SelectionText"
+                               Margin="0,8,0,0"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="Select Actionable"
+                            MinWidth="150"
+                            Margin="0,0,10,0"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Click="SelectActionableButton_Click"/>
+                    <Button Content="Clear Selection"
+                            MinWidth="130"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Click="ClearSelectionButton_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Margin="0,14,0,0"
+                Style="{StaticResource CardStyle}"
+                Padding="0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Background="{StaticResource BackgroundLightBrush}"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="16,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Findings"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <TextBlock Text="Select concrete file traces to quarantine or remove. Scope-filtered rows remain visible for review."
+                                       Margin="0,4,0,0"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <TextBlock Grid.Column="1"
+                                   Text="Weak heuristic items show a warning badge"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </Grid>
+                </Border>
+
+                <DataGrid Grid.Row="1"
+                          x:Name="FindingsGrid"
+                          AutoGenerateColumns="False"
+                          CanUserAddRows="False"
+                          SelectionMode="Extended"
+                          IsReadOnly="False"
+                          ItemsSource="{Binding Findings}"
+                          Margin="0"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal"
+                          RowHeaderWidth="0"
+                          SelectionChanged="FindingsGrid_SelectionChanged"
+                          CellEditEnding="FindingsGrid_CellEditEnding">
+                    <DataGrid.Columns>
+                        <DataGridCheckBoxColumn Header="Pick" Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="55"/>
+                        <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="90" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Detector" Binding="{Binding Detector}" Width="170" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Object" Binding="{Binding ObjectType}" Width="95" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Severity" Binding="{Binding Severity}" Width="90" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Warning" Binding="{Binding WarningBadge}" Width="150" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="180" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="260" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Evidence" Binding="{Binding Evidence}" Width="240" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Selection" Binding="{Binding SelectionNote}" Width="200" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="State" Binding="{Binding RemediationState}" Width="90" IsReadOnly="True"/>
+                        <DataGridCheckBoxColumn Header="Actionable" Binding="{Binding CanRemediate}" Width="85" IsReadOnly="True"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="3"
+                Margin="0,14,0,0"
+                Style="{StaticResource CardStyle}"
+                Padding="14,12">
+            <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Text="Remove permanently deletes selected files. Quarantine moves selected files into the CST quarantine store with rollback metadata."
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,12,0"/>
+                <Button Grid.Column="1"
+                        Content="Quarantine Selected"
+                        MinWidth="150"
+                        Margin="0,0,8,0"
+                        Style="{StaticResource ActionButtonStyle}"
+                        Click="QuarantineButton_Click"/>
+                <Button Grid.Column="2"
+                        Content="Remove Selected"
+                        MinWidth="130"
+                        Margin="0,0,8,0"
+                        Style="{StaticResource ActionButtonStyle}"
+                        Click="RemoveButton_Click"/>
+                <Button Grid.Column="3"
+                        Content="Restore from Manifest..."
+                        MinWidth="170"
+                        Margin="0,0,8,0"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Click="RestoreFromManifestButton_Click"/>
+                <Button Grid.Column="4"
+                        Content="Close"
+                        MinWidth="90"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        IsCancel="True"
+                        Click="CloseButton_Click"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

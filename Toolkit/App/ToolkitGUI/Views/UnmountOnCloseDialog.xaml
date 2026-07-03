@@ -1,0 +1,46 @@
+<Window x:Class="ToolkitGUI.Views.UnmountOnCloseDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Offline OS Loaded"
+        Height="200"
+        Width="460"
+        MinHeight="200"
+        MinWidth="400"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="{StaticResource BackgroundDarkBrush}">
+    <Grid Margin="24,20,24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Text="An offline OS is currently loaded. Closing CDE will unmount it automatically.&#x0a;&#x0a;Proceed with unmounting the offline OS and closing?"
+                   Foreground="{StaticResource TextPrimaryBrush}"
+                   FontSize="13"
+                   TextWrapping="Wrap"
+                   VerticalAlignment="Center"/>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,16,0,0">
+            <Button x:Name="CancelButton"
+                    Content="Cancel"
+                    Width="90"
+                    Height="32"
+                    Margin="0,0,10,0"
+                    Style="{StaticResource ActionButtonStyle}"
+                    Background="{StaticResource BackgroundLightBrush}"
+                    Foreground="{StaticResource TextPrimaryBrush}"
+                    Click="CancelButton_Click"/>
+            <Button x:Name="ConfirmButton"
+                    Content="Confirm"
+                    Width="90"
+                    Height="32"
+                    Style="{StaticResource ActionButtonStyle}"
+                    Click="ConfirmButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

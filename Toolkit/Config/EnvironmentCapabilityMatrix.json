@@ -1,0 +1,322 @@
+{
+  "version": 1,
+  "columns": ["live_win10", "live_win11", "winpe_online", "winpe_offline"],
+  "workflows": {
+    "FastFixes": {
+      "actions": {
+        "List": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        },
+        "Apply": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "na",
+          "winpe_offline": "na"
+        }
+      }
+    },
+    "OSRepair": {
+      "actions": {
+        "Run": {
+          "live_win10": "requires_elevation",
+          "live_win11": "requires_elevation",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "HijackRepair": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "offline_registry",
+          "winpe_offline": "offline_registry"
+        }
+      }
+    },
+    "SystemHealthCheck": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "MalwareSweep": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "ProcessAnalyzer": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "na",
+          "winpe_offline": "na"
+        }
+      }
+    },
+    "StartupManager": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "offline_registry",
+          "winpe_offline": "offline_registry"
+        }
+      }
+    },
+    "TempFileCleaner": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "na",
+          "winpe_offline": "na"
+        }
+      }
+    },
+    "UninstallManager": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "offline_registry",
+          "winpe_offline": "offline_registry"
+        }
+      }
+    },
+    "PostOp": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "HardwareDiagnostics": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "SmartAnalyzer": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootloaderRepair": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BackupAndImage": {
+      "actions": {
+        "Run": {
+          "live_win10": "requires_elevation",
+          "live_win11": "requires_elevation",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "ValidateTools": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "HardwareCpuTests": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "HardwareMemoryTests": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "HardwareStorageTests": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootArtifactsBackup": {
+      "actions": {
+        "Run": {
+          "live_win10": "requires_elevation",
+          "live_win11": "requires_elevation",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "PartitionTableBackup": {
+      "actions": {
+        "Run": {
+          "live_win10": "requires_elevation",
+          "live_win11": "requires_elevation",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootloaderBcdBackup": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootloaderBcdRestore": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootloaderCheckIntegrity": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootloaderScanOs": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootloaderRebuildEfi": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootloaderBcdRepair": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootloaderFixBoot": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootloaderFixMbr": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "BootloaderRebuildBcd": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
+    },
+    "EnableOfflineAdministrator": {
+      "actions": {
+        "Run": {
+          "live_win10": "na",
+          "live_win11": "na",
+          "winpe_online": "requires_offline_registry",
+          "winpe_offline": "requires_offline_registry"
+        }
+      }
+    },
+    "DisableOfflineAdministrator": {
+      "actions": {
+        "Run": {
+          "live_win10": "na",
+          "live_win11": "na",
+          "winpe_online": "requires_offline_registry",
+          "winpe_offline": "requires_offline_registry"
+        }
+      }
+    }
+  }
+}

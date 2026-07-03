@@ -1,0 +1,188 @@
+<views:WorkflowViewBase x:Class="ToolkitGUI.Views.DiagAndRepairView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:ToolkitGUI.ViewModels"
+             xmlns:views="clr-namespace:ToolkitGUI.Views"
+             xmlns:models="clr-namespace:ToolkitGUI.Models"
+             Background="{StaticResource BackgroundDarkBrush}">
+    <views:WorkflowViewBase.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <models:InverseBooleanConverter x:Key="InverseBool"/>
+    </views:WorkflowViewBase.Resources>
+    <views:WorkflowViewBase.DataContext>
+        <vm:DiagAndRepairViewModel/>
+    </views:WorkflowViewBase.DataContext>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,14">
+            <StackPanel>
+                <TextBlock Text="Diag &amp; Repair" FontSize="20" FontWeight="Bold"/>
+                <TextBlock Text="{Binding ProfileDescription}" FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"
+                           TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding WinPeOfflineNote}" FontSize="11"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0"
+                           TextWrapping="Wrap"
+                           Visibility="{Binding ShowWinPeOfflineNote, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Text="{Binding SummaryBanner}" FontSize="11"
+                           Foreground="{StaticResource AccentBlueBrush}" Margin="0,4,0,0"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+            <WrapPanel>
+                <TextBlock Text="Profile:" FontSize="12" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="0,0,10,6"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <RadioButton Content="Quick" GroupName="HwTestProfile"
+                             IsChecked="{Binding IsQuickProfile}"
+                             IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}"
+                             VerticalAlignment="Center" Margin="0,0,14,6" FontSize="12"/>
+                <RadioButton Content="Extended" GroupName="HwTestProfile"
+                             IsChecked="{Binding IsExtendedProfile}"
+                             IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}"
+                             VerticalAlignment="Center" Margin="0,0,16,6" FontSize="12"/>
+                <Border Width="1" Height="24" Background="{StaticResource BorderBrush}"
+                        Margin="0,0,16,6" VerticalAlignment="Center"/>
+                <ItemsControl ItemsSource="{Binding HardwareTools}" Margin="0,0,8,6">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding Name}"
+                                    Command="{Binding RunCommand}"
+                                    Margin="0,0,8,0" Padding="16,8"
+                                    Style="{StaticResource ActionButtonStyle}"
+                                    FontSize="12"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="{Binding CstScanTool.Name}"
+                        Command="{Binding CstScanTool.RunCommand}"
+                        Margin="0,0,12,6" Padding="16,8"
+                        Style="{StaticResource ActionButtonStyle}"
+                        FontSize="12" FontWeight="SemiBold"
+                        VerticalAlignment="Center"
+                        ToolTip="{Binding CstScanTool.Description}"/>
+                <TextBlock Text="{Binding TestsProgressDisplay}" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,16,6"
+                           VerticalAlignment="Center"/>
+                <TextBlock Text="Elapsed" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" Margin="0,0,6,6"/>
+                <TextBlock Text="{Binding ElapsedDisplay}" FontSize="13" FontWeight="Bold"
+                           Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,16,6"
+                           VerticalAlignment="Center"/>
+                <ProgressBar Value="{Binding Progress}" Maximum="100" Width="140" Height="8"
+                             Background="{StaticResource BackgroundLightBrush}"
+                             Foreground="{StaticResource AccentBlueBrush}"
+                             BorderThickness="0" Margin="0,0,0,6"
+                             VerticalAlignment="Center"
+                             Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}"/>
+            </WrapPanel>
+        </Border>
+
+        <Border Grid.Row="2" Margin="16,12,16,8" Background="White"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="4">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Background="#D6E4F0"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="90"/>
+                            <ColumnDefinition Width="70"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Component / Test" FontSize="11" FontWeight="Bold"
+                                   Foreground="#1A1A1A"/>
+                        <TextBlock Grid.Column="1" Text="Status" FontSize="11" FontWeight="Bold"
+                                   Foreground="#1A1A1A" HorizontalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="Time" FontSize="11" FontWeight="Bold"
+                                   Foreground="#1A1A1A" HorizontalAlignment="Right"/>
+                    </Grid>
+                </Border>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding TestTree}" Margin="0,4,0,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="{Binding RowMargin}"
+                                        Padding="12,5"
+                                        Background="{Binding RowBackground}"
+                                        BorderBrush="#E8E8E8" BorderThickness="0,0,0,1">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="70"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       FontSize="{Binding FontSize}"
+                                                       FontWeight="{Binding FontWeight}"
+                                                       Foreground="{Binding ForegroundBrush}"
+                                                       TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding Detail}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Detail}"
+                                                       Margin="0,2,0,0"
+                                                       Visibility="{Binding HasDetail, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding StatusLabel}"
+                                                   FontSize="12" FontWeight="Bold"
+                                                   Foreground="{Binding StatusBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding IsTest, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding DurationText}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Right"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding IsTest, Converter={StaticResource BoolToVis}}"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="3" Background="{StaticResource BackgroundMidBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding PhaseDisplay}" FontSize="12"
+                           Foreground="{StaticResource AccentBlueBrush}" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+            </Grid>
+        </Border>
+    </Grid>
+</views:WorkflowViewBase>

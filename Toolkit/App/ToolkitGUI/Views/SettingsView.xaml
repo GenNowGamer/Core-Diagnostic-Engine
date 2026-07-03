@@ -1,0 +1,67 @@
+﻿<UserControl x:Class="ToolkitGUI.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource BackgroundDarkBrush}">
+    <ScrollViewer>
+        <StackPanel Margin="28">
+            <TextBlock Text="Settings" FontSize="24" FontWeight="Bold" Margin="0,0,0,4"/>
+            <TextBlock Text="Configure toolkit preferences." FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,24"/>
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="ABOUT" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                    <TextBlock x:Name="AppVersionText" Text="Core Diagnostic Engine v1.0.0" FontSize="13"/>
+                    <TextBlock Text="Custom WinPE + C# WPF GUI + PowerShell Workflows" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="POWER" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                    <TextBlock Text="Use this to safely reboot from WinPE after unloading offline registry hives." FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Unmount OS"
+                                Width="140"
+                                Height="34"
+                                Margin="0,0,12,0"
+                                HorizontalAlignment="Left"
+                                Style="{StaticResource ActionButtonStyle}"
+                                Click="UnmountOfflineOs_Click"/>
+                        <Button Content="Reboot Windows"
+                                Width="180"
+                                Height="34"
+                                HorizontalAlignment="Left"
+                                Style="{StaticResource ActionButtonStyle}"
+                                Click="RebootWindows_Click"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="DIAGNOSTIC LOGS" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                    <TextBlock Text="Remove saved CHU UEFI logs/results and CDE workflow scan logs from the toolkit media."
+                               FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                    <TextBlock Text="Clears: EFI\CoreDiag\Logs, EFI\CoreDiag\Results, operator PDFs in Logs, and internal data under CDE\Runtime\Data. Work order records are cleared from Dashboard → Clear Recent."
+                               FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                    <Button Content="Clear Test &amp; Scan Logs"
+                            Width="220"
+                            Height="34"
+                            HorizontalAlignment="Left"
+                            Style="{StaticResource ActionButtonStyle}"
+                            Click="ClearResultLogs_Click"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="HELP" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                    <TextBlock Text="Open the CDE User Guide PDF for step-by-step instructions on diagnosing and repairing Windows PCs."
+                               FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                    <Button Content="Open User Guide"
+                            Width="180"
+                            Height="34"
+                            HorizontalAlignment="Left"
+                            Style="{StaticResource ActionButtonStyle}"
+                            Click="OpenUserGuide_Click"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
