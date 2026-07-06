@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using ToolkitGUI.Services;
 using ToolkitGUI.Views;
@@ -18,7 +21,24 @@ namespace ToolkitGUI
 
             // Keep the process alive while we hand off from splash to MainWindow.
             // In WinPE offline mode the splash can be the only open window for a moment.
+            // Stay on explicit shutdown in WinPE for the whole session — OnMainWindowClose
+            // was returning to startnet's recovery menu when the shell failed to stay open.
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+            if (IsWinPeRuntime())
+            {
+                // Layered/D3D presentation is unreliable in WinPE; force software render early.
+                try
+                {
+                    RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
+                }
+                catch
+                {
+                    /* best-effort */
+                }
+
+                WinPeStartupLog.Write("OnStartup", "WinPE detected, software render requested");
+            }
 
             LoadRuntimeConfig();
 
@@ -28,6 +48,7 @@ namespace ToolkitGUI
                 if (!string.IsNullOrWhiteSpace(toolkitRoot))
                     OfflineRuntimePaths.ClearSessionFiles(toolkitRoot);
                 OfflineRuntimePaths.ClearOfflineProcessEnv();
+                WinPeStartupLog.Write("ToolkitRoot", toolkitRoot ?? "(null)");
             }
 
             base.OnStartup(e);
@@ -40,9 +61,11 @@ namespace ToolkitGUI
             // The user's choice here sets OFFLINE_LOAD_REQUESTED for the flow below.
             if (IsWinPeRuntime())
             {
+                WinPeStartupLog.Write("BootMenu", "showing");
                 var bootMenu = new WinPEBootMenuWindow();
                 bootMenu.Show();
                 var choice = await bootMenu.WaitForChoiceAsync();
+                WinPeStartupLog.Write("BootMenuChoice", choice.ToString());
 
                 if (choice == WinPELaunchChoice.OfflineCDE)
                     Environment.SetEnvironmentVariable("OFFLINE_LOAD_REQUESTED", "1", EnvironmentVariableTarget.Process);
@@ -58,37 +81,88 @@ namespace ToolkitGUI
                 {
                     // User triggered reboot/shutdown from the menu, or closed the window
                     // without selecting a CDE launch option.
+                    WinPeStartupLog.Write("Shutdown", "boot menu cancelled");
                     Shutdown(0);
                     return;
                 }
             }
 
-            if (ShouldRunOfflineLoadFlow())
+            try
             {
-                await RunOfflineLoadWithSplashAsync();
-                TryApplyOfflineEnvFile();
+                if (ShouldRunOfflineLoadFlow())
+                {
+                    WinPeStartupLog.Write("OfflineLoad", "starting");
+                    await RunOfflineLoadWithSplashAsync();
+                    TryApplyOfflineEnvFile();
+                    WinPeStartupLog.Write("OfflineLoad", "finished");
+                }
+                else if (!IsWinPeRuntime())
+                {
+                    TryApplyOfflineEnvFile();
+                }
+
+                OfflineRuntimePaths.SyncOfflineRegistryLoadedEnv();
+                WorkOrderService.ApplyActiveCaseToProcess();
+
+                WinPeStartupLog.Write("MainWindow", "constructing");
+                var mainWindow = new MainWindow();
+                MainWindow = mainWindow;
+                mainWindow.Closed += OnMainWindowClosed;
+
+                WinPeStartupLog.Write("MainWindow", "showing");
+                mainWindow.Show();
+                mainWindow.Activate();
+                _ = mainWindow.Focus();
+                WinPeStartupLog.Write("MainWindow",
+                    $"shown IsVisible={mainWindow.IsVisible} State={mainWindow.WindowState} " +
+                    $"Size={mainWindow.ActualWidth}x{mainWindow.ActualHeight} " +
+                    $"Pos={mainWindow.Left},{mainWindow.Top}");
+
+                if (!IsWinPeRuntime())
+                {
+                    // Full Windows: normal lifetime.
+                    ShutdownMode = ShutdownMode.OnMainWindowClose;
+                }
+
+                // Re-check bounds after layout; WinPE pseudo-maximize and live-Windows centering both
+                // depend on a valid HWND and composition target.
+                mainWindow.Dispatcher.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        BorderlessWindowHelper.EnsureWithinWorkArea(mainWindow);
+                        mainWindow.Activate();
+                        WinPeStartupLog.Write("MainWindow",
+                            $"loaded IsVisible={mainWindow.IsVisible} Size={mainWindow.ActualWidth}x{mainWindow.ActualHeight}");
+                    }
+                    catch (Exception ex)
+                    {
+                        WinPeStartupLog.Write("MainWindowLayoutError", ex.ToString());
+                    }
+                }, DispatcherPriority.Loaded);
             }
-            else if (!IsWinPeRuntime())
+            catch (Exception ex)
             {
-                TryApplyOfflineEnvFile();
+                // Boot menu already closed; without this, OnExplicitShutdown leaves a blank session.
+                WinPeStartupLog.Write("MainWindowStartupFailed", ex.ToString());
+                LogCrash("MainWindowStartup", ex);
+                var detail = ex.InnerException is { } inner
+                    ? $"{ex.Message}\n\n{inner.Message}"
+                    : ex.Message;
+                MessageBox.Show(
+                    $"Failed to open CDE main window:\n\n{detail}\n\nSee CDE\\Runtime\\winpe_startup.log on the USB for details.",
+                    "ToolkitGUI Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                Shutdown(1);
             }
+        }
 
-            OfflineRuntimePaths.SyncOfflineRegistryLoadedEnv();
-            WorkOrderService.ApplyActiveCaseToProcess();
-
-            var mainWindow = new MainWindow();
-            MainWindow = mainWindow;
-            mainWindow.Show();
-
-            // Resume normal lifecycle once the main window is visible.
-            ShutdownMode = ShutdownMode.OnMainWindowClose;
-
-            // Re-check bounds after layout; WinPE pseudo-maximize and live-Windows centering both
-            // depend on a valid HWND and composition target.
-            mainWindow.Dispatcher.InvokeAsync(() =>
-            {
-                BorderlessWindowHelper.EnsureWithinWorkArea(mainWindow);
-            }, DispatcherPriority.Loaded);
+        private void OnMainWindowClosed(object? sender, EventArgs e)
+        {
+            WinPeStartupLog.Write("MainWindowClosed", "shutting down application");
+            if (ShutdownMode == ShutdownMode.OnExplicitShutdown)
+                Shutdown(0);
         }
 
         private static bool ShouldRunOfflineLoadFlow()
@@ -266,6 +340,7 @@ namespace ToolkitGUI
 
         private static void OnDispatcherException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
+            WinPeStartupLog.Write("DispatcherUnhandledException", e.Exception.ToString());
             LogCrash("DispatcherUnhandledException", e.Exception);
             e.Handled = true;
             var detail = e.Exception.InnerException is { } inner
@@ -277,17 +352,51 @@ namespace ToolkitGUI
 
         private static void OnDomainException(object sender, UnhandledExceptionEventArgs e)
         {
+            WinPeStartupLog.Write("AppDomainUnhandledException", e.ExceptionObject?.ToString());
             LogCrash("AppDomainUnhandledException", e.ExceptionObject as Exception);
         }
 
         private static void LogCrash(string source, Exception? ex)
         {
+            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {source}: {ex}\n\n";
+            foreach (var path in GetCrashLogPaths())
+            {
+                try
+                {
+                    var dir = Path.GetDirectoryName(path);
+                    if (!string.IsNullOrEmpty(dir))
+                        Directory.CreateDirectory(dir);
+                    File.AppendAllText(path, line);
+                }
+                catch
+                {
+                    /* best-effort */
+                }
+            }
+        }
+
+        private static IEnumerable<string> GetCrashLogPaths()
+        {
+            var paths = new List<string>();
+
             try
             {
-                var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "toolkit_crash.log");
-                File.AppendAllText(path, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {source}: {ex}\n\n");
+                var desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                if (!string.IsNullOrWhiteSpace(desktop))
+                    paths.Add(Path.Combine(desktop, "toolkit_crash.log"));
             }
-            catch { /* best-effort */ }
+            catch { /* ignore */ }
+
+            try
+            {
+                var toolkitRoot = ResolveToolkitRoot();
+                if (!string.IsNullOrWhiteSpace(toolkitRoot))
+                    paths.Add(Path.Combine(toolkitRoot, "CDE", "Runtime", "toolkit_crash.log"));
+            }
+            catch { /* ignore */ }
+
+            paths.Add(@"X:\toolkit_crash.log");
+            return paths;
         }
 
         private static string? ResolveToolkitRoot()

@@ -104,14 +104,42 @@ namespace ToolkitGUI.ViewModels
 
         public MainViewModel()
         {
-            CurrentView = new DashboardView();
+            try
+            {
+                CurrentView = new DashboardView();
+            }
+            catch (Exception ex)
+            {
+                CurrentView = new System.Windows.Controls.TextBlock
+                {
+                    Text = $"Dashboard failed to load:\n{ex.Message}",
+                    Margin = new System.Windows.Thickness(24),
+                    TextWrapping = System.Windows.TextWrapping.Wrap
+                };
+            }
+
             WorkOrderService.ActiveWorkOrderChanged += OnActiveWorkOrderChanged;
-            RefreshActiveWorkOrder();
+            try
+            {
+                RefreshActiveWorkOrder();
+            }
+            catch
+            {
+                /* non-fatal */
+            }
         }
 
         public async Task InitializeAsync()
         {
-            RefreshActiveWorkOrder();
+            try
+            {
+                RefreshActiveWorkOrder();
+            }
+            catch
+            {
+                /* non-fatal */
+            }
+
             await RefreshSystemInfoAsync();
             _refreshTimer?.Dispose();
             _refreshTimer = new Timer(_ =>

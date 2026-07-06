@@ -3,6 +3,7 @@
 > Historical snapshot note (2026-05-22): this map captures a prior restructuring phase plan.
 > For current operational behavior, follow `README.md` and `session_handoff.md` at the Toolkit root.
 > Current canonical source/build flow is `App/ToolkitGUI/` -> `App/Publish-ToolkitGUI.ps1` -> published GUI payload under `CDE/ToolkitGUI/bin/Release/net8.0-windows/` (not source).
+> **Operational addendum (2026-07-03):** WinPE boot menu options 1–2 hand off to main `MainWindow` in-process (opaque shell; `WinPeStartupLog.cs` → `CDE\Runtime\winpe_startup.log`). GUI-only USB sync after `Publish-ToolkitGUI.ps1`; no `boot.wim` rebuild unless `startnet.cmd` changed.
 > **Operational addendum (2026-07-01):** Operator PDFs only in `Logs\`; internal JSON/session logs under `CDE\Runtime\Data\` (`workflows`, `scans`, `cst`, `sessions`); work order case JSON under `CDE\Runtime\WorkOrders\` (cleared via **Dashboard → Clear Recent**, not Settings). GUI **Open Report** (no Save report / Open HTML). Dashboard **suggested path** from `SymptomFlows.json` keywords on work order generate; **Verify case** removed. Case timeline light-theme cards.
 > **Operational addendum (2026-06-30):** Hijack & Scam Repair (`HijackRepair.ps1`, `HijackRepairFindings.ps1`, `HijackRepairView`); `TabularScanReportService` for PDF scan reports; System Health / Process Analyzer **Open Report**; MSIX startup-task executable resolution + package publisher signature in `MsixStartup.ps1`; Process Analyzer Investigation mode hides toolbar status banner.
 > **Operational addendum (2026-06-26):** Startup Manager scheduled-task/GPO/MSIX/correlation modules; Post-Op eight-tool expansion via `PostOpCleanup.ps1`; Fast Fixes trimmed to 14 (DNS/icon/thumb cache in Post-Op only).
@@ -27,7 +28,7 @@ CDE Beta_Test/
 ├── Diagnostics/               # Diagnostic tools (CDE consolidated)
 ├── Windows Tools/             # Windows utilities and repair tools
 ├── CDE/                       # Deployment/runtime mirror consumed by media sync
-│   └── Runtime/               # WinPE session state + internal Data\ (workflows/scans/cst/sessions) + WorkOrders\ (case JSON) + active_work_order.json
+│   └── Runtime/               # WinPE session state + winpe_startup.log + internal Data\ (workflows/scans/cst/sessions) + WorkOrders\ (case JSON) + active_work_order.json
 ├── Scripts/                   # PowerShell modules and workflows
 ├── Config/                    # Configuration files
 ├── Deploy/                    # Deployment and build artifacts

@@ -16,6 +16,7 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 ## Session Update (2026-07-03)
 
+- **WinPE shell handoff** — Boot menu options **1** / **2** open main CDE GUI in-process (opaque WinPE `MainWindow`; no DWM transparency). Maximize/restore stable. Trace: `CDE\Runtime\winpe_startup.log`. GUI-only deploy: `Publish-ToolkitGUI.ps1` + `SyncUSB.bat`.
 - **CdeCpuSimdCli** — Real CPU SIMD tests on PowerShell 5.1 (Win10/11 inbox). Published self-contained beside `ToolkitGUI.exe`; `HardwareTestEngine.ps1` invokes CLI on PS 5.1. Regression: `Scripts/Tests/Test-CpuSimdEnginePs5.ps1`.
 - **CST remediation** — `CstRemediationService.cs` fixed for USB toolkit at drive root (`TOOLKIT_ROOT=G:\`).
 - **Diag & Repair CST row** — Warnings show **Warn** (not **N/A**); `WorkflowViewModels.FinalizeCstTestFromReport`.
@@ -218,6 +219,8 @@ Keys 1–7 or mouse clicks select options.
 | 7 | Shutdown | Clean system shutdown (confirms before acting) |
 
 CST offline malware scans are available inside CDE via **Diag & Repair** and **Malware Cleanup** — not from the WinPE boot menu.
+
+After option **1** or **2**, the same `ToolkitGUI.exe` process opens the main CDE shell (`MainWindow`). On WinPE the shell uses an opaque window frame (not transparent chrome). If launch fails, check `CDE\Runtime\winpe_startup.log` on the USB.
 
 If `ToolkitGUI.exe` is missing, `startnet.cmd` falls back to a minimal text menu (options 1–6).
 
@@ -546,6 +549,7 @@ folder recursively to prevent Explorer windows from opening at sign-in.
 
 - [x] WinPE boots from USB with full PowerShell 5.1 support
 - [x] WPF WinPE boot menu hosted in `ToolkitGUI.exe` is operational (7 options; CST boot shortcuts removed 2026-06-22)
+- [x] WinPE boot menu options **1** / **2** hand off to main CDE GUI; maximize/restore stable (opaque shell, 2026-07-03)
 - [x] Settings **Clear Test & Scan Logs** — one-click cleanup of CHU `EFI\CoreDiag\Logs`/`Results`, CDE `Logs\` (PDFs), and `CDE\Runtime\Data\` (2026-06-22; expanded 2026-07-01)
 - [x] Dashboard **Clear Recent** — removes work order case JSON from `CDE\Runtime\WorkOrders\` without deleting closed-case PDFs (2026-07-01)
 - [x] PDF **User Guide** in `HALP\CDE_User_Guide.pdf`; **Settings → Open User Guide**; regenerated on canonical publish (2026-06-22)

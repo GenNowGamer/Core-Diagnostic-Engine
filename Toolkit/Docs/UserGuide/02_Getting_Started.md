@@ -25,6 +25,8 @@ After WinPE loads, CDE shows a full-screen boot menu. Press a number key or clic
 
 > **Important:** For most repair jobs on a customer's drive, choose **option 2** so CDE can load their offline Windows installation. You will be asked to confirm before registry hives are loaded.
 
+> **Tip:** Options **1** and **2** continue in the same `ToolkitGUI.exe` process — the boot menu closes and the main CDE window opens. If you return to a text recovery menu instead, sync the latest GUI from `Publish-ToolkitGUI.ps1` and check `CDE\Runtime\winpe_startup.log` on the USB.
+
 ## Administrator access (UAC)
 
 CDE runs with administrator rights. Windows will show a **User Account Control** prompt — choose **Yes**. Many repair tools need elevated access to system files, the registry, and disk volumes.

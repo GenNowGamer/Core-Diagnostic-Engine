@@ -58,7 +58,7 @@ namespace ToolkitGUI.Services
             double designMinHeight,
             bool fillWorkArea)
         {
-            var area = GetWorkAreaDips(window);
+            var area = GetSafeWorkAreaDips(window);
             const double margin = 12;
             var maxWidth = Math.Max(AbsoluteMinWidth, area.Width - margin * 2);
             var maxHeight = Math.Max(AbsoluteMinHeight, area.Height - margin * 2);
@@ -93,25 +93,63 @@ namespace ToolkitGUI.Services
         /// </summary>
         public static void FillWorkArea(Window window, double margin = 0)
         {
-            var area = GetWorkAreaDips(window);
+            var area = GetSafeWorkAreaDips(window);
             var maxWidth = Math.Max(AbsoluteMinWidth, area.Width - margin * 2);
             var maxHeight = Math.Max(AbsoluteMinHeight, area.Height - margin * 2);
 
             ClampMinimumSize(window, maxWidth, maxHeight);
 
+            // Never apply non-finite / zero sizes — that can tear down the WPF HWND in WinPE.
+            if (maxWidth < AbsoluteMinWidth || maxHeight < AbsoluteMinHeight ||
+                double.IsNaN(maxWidth) || double.IsNaN(maxHeight) ||
+                double.IsInfinity(maxWidth) || double.IsInfinity(maxHeight))
+            {
+                maxWidth = Math.Max(AbsoluteMinWidth, window.Width > 0 ? window.Width : 1024);
+                maxHeight = Math.Max(AbsoluteMinHeight, window.Height > 0 ? window.Height : 768);
+            }
+
+            var left = area.Left + margin;
+            var top = area.Top + margin;
+            if (double.IsNaN(left) || double.IsInfinity(left)) left = 0;
+            if (double.IsNaN(top) || double.IsInfinity(top)) top = 0;
+
             window.WindowState = WindowState.Normal;
-            window.Left = area.Left + margin;
-            window.Top = area.Top + margin;
+            window.Left = left;
+            window.Top = top;
             window.Width = maxWidth;
             window.Height = maxHeight;
         }
+
+        /// <summary>
+        /// Work area in DIPs with fallbacks when monitor APIs misreport under WinPE.
+        /// </summary>
+        public static Rect GetSafeWorkAreaDips(Window window)
+        {
+            var area = GetWorkAreaDips(window);
+            if (IsUsableArea(area))
+                return area;
+
+            area = SystemParameters.WorkArea;
+            if (IsUsableArea(area))
+                return area;
+
+            return new Rect(0, 0, 1024, 768);
+        }
+
+        private static bool IsUsableArea(Rect area) =>
+            area.Width >= AbsoluteMinWidth &&
+            area.Height >= AbsoluteMinHeight &&
+            !double.IsNaN(area.Width) &&
+            !double.IsNaN(area.Height) &&
+            !double.IsInfinity(area.Width) &&
+            !double.IsInfinity(area.Height);
 
         /// <summary>
         /// Corrects windows that were maximized before the HWND hook was active or no longer fit the monitor.
         /// </summary>
         public static void EnsureWithinWorkArea(Window window, double margin = 12)
         {
-            var area = GetWorkAreaDips(window);
+            var area = GetSafeWorkAreaDips(window);
             var maxWidth = Math.Max(AbsoluteMinWidth, area.Width - margin * 2);
             var maxHeight = Math.Max(AbsoluteMinHeight, area.Height - margin * 2);
             ClampMinimumSize(window, maxWidth, maxHeight);

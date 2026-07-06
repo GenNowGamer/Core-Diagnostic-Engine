@@ -3,6 +3,14 @@
 **Last updated:** 2026-07-03  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
 
+## 2026-07-03 update — WinPE shell handoff + maximize (field-verified)
+
+- **Boot menu → main GUI** — Options **1** / **2** no longer drop to `startnet.cmd` recovery menu. WinPE uses opaque `MainWindow` chrome (no `AllowsTransparency`), software rendering, deferred dashboard init, and `OnExplicitShutdown` for the full WinPE session.
+- **Maximize / restore** — Fixed 0×0 restore bounds that crashed the shell when toggling window size in WinPE.
+- **Diagnostics** — `CDE\Runtime\winpe_startup.log` (and `X:\winpe_startup.log`) traces boot-menu → main-window handoff; `toolkit_crash.log` for unhandled errors.
+- **Publish** — `Toolkit\App\Publish-ToolkitGUI.ps1` → sync `CDE\ToolkitGUI\bin\Release\net8.0-windows\` via **`SyncUSB.bat`** (no `boot.wim` rebuild for GUI-only changes).
+- Full notes: `Toolkit\session_handoff.md` (2026-07-03 WinPE shell section).
+
 ## 2026-07-03 update — SIMD CLI, CST fixes, GitHub source publish
 
 - **CPU SIMD on PowerShell 5.1** — New `Toolkit\App\CdeCpuSimdCli\` console (full `CpuSimdEngine.cs` intrinsics). `HardwareTestEngine.ps1` prefers `CdeCpuSimdCli.exe` from the published GUI folder on PS 5.1; falls back to Add-Type compat/stub. Canonical publish builds CdeCpuSimdCli **self-contained** into the GUI payload. Test: `Scripts\Tests\Test-CpuSimdEnginePs5.ps1`.

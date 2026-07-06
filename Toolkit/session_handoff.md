@@ -4,7 +4,33 @@
 
 ---
 
-## 2026-07-03 — CPU SIMD CLI (PowerShell 5.1)
+## 2026-07-03 — WinPE shell handoff + maximize stability (field-verified)
+
+| Symptom | Cause | Fix |
+|---------|--------|-----|
+| Boot menu options **1** / **2** exit to `startnet.cmd` recovery text menu (no main CDE GUI) | `MainWindow` used `AllowsTransparency` / layered chrome; WinPE has no DWM — shell failed or exited after boot menu closed | WinPE-only opaque shell: configure chrome **before** `InitializeComponent()`; software render; `SingleBorderWindow`; defer `MainViewModel` until `ContentRendered` |
+| Maximize / restore crashes back to recovery menu | Startup set `_isPseudoMaximized` without saving `_restoreBounds`; restore applied **0×0** | Save default restore rect before fill-work-area; validate sizes; intercept `WindowState.Maximized` in WinPE |
+
+| File | Change |
+|------|--------|
+| `App/ToolkitGUI/MainWindow.xaml` | Removed XAML `AllowsTransparency` / transparent background (set in code per environment) |
+| `App/ToolkitGUI/MainWindow.xaml.cs` | `ConfigureShellChromeForEnvironment()`, `ApplyWinPeShellDecorations()`, deferred shell init, safe `ToggleMaximize` / restore bounds, `OnWinPeWindowStateChanged` |
+| `App/ToolkitGUI/App.xaml.cs` | WinPE stays on `OnExplicitShutdown`; `RenderMode.SoftwareOnly`; startup breadcrumb logging; `MainWindow.Closed` → explicit shutdown |
+| `App/ToolkitGUI/Services/BorderlessWindowHelper.cs` | `GetSafeWorkAreaDips()`, guarded `FillWorkArea()` (no zero/NaN sizes) |
+| `App/ToolkitGUI/Services/WinPeStartupLog.cs` | **New** — `CDE\Runtime\winpe_startup.log` (+ `X:\winpe_startup.log`) boot handoff trace |
+| `App/ToolkitGUI/ViewModels/PowerShellService.cs` | WinPE banner: skip `PerformanceCounter` CPU + in-process SMART query |
+| `App/ToolkitGUI/ViewModels/MainViewModel.cs` | Dashboard / work-order init wrapped so shell construction cannot fail silently |
+| `App/ToolkitGUI/Services/WorkOrderService.cs` | WinPE-safe `GetActiveWorkOrder` / `ApplyActiveCaseToProcess` |
+
+**Operator notes**
+
+- Options **1** and **2** stay in-process: boot menu closes → offline splash (option 2 only) → `MainWindow`. No second `ToolkitGUI.exe` launch.
+- GUI-only fix: **`App/Publish-ToolkitGUI.ps1`** then **`SyncUSB.bat`** (or copy `CDE\ToolkitGUI\bin\Release\net8.0-windows\`). No `Customize-WinPE.ps1` / `boot.wim` rebuild required unless `startnet.cmd` itself changed.
+- If WinPE shell fails again, read **`CDE\Runtime\winpe_startup.log`** on the USB (last line = last successful step). **`toolkit_crash.log`** on Desktop or under `CDE\Runtime\` for unhandled exceptions.
+- **Field status (2026-07-03):** Options 1–2 launch main GUI; maximize/restore stable on WinPE.
+- **User guide** — `Docs/UserGuide/02_Getting_Started.md`, `10_Reference.md` updated (regenerate PDF on next canonical publish).
+
+---
 
 | Change | Detail |
 |--------|--------|

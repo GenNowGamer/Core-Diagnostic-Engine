@@ -226,14 +226,17 @@ namespace ToolkitGUI.ViewModels
         {
             return await Task.Run(() =>
             {
+                var winPe = TestIsWinPe();
                 return new SystemInfo
                 {
                     MachineName = Environment.MachineName,
                     OsVersion = Environment.OSVersion.VersionString,
-                    CpuUsage = GetCpuUsage(),
+                    // Performance counters and in-process PowerShell SMART queries are unreliable
+                    // in WinPE and have caused the shell process to exit after the boot menu.
+                    CpuUsage = winPe ? 0 : GetCpuUsage(),
                     RamUsage = GetRamUsage(),
-                    SmartSummary = GetSmartSummary(),
-                    EnvironmentMode = TestIsWinPe() ? "WinPE Mode" : "Windows Mode",
+                    SmartSummary = winPe ? "N/A (WinPE)" : GetSmartSummary(),
+                    EnvironmentMode = winPe ? "WinPE Mode" : "Windows Mode",
                     Uptime = GetUptime()
                 };
             });

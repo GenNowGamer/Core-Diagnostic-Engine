@@ -38,6 +38,7 @@
 | **SMART** | Self-Monitoring Analysis and Reporting Technology — disk health data |
 | **Testable drive** | Fixed non-removable physical disk eligible for Diag & Repair storage tests, S.M.A.R.T. Analyzer, and CHU storage catalog runs (USB flash and memory cards excluded) |
 | **WinPE** | Windows Preinstallation Environment — minimal Windows for recovery |
+| **WinPE startup log** | `CDE\Runtime\winpe_startup.log` — boot menu → main window handoff trace (also `X:\winpe_startup.log` in PE) |
 | **Work order** | Case record on Dashboard tying jobs to a client; internal JSON under `CDE\Runtime\WorkOrders\`; closed-case PDF under `Toolkit\WorkOrders\` |
 | **Clear Recent** | Dashboard control that deletes saved work order JSON in `CDE\Runtime\WorkOrders\` (not operator PDFs) |
 | **EventKind** | Work-order run label: `Workflow`, `ChuPreBoot`, `CstScan`, or `FastFix` |
@@ -48,7 +49,8 @@
 
 | Problem | Try |
 |---------|-----|
-| CDE won't start | Run `CDE.exe` as administrator; verify USB not write-protected |
+| Boot menu closes but no main CDE window (text recovery menu) | Sync latest `CDE\ToolkitGUI\bin\Release\net8.0-windows\` via `Publish-ToolkitGUI.ps1` + `SyncUSB.bat`; read `CDE\Runtime\winpe_startup.log` on USB |
+| WinPE window maximize crashes to recovery menu | Fixed 2026-07-03 — update GUI payload on USB; same publish/sync path |
 | Offline OS not detected | Boot menu option 2; check disk cables; load storage drivers if needed |
 | CST finds no targets | Confirm offline Windows loaded; pick correct drive letter |
 | PDF won't open | Install a PDF viewer; check `Logs` folder for the `.pdf` file |

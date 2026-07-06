@@ -9,6 +9,7 @@ Current field status:
 - rEFInd menu loads cleanly on hardware when USB is prepared with `Prepare-BootableUSB.ps1`.
 - CHU boots from the rEFInd menu and hardware tests run.
 - WinPE customization and toolkit sync are owned by CDE scripts; publish with `Toolkit\App\Publish-ToolkitGUI.ps1` before USB sync or WinPE validation.
+- WinPE boot menu options **1** / **2** hand off to the main CDE GUI in-process (2026-07-03); if launch fails, check `CDE\Runtime\winpe_startup.log` on the USB.
 - CST is exposed from **Malware Cleanup** as its own operator flow (Windows Defender Scan, scan selection, detection scope, quarantine/remove, rollback, post-scan findings review). **Update Hash IOCs** runs from the CST config dialog (**Threat Signature Database**), not as a separate Malware Cleanup row. Autoruns, hosts file, browser extensions, and scheduled-task audits run from **System Health Check** only (2026-06-19). Remaining work: layered detection engine and richer detector metadata.
 - **Diag & Repair** (2026-06-16): PC-Doctor-style CPU/Memory/Storage + CST scan-only suite in ToolkitGUI (Quick/Extended). Nav `DiagAndRepair` (alias `HardwareDiagnostics`). UEFI CHU (`CoreDiag.efi`) remains the pre-boot path.
 - **Post-Op Cleanup** (2026-06-03; expanded 2026-06-26): Eight remediation tools — browser cache, service defaults, file associations, DNS/proxy reset, shell caches, optional hosts restore, restart Explorer. **Startup Entry Audit** runs from **System Health Check** (`audit_startup`). See `Toolkit\session_handoff.md`.
@@ -32,6 +33,7 @@ Current field status:
 - **Phase 3 diagnostic depth** (2026-06-26): Dashboard **suggested path** + case timeline; CHU Results rollup and Diag & Repair highlight links; tiered CST findings expander; work-order `EventKind` / `GuidanceContext`. See `Toolkit\session_handoff.md`.
 - **Report policy + symptom inference** (2026-07-01): PDF-only `Logs\`; internal JSON in `CDE\Runtime\Data\`; Dashboard keyword-based symptom highlight on work order generate; **Clear Recent** for work order JSON cleanup. See `Toolkit\session_handoff.md`.
 - **Removable media hardware policy** (2026-07-01): Diag & Repair storage, S.M.A.R.T. Analyzer, and CHU storage tests exclude USB flash, memory cards, and boot USB via `PhysicalDiskCatalog.psm1` (CDE) and `StorageDrive.c` (CHU). See `Toolkit\Docs\UserGuide\04_Diagnostics.md`.
+- **WinPE shell handoff** (2026-07-03): Boot menu options 1–2 open main `MainWindow` in-process (opaque WinPE chrome, no DWM transparency). Maximize/restore fixed. Trace: `CDE\Runtime\winpe_startup.log`. Publish GUI + `SyncUSB.bat` only. See `Toolkit\session_handoff.md`.
 - **Startup Manager + Post-Op expansion** (2026-06-26): Scheduled tasks, StartupApproved parity, GPO Run, MSIX, correlation; `\Microsoft\*` tasks hidden by default. Post-Op eight tools via `PostOpCleanup.ps1`; Fast Fixes deduped to 14. See `Toolkit\session_handoff.md`.
 - **MSIX startup signing + Process Analyzer Investigation UI** (2026-06-30): Startup Manager resolves MSIX startup-task executables from Appx manifest and shows `Package (Publisher)` when WindowsApps blocks file access; Process Analyzer hides investigation status banner so Tree view / Deep scan stay usable. See `Toolkit\session_handoff.md`.
 - **Hijack & Scam Repair + reports** (2026-06-30): HiJackThis-style scanner under sidebar **REPAIR** with selective repair, Startup Manager integration, persistent scan results, and **Open Report** (PDF) via `TabularScanReportService`. See `Toolkit\session_handoff.md`.
@@ -43,6 +45,7 @@ Current field status:
 
 ## Session status (2026-07-03)
 
+- **WinPE shell** — Options 1–2 → `MainWindow`; maximize/restore fixed (`MainWindow.xaml.cs`, `BorderlessWindowHelper`, `WinPeStartupLog.cs`). Field-verified.
 - **CdeCpuSimdCli** — `Toolkit\App\CdeCpuSimdCli\`; self-contained publish into GUI payload; `Test-CpuSimdEnginePs5.ps1`.
 - **CST** — `CstRemediationService` drive-root fix; `WorkflowViewModels` CST Warn/N/A fix.
 - **Git** — Slim orphan history; nested `Toolkit/.git` removed; expanded root `.gitignore`.

@@ -35,20 +35,20 @@ namespace ToolkitGUI.Services
 
         public static ActiveWorkOrderInfo? GetActiveWorkOrder()
         {
-            var envCase = Environment.GetEnvironmentVariable("CDE_ACTIVE_CASE_ID");
-            if (!string.IsNullOrWhiteSpace(envCase))
-            {
-                var fromEnv = TryLoadActiveSummary(envCase.Trim());
-                if (fromEnv != null)
-                    return fromEnv;
-            }
-
-            var pointerPath = GetActivePointerPath();
-            if (!File.Exists(pointerPath))
-                return null;
-
             try
             {
+                var envCase = Environment.GetEnvironmentVariable("CDE_ACTIVE_CASE_ID");
+                if (!string.IsNullOrWhiteSpace(envCase))
+                {
+                    var fromEnv = TryLoadActiveSummary(envCase.Trim());
+                    if (fromEnv != null)
+                        return fromEnv;
+                }
+
+                var pointerPath = GetActivePointerPath();
+                if (!File.Exists(pointerPath))
+                    return null;
+
                 var ptr = JsonNode.Parse(File.ReadAllText(pointerPath)) as JsonObject;
                 var caseId = ptr?["CaseId"]?.GetValue<string>()?.Trim();
                 if (string.IsNullOrWhiteSpace(caseId))
@@ -59,6 +59,7 @@ namespace ToolkitGUI.Services
             }
             catch
             {
+                // WinPE / read-only media must not block MainWindow construction.
                 return null;
             }
         }
@@ -105,7 +106,17 @@ namespace ToolkitGUI.Services
         public static IReadOnlyList<WorkOrderListItem> GetRecentWorkOrders(int count = 5)
         {
             var items = new List<WorkOrderListItem>();
-            foreach (var file in WorkOrderPathHelper.EnumerateInternalWorkOrderJsonFiles())
+            IEnumerable<string> files;
+            try
+            {
+                files = WorkOrderPathHelper.EnumerateInternalWorkOrderJsonFiles();
+            }
+            catch
+            {
+                return items;
+            }
+
+            foreach (var file in files)
             {
                 var name = Path.GetFileName(file);
                 if (!IsCanonicalWorkOrderFile(name))
@@ -470,14 +481,21 @@ namespace ToolkitGUI.Services
 
         public static void ApplyActiveCaseToProcess()
         {
-            var active = GetActiveWorkOrder();
-            if (active == null)
+            try
             {
-                Environment.SetEnvironmentVariable("CDE_ACTIVE_CASE_ID", null, EnvironmentVariableTarget.Process);
-                return;
-            }
+                var active = GetActiveWorkOrder();
+                if (active == null)
+                {
+                    Environment.SetEnvironmentVariable("CDE_ACTIVE_CASE_ID", null, EnvironmentVariableTarget.Process);
+                    return;
+                }
 
-            Environment.SetEnvironmentVariable("CDE_ACTIVE_CASE_ID", active.CaseId, EnvironmentVariableTarget.Process);
+                Environment.SetEnvironmentVariable("CDE_ACTIVE_CASE_ID", active.CaseId, EnvironmentVariableTarget.Process);
+            }
+            catch
+            {
+                // Non-fatal: shell must still open in WinPE.
+            }
         }
 
         private static JsonArray BuildKeyFindingsJson(IEnumerable<WorkflowExecutionStep> steps, string health)
