@@ -8,11 +8,20 @@
 
 ## Overview
 
-CDE is a bootable USB diagnostic suite built on Windows PE. It boots via UEFI from a FAT32 USB drive into a **rEFInd** graphical menu (see `EFI\boot\refind.conf` — currently **CDE WinPE** and **CHU**; Microsoft `memtest.efi` is a separate boot payload via `Ensure-BootArtifacts.ps1`, WinPE `Invoke-PreBootTool.ps1`, or `CDEBoot.efi`). Once WinPE loads, `startnet.cmd` auto-launches `ToolkitGUI.exe` (Windows portable entry: `CDE.exe`), which presents a full-screen branded WPF boot menu — replacing the legacy text-based CMD menu. After entering the toolkit, use sidebar **System Health Check** for catalog-driven vitals, deep system, system audit, and security audit checks (not hardware line tests, SMART analyzer, Defender, or CST — those live under **Diag & Repair** and **Malware Cleanup**), **Diag & Repair** for PC-Doctor-style CPU/Memory/Storage line tests plus CST security scan (Quick/Extended), and per-tool workflows from **Malware Cleanup**, **Post-Op Cleanup**, and other sidebar views. **CHU** (`CoreDiag.efi`) is the UEFI pre-boot suite — see `Core Hardware Utility\UEFI\DIAGNOSTICS_IMPROVEMENT_PLAN.md` (Weeks 1–3 complete as of 2026-06-10).
+CDE is a bootable USB diagnostic suite built on Windows PE. It boots via UEFI from a FAT32 USB drive into a **rEFInd** graphical menu (see `EFI\boot\refind.conf` — currently **CDE WinPE** and **CHU**; Microsoft `memtest.efi` is a separate boot payload via `Ensure-BootArtifacts.ps1`, WinPE `Invoke-PreBootTool.ps1`, or `CDEBoot.efi`). Once WinPE loads, `startnet.cmd` auto-launches `ToolkitGUI.exe` (Windows portable entry: `CDE.exe`), which presents a full-screen branded WPF boot menu — replacing the legacy text-based CMD menu. After entering the toolkit, use sidebar **System Health Check** for catalog-driven vitals, deep system, system audit, and security audit checks (not hardware line tests, SMART analyzer, Defender, or CST — those live under **Diag & Repair** and **Malware Cleanup**), **Diag & Repair** for PC-Doctor-style CPU/Memory/Storage line tests plus CST security scan (Quick/Extended), and per-tool workflows from **Malware Cleanup**, **Post-Op Cleanup**, and other sidebar views. **CHU** pre-boot hardware runs via rEFInd → **`CHUPrep.efi`** → **`CoreDiag.efi`** (PC-Check text or GOP UI depending on firmware) — see `Core Hardware Utility\UEFI\DIAGNOSTICS_IMPROVEMENT_PLAN.md` and `session_handoff.md` (2026-07-06).
 
 The project mirrors the architecture of the proven MRI diagnostic platform while integrating CDE-specific tooling including the Core Hardware Utility (CHU) UEFI application and the Core Security Tool (CST) PowerShell module.
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
+
+## Session Update (2026-07-06)
+
+- **CHU boot chain** — rEFInd CHU entry loads `EFI\CDE\CHUPrep.efi` (console prep), which chainloads `CoreDiag.efi`. Staged by `Core Hardware Utility\UEFI\BUILD_CHU_UEFI.ps1`.
+- **CHU display** — PC-Check text default (HP desktop verified); GOP fallback on portable hardware when ConOut text is not visible (Samsung laptop verified).
+- **CHU results scroll** — Post-test review uses real viewport height; Run All scroll reaches last HDD row on HP (field-verified).
+- **CHU logging** — Early `LogOpen` + per-line flush before UI init.
+- **Deploy** — CHU rebuild → `SyncUSB.bat` (no GUI publish unless CDE app changed). `CoreDiag.efi` SHA256 `EBC5D75F8687C3A1F9822B02B7B3877A992054DE5F6DD21250A70E32D732E35A`.
+- **User guide** — `Docs/UserGuide/04_Diagnostics.md`, `08_Tools_Library_Settings.md`, `10_Reference.md`.
 
 ## Session Update (2026-07-03)
 
@@ -178,7 +187,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Toolkit\Scripts\Tests\Invoke
 
 - **Diag & Repair** — PC-Doctor-style workflow in ToolkitGUI (CPU 12 / Memory 10 / Storage 6 line tests, Quick and Extended profiles, CST ThreatScan/FullScan scan-only, inline results table, no workflow popup).
 - Script: `Scripts/Workflows/HardwareDiagnostics.ps1` (`-ToolName All|CpuTests|MemoryTests|StorageTests|CstScan`, `-TestProfile Quick|Extended`).
-- UEFI CHU (`EFI\CDE\CoreDiag.efi`) is unchanged; use rEFInd for pre-boot hardware, ToolkitGUI for WinPE/Windows line-item suite.
+- UEFI CHU: rEFInd loads `EFI\CDE\CHUPrep.efi` → `CoreDiag.efi`. Rebuild with `Core Hardware Utility\UEFI\BUILD_CHU_UEFI.ps1`, then `SyncUSB.bat`. Use rEFInd for pre-boot hardware; ToolkitGUI for WinPE/Windows line-item suite.
 - Publish after GUI changes: `App/Publish-ToolkitGUI.ps1` → `CDE.exe`. Administrator recommended for storage physical-read tests.
 
 ## Session Update (2026-06-01)
@@ -200,7 +209,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Toolkit\Scripts\Tests\Invoke
 | # | Entry | Description |
 |---|-------|-------------|
 | 1 | CDE WinPE | Chainloads `EFI\Microsoft\Boot\bootmgfw.efi` into the CDE WinPE environment |
-| 2 | Core Hardware Utility (CHU) | Launches `EFI\CDE\CoreDiag.efi` directly from rEFInd |
+| 2 | Core Hardware Utility (CHU) | Loads `EFI\CDE\CHUPrep.efi` from rEFInd (prep launcher → `CoreDiag.efi`) |
 | 3 | Windows Memory Diagnostic | `EFI\CDE\memtest.efi` (not in current `refind.conf`; use `Ensure-BootArtifacts.ps1`, WinPE MemDiag launch, or add rEFInd menuentry) |
 
 ### WinPE Boot Menu (WPF GUI — hosted in ToolkitGUI.exe)
@@ -249,8 +258,10 @@ CDE Beta_Test/
 │   ├── refind/
 │   │   └── refind_x64.efi          # rEFInd source binary copied to EFI\boot\bootx64.efi
 │   ├── CDE/
-│   │   ├── CoreDiag.efi            # CHU UEFI application (EDK2, unsigned)
-│   │   └── memtest.efi             # Windows Memory Diagnostic payload used by rEFInd
+│   │   ├── CHUPrep.efi             # rEFInd CHU entry (console prep → CoreDiag)
+│   │   ├── CoreDiag.efi            # CHU main UEFI application (EDK2, unsigned)
+│   │   ├── CDEBoot.efi             # Windows BCD BOOTAPP chainload (alternate)
+│   │   └── memtest.efi             # Windows Memory Diagnostic payload
 │   └── microsoft/boot/
 │       ├── BCD                     # USB Boot Configuration Database for WinPE
 │       ├── bootmgfw.efi            # Windows Boot Manager used to enter WinPE
@@ -434,7 +445,7 @@ Use this section if `PrepareUSB.vbs` fails while partitioning or formatting a GP
 The default UEFI boot path is now owned by rEFInd at `EFI\boot\bootx64.efi` with its active configuration at `EFI\boot\refind.conf`.
 
 - `CDE WinPE` chainloads `EFI\Microsoft\Boot\bootmgfw.efi`, which uses the adjacent UEFI BCD to load `sources\boot.wim`.
-- `Core Hardware Utility (CHU)` launches `EFI\CDE\CoreDiag.efi` directly from rEFInd.
+- `Core Hardware Utility (CHU)` loads `EFI\CDE\CHUPrep.efi` from rEFInd, which chainloads `EFI\CDE\CoreDiag.efi`.
 - `Windows Memory Diagnostic` launches `EFI\CDE\memtest.efi` directly from rEFInd.
 
 `EFI\boot\icons\` is required for graphical rendering. If the icons directory is missing, rEFInd falls back to text-only mode.

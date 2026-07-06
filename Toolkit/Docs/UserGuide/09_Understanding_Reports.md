@@ -12,7 +12,7 @@ CDE separates **operator deliverables** from **internal app data**:
 | **`CDE\Runtime\Data\cst\`** | Internal CST scan JSON from Process Analyzer single-file scans |
 | **`CDE\Runtime\Data\sessions\`** | PowerShell session `.log` files (not written to `Logs\`) |
 
-CHU pre-boot tests write separately to **`EFI\CoreDiag\Logs`** and **`EFI\CoreDiag\Results`**.
+CHU pre-boot tests write separately to **`EFI\CoreDiag\Logs`** and **`EFI\CoreDiag\Results`**. Logs are opened early in boot (before the CHU UI initializes) when the `CDEDATA` volume is writable.
 
 When a workflow or scan finishes, CDE generates the internal JSON first, then builds the matching PDF under `Logs\` with the same base filename.
 

@@ -1,6 +1,27 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-03
+**Last updated:** 2026-07-06
+
+---
+
+## 2026-07-06 — CHU display backends, CHUPrep, logging, results scroll (field-verified)
+
+Cross-repo work in **Core Hardware Utility** (`CoreDiag.efi`, `CHUPrep.efi`). CDE integration: `EFI\boot\refind.conf`, `EFI\CDE\` staging via `BUILD_CHU_UEFI.ps1`.
+
+| Area | Change |
+|------|--------|
+| **Boot chain** | rEFInd **CHU** entry → `EFI\CDE\CHUPrep.efi` → `\EFI\CDE\CoreDiag.efi`. `CHUPrep.c`: graphics mode, GOP refresh, ConOut reset before chainload. |
+| **Display policy** | `UiConsole.c` — default **PC-Check text** (`UiPcCheck.c`). **GOP fallback** when Console Control stuck in graphics, or portable chassis + GOP + `UiProbeFramebufferReflectsConOut` says text invisible (fail-closed on portable). |
+| **Field status** | HP desktop: PC-Check menu/tests, full results scroll after Run All. Samsung laptop: GOP menu/tests (blank blue fixed). |
+| **Logging** | `CoreDiag.c` opens log before UI init; `Logging.c` flushes after each write. |
+| **Scroll fix** | `UiTestTree.c` — `ViewportRowCount()`, `ClampScrollTop()`, `TextFooterSepLine()` aligned to real viewport (~12 text rows on 80×25). |
+| **Deploy** | `BUILD_CHU_UEFI.ps1 -CdeManifestPath …\tools_manifest.json` → **`SyncUSB.bat`**. No `Publish-ToolkitGUI.ps1` unless CDE GUI changed. |
+
+**Staged artifact:** `EFI\CDE\CoreDiag.efi` — SHA256 `EBC5D75F8687C3A1F9822B02B7B3877A992054DE5F6DD21250A70E32D732E35A`, 281 600 bytes. Also staged: `CHUPrep.efi`, `CDEBoot.efi`.
+
+**Key files (CHU source):** `UiConsole.c`, `Ui.c`, `UiPcCheck.c`, `UiTestTree.c`, `CHUPrep.c`, `CoreDiag.c`, `Logging.c`, `BUILD_CHU_UEFI.ps1`.
+
+**User guide:** `Docs/UserGuide/04_Diagnostics.md` (CHU boot path, display modes, scroll).
 
 ---
 

@@ -1,7 +1,17 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-03  
+**Last updated:** 2026-07-06  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-06 update — CHU display backends, CHUPrep boot chain, scroll fix (field-verified)
+
+- **CHU boot path** — rEFInd menu entry loads **`EFI\CDE\CHUPrep.efi`** (console prep), which chainloads **`EFI\CDE\CoreDiag.efi`**. `refind.conf` updated; `CHUPrep.efi` built and staged by `BUILD_CHU_UEFI.ps1`.
+- **Display policy** — Default **PC-Check text UI** on firmware where ConOut composites correctly (HP desktop verified). **GOP framebuffer UI** when Console Control is stuck in graphics, or on **portable chassis** (SMBIOS Type 3) when GOP is available and the glyph probe says text is not visible (Samsung laptop verified). Forcing GOP everywhere regressed HP flicker stability.
+- **Early logging** — `LogOpen` + `[BOOT] CoreDiag starting` before `UiInitializeDisplay()`; per-line `LogFlush()` so hard resets do not leave empty log files.
+- **Results review scroll** — `UiTestTree.c` scroll bounds now use `ViewportRowCount()` (actual text/GOP viewport) instead of fixed `TREE_VIEW_LINES` (22). **Field-verified on HP** after Run All with multiple drives.
+- **Publish / stage** — CHU only: `Core Hardware Utility\UEFI\BUILD_CHU_UEFI.ps1` → `Toolkit\EFI\CDE\`. Then **`SyncUSB.bat`**.
+- **CoreDiag.efi** — SHA256 `EBC5D75F8687C3A1F9822B02B7B3877A992054DE5F6DD21250A70E32D732E35A`, 281 600 bytes.
+- Full notes: `Toolkit\session_handoff.md` (2026-07-06 CHU section); `Core Hardware Utility\session_handoff.md`.
 
 ## 2026-07-03 update — WinPE shell handoff + maximize (field-verified)
 
@@ -286,7 +296,7 @@ Cross-repo work in **Core Hardware Utility** (`CoreDiag.efi`). Plan: `Core Hardw
 ## Hardware boot snapshot
 
 - rEFInd pre-boot menu loads cleanly on hardware when USB is prepared with `Prepare-BootableUSB.ps1`.
-- CHU boots from the rEFInd menu and hardware tests run.
+- CHU boots from rEFInd via **`CHUPrep.efi`** → **`CoreDiag.efi`**; PC-Check text on HP desktop, GOP fallback on Samsung portable (2026-07-06 field-verified).
 - CDE WinPE: re-run publish + USB sync after source changes, then confirm on hardware.
 
 ## Important integration notes
@@ -303,6 +313,7 @@ Check staged artifacts in the repo (optional):
 
 ```powershell
 Test-Path "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\EFI\boot\refind.conf"
+Test-Path "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\EFI\CDE\CHUPrep.efi"
 Test-Path "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\EFI\CDE\CoreDiag.efi"
 ```
 
@@ -311,6 +322,7 @@ Check the live USB (replace `H:` with your drive letter):
 ```powershell
 Test-Path "H:\EFI\boot\bootx64.efi"
 Test-Path "H:\EFI\boot\refind.conf"
+Test-Path "H:\EFI\CDE\CHUPrep.efi"
 Test-Path "H:\EFI\CDE\CoreDiag.efi"
 Test-Path "H:\EFI\CDE\memtest.efi"
 Test-Path "H:\sources\boot.wim"

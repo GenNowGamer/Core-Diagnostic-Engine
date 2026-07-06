@@ -20,7 +20,7 @@ This represents a strategic shift from the current Windows Boot Manager + CDEBoo
    - Validate required UEFI artifacts and refind.conf loader targets after deployment.
 - Updated architecture-facing docs (README, folder map, and boot manifest) to reflect rEFInd-first UEFI boot ownership.
 - Updated CreateISO.ps1 to use the repository UEFI launcher path (EFI\boot\bootx64.efi) for the UEFI boot entry so ISO build path aligns with rEFInd-first boot ownership.
-- Updated the working loader set to the verified paths: WinPE via EFI\Microsoft\Boot\bootmgfw.efi, CHU via EFI\CDE\CoreDiag.efi, and Memory Diagnostic via EFI\CDE\memtest.efi.
+- Updated the working loader set to the verified paths: WinPE via EFI\Microsoft\Boot\bootmgfw.efi, CHU via EFI\CDE\CHUPrep.efi (chainloads EFI\CDE\CoreDiag.efi), and Memory Diagnostic via EFI\CDE\memtest.efi.
 
 ---
 
@@ -94,8 +94,10 @@ USB Root/
 │   │       ├── bootmgfw.efi     (WinPE chainloader)
 │   │       └── BCD              (UEFI BCD for WinPE)
 │   └── CDE/
-│       ├── CoreDiag.efi         (CHU pre-boot utility)
-│       └── memtest.efi          (Memory diagnostic)
+│       ├── CHUPrep.efi        # rEFInd CHU entry — console prep launcher
+│       ├── CoreDiag.efi       # CHU main pre-boot utility
+│       ├── CDEBoot.efi        # Windows BCD BOOTAPP chainload (alternate path)
+│       └── memtest.efi        # Memory diagnostic
 ├── boot/                        (BIOS legacy boot files)
 └── sources/                     (WinPE image)
 ```

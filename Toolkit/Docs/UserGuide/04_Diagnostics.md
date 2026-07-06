@@ -104,12 +104,15 @@ CDE and CHU use the same intent: **do not hardware-test removable media.**
 
 ### Steps
 
-1. Boot USB → rEFInd → **Core Hardware Utility**
+1. Boot USB → rEFInd → **Core Hardware Utility** (loads `CHUPrep.efi`, then `CoreDiag.efi`)
 2. Run memory, storage, or CPU tests (or Run All) — storage tests target **fixed** drives only (boot USB and other removable media are not listed)
-3. Boot back into CDE WinPE or Windows
-4. Sidebar → **CHU Pre-Boot Results** → **Refresh**
+3. After tests, use **UP/DOWN** in the results review screen to scroll the full list; press **ENTER** to return to the CHU menu
+4. Boot back into CDE WinPE or Windows
+5. Sidebar → **CHU Pre-Boot Results** → **Refresh**
 
-Results are stored on the toolkit volume under `EFI\CoreDiag\Results`.
+Results are stored on the toolkit volume under `EFI\CoreDiag\Results`. Session logs are under `EFI\CoreDiag\Logs` (written from early boot when the `CDEDATA` volume is available).
+
+> **Display modes:** On many desktops CHU uses a **PC-Check-style text** interface. On some laptops the firmware shows only a GOP framebuffer — CHU switches to a graphics menu automatically. Both paths support the same tests and review scroll.
 
 The status bar shows a **rollup** (pass / warn / fail counts). When a test maps to the hardware catalog, the row shows the catalog display name. For warned or failed tests, use **Open matching Diag & Repair test** to jump to the same test in Diag & Repair (highlighted, no auto-run). With an active work order, loading results also adds a **CHU pre-boot** entry to the Dashboard case timeline.
 

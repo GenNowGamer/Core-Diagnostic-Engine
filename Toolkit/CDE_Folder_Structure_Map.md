@@ -79,8 +79,10 @@ EFI/
 ├── refind/
 │   └── refind_x64.efi        # rEFInd source binary copied to EFI\boot\bootx64.efi
 ├── CDE/
-│   ├── CoreDiag.efi          # CHU pre-boot application
-│   └── memtest.efi           # Memory diagnostic payload used by rEFInd
+│   ├── CHUPrep.efi           # rEFInd CHU entry — console prep, chainloads CoreDiag.efi
+│   ├── CoreDiag.efi          # CHU main pre-boot application
+│   ├── CDEBoot.efi           # Windows Boot Manager BOOTAPP chainload (legacy path)
+│   └── memtest.efi           # Memory diagnostic payload
 ├── CoreDiag/                 # CHU runtime output (created on CDEDATA / toolkit volume at test time)
 │   ├── Logs/                 # UEFI session .log files
 │   └── Results/              # Exported JSON result files

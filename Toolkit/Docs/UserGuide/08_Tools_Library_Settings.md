@@ -8,7 +8,7 @@
 
 | Category | Tool | Notes |
 |----------|------|-------|
-| Boot Environment | **Core Hardware Utility** | Launches CHU UEFI diagnostics |
+| Boot Environment | **Core Hardware Utility** | rEFInd loads `CHUPrep.efi`, which chainloads `CoreDiag.efi` |
 | Boot Environment | **Windows Memory Diagnostic** | Memory test EFI payload |
 | Recovery & Network | **Firefox ESR** | Portable browser (Ethernet in WinPE) |
 | Account Recovery | **Enable Offline Administrator** | WinPE + offline OS only |
