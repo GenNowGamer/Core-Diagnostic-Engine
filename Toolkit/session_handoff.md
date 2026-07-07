@@ -2,6 +2,18 @@
 
 **Last updated:** 2026-07-07
 
+## 2026-07-07 — BenchLab safe-only scenario pack + SSE3 SIMD fix
+
+- **BenchLab automation** — Added `Scripts\BenchLab\Invoke-CdeBenchScenarioPack.ps1` for safe-only inject/cleanup across 24 scenarios plus docs under `Docs\BenchLab\` (`CDE_Malware_Simulation_Matrix.md`, `CDE_Safe_Injection_Recipes.md`, `CDE_Scenario_Automation_QuickStart.md`, `CDE_Release_Gate_Metrics.md`, `CDE_Bench_TestCase_Sheet.csv`). The built-in pack is intentionally AV-safe: inert markers, config drift, persistence artifacts, offline hive/task cases, and boot fixtures only.
+- **Bench gate** — Added `Scripts\Tests\Invoke-CdeBenchGate.ps1` to score completed CSV runs and return PASS/FAIL for workflow/remediation/stability gating.
+- **SIMD fix** — `Scripts\Core\CpuSimdEngine.cs` `RunSse3Test()` corrected to use deterministic inputs and valid `Sse3.AddSubtract` expectations; isolated single-row SSE3 failures in pre-fix builds were likely false fails rather than hardware defects.
+- **Regression** — `Scripts\Tests\Test-CpuSimdEnginePs5.ps1` now validates both SSE2 and SSE3 when `CdeCpuSimdCli.exe` is active.
+
+Operator notes:
+1. Use `Scripts\BenchLab\Invoke-CdeBenchScenarioPack.ps1 -Action List` to view the shipped scenario pack.
+2. Treat the built-in BenchLab pack as workflow/remediation/offline/fixture validation, not as a standalone malware-recall corpus.
+3. Use `App\Publish-ToolkitGUI.ps1` after SIMD or BenchLab changes; use `App\Publish-ToolkitGUI-FullVerify.ps1` for full validation sign-off.
+
 ## 2026-07-07 — publish flow split + CST post-scan dialog scroll fix
 
 - **Publish workflow split:** `App\Publish-ToolkitGUI.ps1` is now compile/sync publish only (no automatic full verification gate).

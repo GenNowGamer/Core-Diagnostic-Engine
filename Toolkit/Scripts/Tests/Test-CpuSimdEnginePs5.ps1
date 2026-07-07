@@ -14,12 +14,15 @@ if ($cliPath -and -not $usesCli) {
 }
 
 if ($usesCli) {
-    $ok = Invoke-CpuSimdEngineTest -Implementation 'RunSse2Test'
-    if (-not $ok) {
-        Write-Error 'Invoke-CpuSimdEngineTest RunSse2Test returned false on this host'
-        exit 1
+    $checks = @('RunSse2Test', 'RunSse3Test')
+    foreach ($check in $checks) {
+        $ok = Invoke-CpuSimdEngineTest -Implementation $check
+        if (-not $ok) {
+            Write-Error "Invoke-CpuSimdEngineTest $check returned false on this host"
+            exit 1
+        }
     }
-    Write-Host "Test-CpuSimdEnginePs5: PASS (CdeCpuSimdCli, IsStubEngine=False)"
+    Write-Host "Test-CpuSimdEnginePs5: PASS (CdeCpuSimdCli, IsStubEngine=False; SSE2+SSE3)"
     exit 0
 }
 

@@ -37,9 +37,11 @@ public static class CpuSimdEngine
     public static bool RunSse3Test()
     {
         if (!Sse3.IsSupported) return false;
-        var a = Vector128.Create(new double[] { 1.0, -1.0, 2.0, -2.0 });
-        var b = Sse3.AddSubtract(a, a);
-        return Math.Abs(b.GetElement(0) - 2.0) < 1e-12;
+        var left = Vector128.Create(1.0, 2.0);
+        var right = Vector128.Create(3.0, 4.0);
+        var result = Sse3.AddSubtract(left, right);
+        return Math.Abs(result.GetElement(0) - (-2.0)) < 1e-12 &&
+               Math.Abs(result.GetElement(1) - 6.0) < 1e-12;
     }
 
     public static bool RunSsse3Test()
