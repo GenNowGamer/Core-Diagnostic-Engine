@@ -33,11 +33,7 @@ if ($BuildChu) {
 }
 
 $publishScript = Join-Path $appDir 'Publish-ToolkitGUI.ps1'
-if ($SkipVerify) {
-    & $publishScript -SkipVerify
-} else {
-    & $publishScript
-}
+& $publishScript
 if ($LASTEXITCODE -ne 0) {
     throw "Publish-ToolkitGUI.ps1 failed with exit code $LASTEXITCODE"
 }

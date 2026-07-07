@@ -1,6 +1,18 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-06
+**Last updated:** 2026-07-07
+
+## 2026-07-07 — publish flow split + CST post-scan dialog scroll fix
+
+- **Publish workflow split:** `App\Publish-ToolkitGUI.ps1` is now compile/sync publish only (no automatic full verification gate).
+- **Full validation wrapper:** `App\Publish-ToolkitGUI-FullVerify.ps1` now runs publish plus the full verification pipeline (`Publish-Verify-Toolkit.ps1`).
+- **Build orchestrator alignment:** `App\Build-CDE-Toolkit.ps1` now calls compile-only publish and keeps verification control in its own `-SkipVerify` gate logic.
+- **CST operator UI:** `App\ToolkitGUI\Views\CstFindingsOperatorDialog.xaml` updated to ensure the post-scan findings grid supports horizontal scrolling for long `Location`/`Evidence` rows.
+
+Operational guidance:
+1. Use `App\Publish-ToolkitGUI.ps1` for normal iteration.
+2. Use `App\Publish-ToolkitGUI-FullVerify.ps1` before release/regression sign-off.
+3. Keep `SyncUSB.bat` as the final deployment step for USB media.
 
 ## 2026-07-06 — canonical publish verification completed
 

@@ -168,6 +168,8 @@
                           x:Name="FindingsGrid"
                           AutoGenerateColumns="False"
                           CanUserAddRows="False"
+                          ScrollViewer.HorizontalScrollBarVisibility="Visible"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                           SelectionMode="Extended"
                           IsReadOnly="False"
                           ItemsSource="{Binding Findings}"
@@ -177,6 +179,17 @@
                           RowHeaderWidth="0"
                           SelectionChanged="FindingsGrid_SelectionChanged"
                           CellEditEnding="FindingsGrid_CellEditEnding">
+                    <DataGrid.Resources>
+                        <Style TargetType="ScrollBar" BasedOn="{StaticResource {x:Type ScrollBar}}">
+                            <Style.Triggers>
+                                <Trigger Property="Orientation" Value="Horizontal">
+                                    <Setter Property="Width" Value="Auto"/>
+                                    <Setter Property="MinWidth" Value="0"/>
+                                    <Setter Property="Height" Value="12"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.Resources>
                     <DataGrid.Columns>
                         <DataGridCheckBoxColumn Header="Pick" Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="55"/>
                         <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="90" IsReadOnly="True"/>

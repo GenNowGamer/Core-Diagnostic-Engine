@@ -9,8 +9,7 @@
 #>
 param(
     [switch]$Clean,
-    [switch]$Force,
-    [switch]$SkipVerify
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -328,13 +327,5 @@ if (Test-Path -LiteralPath $userGuidePdf) {
     Write-Host ("  Guide mtime:  {0}" -f $userGuideItem.LastWriteTime)
 }
 
-if (-not $SkipVerify) {
-    Write-Host "`nRunning publish verification gate..." -ForegroundColor Cyan
-    $verifyScript = Join-Path $PSScriptRoot 'Publish-Verify-Toolkit.ps1'
-    & $verifyScript
-    if ($LASTEXITCODE -ne 0) {
-        throw "Publish-Verify-Toolkit.ps1 failed with exit code $LASTEXITCODE (use -SkipVerify to bypass during development)"
-    }
-} else {
-    Write-Warning 'Publish verification skipped (-SkipVerify).'
-}
+Write-Host "`nPublish step complete. Verification is now a separate step." -ForegroundColor Yellow
+Write-Host "Run App\Publish-ToolkitGUI-FullVerify.ps1 when full validation is required." -ForegroundColor Yellow

@@ -2222,7 +2222,7 @@ function Get-CstHeuristicMinCombinedSignals {
 }
 
 function Test-CstHeuristicSignalsAreDependencyWeakOnly {
-    param([Parameter(Mandatory)][System.Collections.Generic.List[string]]$Signals)
+    param([Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$Signals)
 
     if ($Signals.Count -eq 0) { return $false }
 

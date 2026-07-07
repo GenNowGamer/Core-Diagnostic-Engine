@@ -400,8 +400,9 @@ Scripts\Launch\CDE_Portable.bat
 
 Publish/deploy workflow remains:
 1. Edit source in `App\ToolkitGUI\`.
-2. Run `App\Publish-ToolkitGUI.ps1` (builds ToolkitGUI and launcher, syncs to `CDE\`, regenerates `HALP\CDE_User_Guide.pdf` from `Docs\UserGuide\`).
-3. Run `SyncUSB.bat` to copy to USB (including `PrepareUSB.vbs` and `Scripts\Prepare-BootableUSB.ps1`).
+2. Run `App\Publish-ToolkitGUI.ps1` for compile/sync publish (builds ToolkitGUI and launcher, syncs to `CDE\`, regenerates `HALP\CDE_User_Guide.pdf` from `Docs\UserGuide\`).
+3. Run `App\Publish-ToolkitGUI-FullVerify.ps1` when full validation is required (regression, ValidateTools, CST release gates, CHU hash, SIMD payload, GUI unit tests).
+4. Run `SyncUSB.bat` to copy to USB (including `PrepareUSB.vbs` and `Scripts\Prepare-BootableUSB.ps1`).
 
 After sync, `SyncUSB.bat` removes **`CDE\Runtime\`** and any legacy root **`offline_env.txt`** / **`offline_progress.log`** (WinPE session state is runtime-only, not part of the payload).
 
