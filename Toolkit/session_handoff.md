@@ -2,6 +2,19 @@
 
 **Last updated:** 2026-07-06
 
+## 2026-07-06 — canonical publish verification completed
+
+- Canonical publish executed: `App\Publish-ToolkitGUI.ps1`.
+- Verification outcome: PASS.
+- Verification report: `CDE\Runtime\Data\publish_verify_20260706_192515.json`.
+- Included checks passed:
+  - `ValidateTools` summary pass,
+  - CST release gates pass (all gates),
+  - CHU EFI manifest hash pass,
+  - `CdeCpuSimdCli` payload pass,
+  - `ToolkitGUI.Tests` unit tests pass.
+- Persistent workflow rule: for relevant CDE/CST/CHU code changes, run `App\Publish-ToolkitGUI.ps1` before `SyncUSB.bat` to ensure USB payload includes latest runtime artifacts.
+
 ---
 
 ## 2026-07-06 — CHU display backends, CHUPrep, logging, results scroll (field-verified)

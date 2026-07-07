@@ -1,9 +1,91 @@
 # Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
 $knownGoodHelper = Join-Path $PSScriptRoot 'Cst.KnownGood.ps1'
-if (Test-Path -LiteralPath $knownGoodHelper) {
-    . $knownGoodHelper
+$script:CstKnownGoodHelperTrusted = $false
+$script:CstKnownGoodHelperStatus = 'NotLoaded'
+$script:CstKnownGoodHelperMessage = ''
+
+function Get-CstKnownGoodHelperIntegrityState {
+    param(
+        [Parameter(Mandatory)][string]$HelperPath,
+        [ValidateSet('WarnOnly', 'Enforce')][string]$IntegrityMode = 'WarnOnly'
+    )
+
+    if (-not (Test-Path -LiteralPath $HelperPath -PathType Leaf)) {
+        return [PSCustomObject]@{
+            exists = $false
+            trusted = $false
+            shouldLoad = $false
+            message = "Known-good helper not found: $HelperPath"
+        }
+    }
+
+    $signatureValid = $false
+    $signatureStatus = 'NotEvaluated'
+    $expectedHash = ''
+    $hashValid = $false
+    $hashFilePath = "$HelperPath.sha256"
+
+    if (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue) {
+        try {
+            $sig = Get-AuthenticodeSignature -FilePath $HelperPath -ErrorAction Stop
+            $signatureStatus = [string]$sig.Status
+            $signatureValid = ($signatureStatus -eq 'Valid')
+        } catch {
+            $signatureStatus = 'Error'
+        }
+    }
+
+    if (Test-Path -LiteralPath $hashFilePath -PathType Leaf) {
+        try {
+            $hashLine = (Get-Content -LiteralPath $hashFilePath -ErrorAction Stop | Select-Object -First 1)
+            if ($hashLine -match '([A-Fa-f0-9]{64})') {
+                $expectedHash = $Matches[1].ToUpperInvariant()
+            }
+        } catch { }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($expectedHash)) {
+        try {
+            $actualHash = (Get-FileHash -LiteralPath $HelperPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToUpperInvariant()
+            $hashValid = ($actualHash -eq $expectedHash)
+        } catch {
+            $hashValid = $false
+        }
+    }
+
+    $trusted = ($signatureValid -or $hashValid)
+    $shouldLoad = if ($trusted) { $true } else { ($IntegrityMode -eq 'WarnOnly') }
+
+    $msg = if ($trusted) {
+        "Known-good helper integrity verified (signatureStatus=$signatureStatus, hashValidated=$hashValid)."
+    } elseif ($IntegrityMode -eq 'WarnOnly') {
+        "Known-good helper integrity could not be verified (signatureStatus=$signatureStatus, hashValidated=$hashValid). Continuing in warn-only mode."
+    } else {
+        "Known-good helper integrity could not be verified (signatureStatus=$signatureStatus, hashValidated=$hashValid). Helper load blocked by enforce mode."
+    }
+
+    return [PSCustomObject]@{
+        exists = $true
+        trusted = $trusted
+        shouldLoad = $shouldLoad
+        message = $msg
+    }
 }
+
+$helperIntegrityModeRaw = [string]$env:CST_HELPER_INTEGRITY_MODE
+$helperIntegrityMode = if ($helperIntegrityModeRaw -match '^(?i:enforce)$') { 'Enforce' } else { 'WarnOnly' }
+$helperIntegrityState = Get-CstKnownGoodHelperIntegrityState -HelperPath $knownGoodHelper -IntegrityMode $helperIntegrityMode
+$script:CstKnownGoodHelperTrusted = [bool]$helperIntegrityState.trusted
+$script:CstKnownGoodHelperStatus = if (-not $helperIntegrityState.exists) { 'Missing' } elseif ($helperIntegrityState.trusted) { 'Trusted' } elseif ($helperIntegrityState.shouldLoad) { 'LoadedUntrusted' } else { 'Blocked' }
+$script:CstKnownGoodHelperMessage = [string]$helperIntegrityState.message
+
+if ($helperIntegrityState.shouldLoad) {
+    . $knownGoodHelper
+} else {
+    Write-Warning $script:CstKnownGoodHelperMessage
+}
+
 $script:CstAuthenticodeProbeCompleted = $false
 $script:CstAuthenticodeProbeAvailable = $true
 $script:CstAuthenticodeProbeMessage = ''
@@ -13,16 +95,104 @@ function Get-CstEnvironmentMode {
     return 'Windows'
 }
 
+function New-CstFallbackRulesDocument {
+    param([string]$Reason = '')
+
+    $fallback = [PSCustomObject]@{
+        rulesVersion = 'fallback-emergency'
+        updatedUtc = (Get-Date).ToUniversalTime().ToString('o')
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Reason)) {
+        $fallback | Add-Member -NotePropertyName __cstFallbackReason -NotePropertyValue $Reason -Force
+    }
+
+    return $fallback
+}
+
+function Test-CstWindowsRootMarker {
+    param([string]$RootPath)
+
+    $root = Normalize-CstScanRootPath -Path $RootPath
+    if ([string]::IsNullOrWhiteSpace($root)) { return $false }
+
+    if ($root -match '^[A-Za-z]:\\$') {
+        if (-not (Test-Path -LiteralPath $root -ErrorAction SilentlyContinue)) {
+            return $false
+        }
+    }
+
+    $system32Path = "$root\Windows\System32"
+    if (-not (Test-Path -LiteralPath $system32Path -ErrorAction SilentlyContinue)) { return $false }
+
+    $winsxsPath = "$root\Windows\WinSxS"
+    $samPath = "$root\Windows\System32\Config\SAM"
+    return (
+        (Test-Path -LiteralPath $winsxsPath -ErrorAction SilentlyContinue) -or
+        (Test-Path -LiteralPath $samPath -ErrorAction SilentlyContinue)
+    )
+}
+
+function Get-CstDiscoveredWindowsRoots {
+    $candidateRoots = New-Object System.Collections.Generic.List[string]
+    $seenCandidates = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+
+    $addCandidate = {
+        param([string]$RootPath)
+        $normalized = Normalize-CstScanRootPath -Path $RootPath
+        if ([string]::IsNullOrWhiteSpace($normalized)) { return }
+        if ($normalized -eq 'X:\') { return }
+        if ($seenCandidates.Add($normalized)) {
+            [void]$candidateRoots.Add($normalized)
+        }
+    }
+
+    foreach ($drive in @(Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)) {
+        if ($null -eq $drive -or [string]::IsNullOrWhiteSpace([string]$drive.Root)) { continue }
+        & $addCandidate ([string]$drive.Root)
+    }
+
+    if (Get-Command Get-Volume -ErrorAction SilentlyContinue) {
+        try {
+            foreach ($volume in @(Get-Volume -ErrorAction SilentlyContinue)) {
+                if ($null -eq $volume -or -not $volume.DriveLetter) { continue }
+                & $addCandidate ("{0}:\" -f [string]$volume.DriveLetter)
+            }
+        } catch { }
+    }
+
+    for ($d = [int][char]'C'; $d -le [int][char]'Z'; $d++) {
+        $driveLetter = [char]$d
+        if ($driveLetter -eq 'X') { continue }
+        & $addCandidate ("$driveLetter`:\")
+    }
+
+    $roots = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in @($candidateRoots)) {
+        if (Test-CstWindowsRootMarker -RootPath $candidate) {
+            [void]$roots.Add($candidate)
+        }
+    }
+
+    return @($roots | Select-Object -Unique)
+}
+
 function Get-CstRuleSet {
     param([Parameter(Mandatory)][string]$RulesPath)
 
-    if (-not (Test-Path $RulesPath)) {
-        throw "Rules file not found: $RulesPath"
+    $rules = $null
+    if (-not (Test-Path -LiteralPath $RulesPath)) {
+        $rules = New-CstFallbackRulesDocument -Reason ("Rules file not found: {0}" -f $RulesPath)
+    } else {
+        try {
+            $rules = Get-Content -Path $RulesPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        } catch {
+            $rules = New-CstFallbackRulesDocument -Reason ("Rules parse failed: {0}" -f $_.Exception.Message)
+        }
     }
 
-    $rules = Get-Content -Path $RulesPath -Raw | ConvertFrom-Json
-    if (-not $rules.rulesVersion) {
-        throw "Invalid rules format: missing rulesVersion"
+    if (-not $rules -or -not $rules.rulesVersion) {
+        $rules = New-CstFallbackRulesDocument -Reason 'Rules missing required rulesVersion; fallback rules activated.'
     }
 
     # Backward compatible migration: preserve legacy patterns while requiring
@@ -60,6 +230,13 @@ function Get-CstRuleSet {
     if (-not $rules.heuristicThresholds.PSObject.Properties['maxYaraTextFileSizeMb']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxYaraTextFileSizeMb -NotePropertyValue 4 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['maxYaraByteFileSizeMb']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxYaraByteFileSizeMb -NotePropertyValue 8 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['maxSignatureVerificationMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxSignatureVerificationMs -NotePropertyValue 500 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutAdaptiveEnabled']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutAdaptiveEnabled -NotePropertyValue $true -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutMinMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutMinMs -NotePropertyValue 150 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutMaxMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutMaxMs -NotePropertyValue 1500 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutBudgetFraction']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutBudgetFraction -NotePropertyValue 0.35 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutThreatMultiplier']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutThreatMultiplier -NotePropertyValue 0.8 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutCustomMultiplier']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutCustomMultiplier -NotePropertyValue 0.9 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutWinPeMultiplier']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutWinPeMultiplier -NotePropertyValue 0.7 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['maxArchiveAnalysisMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxArchiveAnalysisMs -NotePropertyValue 400 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['maxEntropyBytesToScan']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxEntropyBytesToScan -NotePropertyValue 65536 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['slowFileThresholdMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName slowFileThresholdMs -NotePropertyValue 1500 -Force }
@@ -312,62 +489,8 @@ function Get-CstTargets {
         return $Target
     }
 
-    # Determine effective scan root (offline Windows or host C:\ drive)
-    $scanRoot = 'C:\'
-    if ([string]::IsNullOrWhiteSpace($env:OFFLINE_WINDOWS_ROOT)) {
-        # In WinPE without explicit offline load, enumerate available drives with Windows installations
-        $availableDrives = @()
-        for ($d = [int][char]'C'; $d -le [int][char]'Z'; $d++) {
-            $drive = "$([char]$d):\"
-            if (Test-Path "$drive\Windows\System32" -ErrorAction SilentlyContinue) {
-                $availableDrives += $drive
-            }
-        }
-        if ($availableDrives.Count -eq 0 -and (Test-Path 'C:\')) {
-            $availableDrives = @('C:\')
-        }
-        $scanRoot = if ($availableDrives.Count -gt 0) { $availableDrives[0] } else { 'C:\' }
-    } else {
-        $offlineScanRoot = $env:OFFLINE_WINDOWS_ROOT.TrimEnd('\\') + '\\'
-        if (Test-Path ($offlineScanRoot + 'Windows\System32') -ErrorAction SilentlyContinue) {
-            $scanRoot = $offlineScanRoot
-        }
-    }
-
-    if ($Mode -eq 'FullScan') {
-        if ($Target -and $Target.Count -gt 0) {
-            return @($Target | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        }
-        return @($scanRoot)
-    }
-
-    # ThreatScan defaults (risk-focused paths)
-    $riskTargets = @(
-        (Join-Path $scanRoot 'ProgramData'),
-        (Join-Path $scanRoot 'Windows\Temp'),
-        (Join-Path $scanRoot 'Windows\System32\Tasks')
-    )
-
-    $skipUserProfiles = @('public', 'default', 'default user', 'all users')
-    $usersPath = Join-Path $scanRoot 'Users'
-    if (Test-Path $usersPath -ErrorAction SilentlyContinue) {
-        Get-ChildItem $usersPath -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name.ToLowerInvariant() -notin $skipUserProfiles } | ForEach-Object {
-            $u = $_.FullName
-            $riskTargets += @(
-                (Join-Path $u 'AppData\Local\Temp'),
-                (Join-Path $u 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup'),
-                (Join-Path $u 'Downloads'),
-                (Join-Path $u 'AppData\Roaming'),
-                (Join-Path $u 'AppData\Local\Microsoft\Windows\INetCache')
-            )
-        }
-    }
-
-    if ($Target -and $Target.Count -gt 0) {
-        $riskTargets += $Target
-    }
-
-    return ($riskTargets | Where-Object { Test-Path $_ -ErrorAction SilentlyContinue } | Select-Object -Unique)
+    $resolution = Resolve-CstTargets -Mode $Mode -Target $Target
+    return @($resolution.existingTargets)
 }
 
 function Normalize-CstScanRootPath {
@@ -375,16 +498,33 @@ function Normalize-CstScanRootPath {
 
     if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
 
-    $trimmed = [string]$Path.Trim().TrimEnd('\', '/')
-    if ($trimmed -match '^[A-Za-z]:$') {
-        return ($trimmed.Substring(0, 2) + '\')
+    $raw = [string]$Path.Trim()
+    if ($raw -match '^[A-Za-z]:$') {
+        return ($raw.Substring(0, 2) + '\')
+    }
+    if ($raw -match '^[A-Za-z]:\\?$') {
+        return ($raw.Substring(0, 2) + '\')
     }
 
-    if ($trimmed -match '^[A-Za-z]:\\') {
-        return $trimmed
+    if ($raw.StartsWith('\\?\')) {
+        return $raw.TrimEnd('\', '/')
     }
 
-    return $trimmed
+    if ($raw.StartsWith('\\')) {
+        return $raw.TrimEnd('\', '/')
+    }
+
+    try {
+        $fullPath = [System.IO.Path]::GetFullPath($raw)
+    } catch {
+        $fullPath = $raw
+    }
+
+    if ($fullPath -match '^[A-Za-z]:\\?$') {
+        return ($fullPath.Substring(0, 2) + '\')
+    }
+
+    return $fullPath.TrimEnd('\', '/')
 }
 
 function Test-CstIsDriveLetterTarget {
@@ -458,6 +598,67 @@ function Get-CstScanOverallPercent {
     return [math]::Min($MaximumPercent, [math]::Round($MinimumPercent + ($scanPortion * ($MaximumPercent - $MinimumPercent)), 1))
 }
 
+function Get-CstSignatureTimeoutProfile {
+    param(
+        [Parameter(Mandatory)][ValidateSet('ThreatScan','FullScan','CustomScan')][string]$Mode,
+        [Parameter(Mandatory)][ValidateSet('Windows','WinPE')][string]$EnvironmentMode,
+        [Parameter(Mandatory)][int]$BaseTimeoutMs,
+        [Parameter(Mandatory)][int]$MaxPerFileAnalysisMs,
+        [bool]$AdaptiveEnabled = $true,
+        [int]$MinTimeoutMs = 150,
+        [int]$MaxTimeoutMs = 1500,
+        [double]$BudgetFraction = 0.35,
+        [double]$ThreatMultiplier = 0.8,
+        [double]$CustomMultiplier = 0.9,
+        [double]$WinPeMultiplier = 0.7
+    )
+
+    if ($BaseTimeoutMs -lt 1) { $BaseTimeoutMs = 1 }
+    if ($MaxPerFileAnalysisMs -lt 1) { $MaxPerFileAnalysisMs = 1 }
+    if ($MinTimeoutMs -lt 50) { $MinTimeoutMs = 50 }
+    if ($MaxTimeoutMs -lt $MinTimeoutMs) { $MaxTimeoutMs = $MinTimeoutMs }
+    if ($BudgetFraction -lt 0.1) { $BudgetFraction = 0.1 }
+    if ($BudgetFraction -gt 0.9) { $BudgetFraction = 0.9 }
+
+    $modeMultiplier = 1.0
+    if ($Mode -eq 'ThreatScan') {
+        $modeMultiplier = $ThreatMultiplier
+    } elseif ($Mode -eq 'CustomScan') {
+        $modeMultiplier = $CustomMultiplier
+    }
+    if ($modeMultiplier -lt 0.25) { $modeMultiplier = 0.25 }
+    if ($modeMultiplier -gt 2.0) { $modeMultiplier = 2.0 }
+
+    $environmentMultiplier = if ($EnvironmentMode -eq 'WinPE') { $WinPeMultiplier } else { 1.0 }
+    if ($environmentMultiplier -lt 0.25) { $environmentMultiplier = 0.25 }
+    if ($environmentMultiplier -gt 2.0) { $environmentMultiplier = 2.0 }
+
+    $budgetCeilingMs = [int][math]::Floor($MaxPerFileAnalysisMs * $BudgetFraction)
+    if ($budgetCeilingMs -lt $MinTimeoutMs) { $budgetCeilingMs = $MinTimeoutMs }
+
+    $effectiveTimeoutMs = $BaseTimeoutMs
+    if ($AdaptiveEnabled) {
+        $scaled = [int][math]::Round($BaseTimeoutMs * $modeMultiplier * $environmentMultiplier, 0)
+        $effectiveTimeoutMs = $scaled
+    }
+
+    if ($effectiveTimeoutMs -lt $MinTimeoutMs) { $effectiveTimeoutMs = $MinTimeoutMs }
+    if ($effectiveTimeoutMs -gt $MaxTimeoutMs) { $effectiveTimeoutMs = $MaxTimeoutMs }
+    if ($effectiveTimeoutMs -gt $budgetCeilingMs) { $effectiveTimeoutMs = $budgetCeilingMs }
+
+    return [PSCustomObject]@{
+        adaptiveEnabled = [bool]$AdaptiveEnabled
+        baseTimeoutMs = [int]$BaseTimeoutMs
+        effectiveTimeoutMs = [int]$effectiveTimeoutMs
+        minTimeoutMs = [int]$MinTimeoutMs
+        maxTimeoutMs = [int]$MaxTimeoutMs
+        budgetFraction = [double]$BudgetFraction
+        budgetCeilingMs = [int]$budgetCeilingMs
+        modeMultiplier = [double]$modeMultiplier
+        environmentMultiplier = [double]$environmentMultiplier
+    }
+}
+
 function Resolve-CstTargets {
     param(
         [Parameter(Mandatory)][ValidateSet('ThreatScan','FullScan','CustomScan')][string]$Mode,
@@ -471,27 +672,19 @@ function Resolve-CstTargets {
 
     $offlineEnvRoot = [string]$env:OFFLINE_WINDOWS_ROOT
     if (-not [string]::IsNullOrWhiteSpace($offlineEnvRoot)) {
-        $offlineCandidate = $offlineEnvRoot.TrimEnd('\\') + '\\'
+        $offlineCandidate = $offlineEnvRoot.TrimEnd('\') + '\'
         if (Test-Path ($offlineCandidate + 'Windows\System32') -ErrorAction SilentlyContinue) {
             $offlineRoot = $offlineCandidate
             $discoveredWindowsRoots += $offlineCandidate
         }
     }
 
-    for ($d = [int][char]'C'; $d -le [int][char]'Z'; $d++) {
-        $driveLetter = [char]$d
-        if ($driveLetter -eq 'X') { continue }
-
-        $driveRoot = "$driveLetter`:\\"
-        if (Test-Path ($driveRoot + 'Windows\System32') -ErrorAction SilentlyContinue) {
-            $discoveredWindowsRoots += $driveRoot
-        }
-    }
+    $discoveredWindowsRoots += @(Get-CstDiscoveredWindowsRoots)
 
     $discoveredWindowsRoots = @($discoveredWindowsRoots | Select-Object -Unique)
 
     if ($offlineRoot) {
-        $preferredRoot = $offlineRoot
+        $preferredRoot = Normalize-CstScanRootPath -Path $offlineRoot
     } elseif ($discoveredWindowsRoots.Count -gt 0) {
         $preferredRoot = $discoveredWindowsRoots[0]
     } elseif (Test-Path 'C:\' -ErrorAction SilentlyContinue) {
@@ -603,7 +796,8 @@ function Resolve-CstTargets {
 function Get-CstScanPolicy {
     param(
         [Parameter(Mandatory)][ValidateSet('ThreatScan','FullScan','CustomScan')][string]$Mode,
-        [Parameter(Mandatory)]$Rules
+        [Parameter(Mandatory)]$Rules,
+        [ValidateSet('Windows','WinPE')][string]$EnvironmentMode = 'Windows'
     )
 
     $quickMaxFiles = 4000
@@ -693,6 +887,38 @@ function Get-CstScanPolicy {
         }
 
     }
+
+    $signatureTimeoutAdaptiveEnabled = $true
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutAdaptiveEnabled']) {
+        $signatureTimeoutAdaptiveEnabled = [bool]$Rules.heuristicThresholds.signatureTimeoutAdaptiveEnabled
+    }
+    $signatureTimeoutMinMs = 150
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutMinMs']) {
+        $signatureTimeoutMinMs = [int]$Rules.heuristicThresholds.signatureTimeoutMinMs
+    }
+    $signatureTimeoutMaxMs = 1500
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutMaxMs']) {
+        $signatureTimeoutMaxMs = [int]$Rules.heuristicThresholds.signatureTimeoutMaxMs
+    }
+    $signatureTimeoutBudgetFraction = 0.35
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutBudgetFraction']) {
+        $signatureTimeoutBudgetFraction = [double]$Rules.heuristicThresholds.signatureTimeoutBudgetFraction
+    }
+    $signatureTimeoutThreatMultiplier = 0.8
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutThreatMultiplier']) {
+        $signatureTimeoutThreatMultiplier = [double]$Rules.heuristicThresholds.signatureTimeoutThreatMultiplier
+    }
+    $signatureTimeoutCustomMultiplier = 0.9
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutCustomMultiplier']) {
+        $signatureTimeoutCustomMultiplier = [double]$Rules.heuristicThresholds.signatureTimeoutCustomMultiplier
+    }
+    $signatureTimeoutWinPeMultiplier = 0.7
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutWinPeMultiplier']) {
+        $signatureTimeoutWinPeMultiplier = [double]$Rules.heuristicThresholds.signatureTimeoutWinPeMultiplier
+    }
+
+    $maxPerFileMs = if ($Mode -eq 'ThreatScan') { $maxPerFileThreatMs } else { $maxPerFileFullMs }
+    $signatureTimeoutProfile = Get-CstSignatureTimeoutProfile -Mode $Mode -EnvironmentMode $EnvironmentMode -BaseTimeoutMs $maxSignatureVerificationMs -MaxPerFileAnalysisMs $maxPerFileMs -AdaptiveEnabled $signatureTimeoutAdaptiveEnabled -MinTimeoutMs $signatureTimeoutMinMs -MaxTimeoutMs $signatureTimeoutMaxMs -BudgetFraction $signatureTimeoutBudgetFraction -ThreatMultiplier $signatureTimeoutThreatMultiplier -CustomMultiplier $signatureTimeoutCustomMultiplier -WinPeMultiplier $signatureTimeoutWinPeMultiplier
 
     $threatScanRiskRegex = Get-CstThreatScanRiskPathRegex
 
@@ -791,10 +1017,20 @@ function Get-CstScanPolicy {
         archiveMaxFileSizeMb = if ($Mode -eq 'ThreatScan') { $quickArchiveMb } else { $fullArchiveMb }
         maxArchiveEntryCount = $maxArchiveEntryCount
         maxArchiveEntrySizeMb = $maxArchiveEntrySizeMb
-        maxPerFileAnalysisMs = if ($Mode -eq 'ThreatScan') { $maxPerFileThreatMs } else { $maxPerFileFullMs }
+        maxPerFileAnalysisMs = $maxPerFileMs
         maxYaraTextFileSizeMb = $maxYaraTextFileSizeMb
         maxYaraByteFileSizeMb = $maxYaraByteFileSizeMb
-        maxSignatureVerificationMs = $maxSignatureVerificationMs
+        maxSignatureVerificationMs = [int]$signatureTimeoutProfile.effectiveTimeoutMs
+        maxSignatureVerificationMsBase = [int]$signatureTimeoutProfile.baseTimeoutMs
+        signatureTimeoutAdaptiveProfile = [PSCustomObject]@{
+            enabled = [bool]$signatureTimeoutProfile.adaptiveEnabled
+            minMs = [int]$signatureTimeoutProfile.minTimeoutMs
+            maxMs = [int]$signatureTimeoutProfile.maxTimeoutMs
+            budgetFraction = [double]$signatureTimeoutProfile.budgetFraction
+            budgetCeilingMs = [int]$signatureTimeoutProfile.budgetCeilingMs
+            modeMultiplier = [double]$signatureTimeoutProfile.modeMultiplier
+            environmentMultiplier = [double]$signatureTimeoutProfile.environmentMultiplier
+        }
         maxArchiveAnalysisMs = $maxArchiveAnalysisMs
         maxEntropyBytesToScan = $maxEntropyBytesToScan
         slowFileThresholdMs = $slowFileThresholdMs
@@ -3030,7 +3266,7 @@ function Find-CstFileFindings {
     $enumeratedCandidates = 0
     $filteredByRiskPath = 0
     $filteredByExclusion = 0
-    $policy = Get-CstScanPolicy -Mode $Mode -Rules $Rules
+    $policy = Get-CstScanPolicy -Mode $Mode -Rules $Rules -EnvironmentMode $EnvironmentMode
     $filePatterns = @($policy.filePatterns)
     $extensionSet = Get-CstFilePatternExtensionSet -FilePatterns $filePatterns
     $visitedCandidatePaths = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
@@ -4232,7 +4468,7 @@ function Find-CstBootTargetLocations {
     foreach ($root in @($TargetResolution.discoveredWindowsRoots, $TargetResolution.preferredRoot, $TargetResolution.offlineRoot)) {
         $candidate = [string]$root
         if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        $normalized = $candidate.TrimEnd('\\') + '\\'
+        $normalized = $candidate.TrimEnd('\') + '\'
         if (-not ($roots.Contains($normalized))) {
             $roots.Add($normalized)
         }
@@ -5015,12 +5251,17 @@ function Invoke-CstScan {
     }
 
     $rules = Get-CstRuleSet -RulesPath $RulesPath
+    $rulesLoadWarnings = New-Object System.Collections.Generic.List[string]
+    if ($rules.PSObject.Properties['__cstFallbackReason'] -and -not [string]::IsNullOrWhiteSpace([string]$rules.__cstFallbackReason)) {
+        [void]$rulesLoadWarnings.Add([string]$rules.__cstFallbackReason)
+    }
+    $rulesLoadWarningCount = @($rulesLoadWarnings).Count
     Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath '' -ElapsedSec (((Get-Date) - $start).TotalSeconds) -Phase 'TargetPrep' -PhasePercent 35.0 -OverallPercent 4.0 -Detail 'Rules loaded. Resolving scan targets...'
     $targetResolution = Resolve-CstTargets -Mode $Mode -Target $Target
     $targets = @($targetResolution.existingTargets)
     Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath '' -ElapsedSec (((Get-Date) - $start).TotalSeconds) -Phase 'TargetPrep' -PhasePercent 70.0 -OverallPercent 7.0 -TargetIndex @($targets).Count -TargetCount @($targets).Count -Detail ("Resolved {0} target(s). Building scan policy..." -f @($targets).Count)
 
-    $policy = Get-CstScanPolicy -Mode $Mode -Rules $rules
+    $policy = Get-CstScanPolicy -Mode $Mode -Rules $rules -EnvironmentMode $envMode
     $maxFiles = [int]$policy.maxFiles
     Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath '' -ElapsedSec (((Get-Date) - $start).TotalSeconds) -Phase 'TargetPrep' -PhasePercent 100.0 -OverallPercent 10.0 -TargetIndex 0 -TargetCount @($targets).Count -Detail 'Target preparation complete. Starting scan walk...'
 
@@ -5032,8 +5273,13 @@ function Invoke-CstScan {
         $scanData = [PSCustomObject]@{
             findings = @()
             scanned = 0
-            scanErrors = 0
-            scanErrorDetails = @()
+            scanErrors = $rulesLoadWarningCount
+            scanErrorDetails = @($rulesLoadWarnings | ForEach-Object {
+                [PSCustomObject]@{
+                    stage = 'RulesLoad'
+                    message = [string]$_
+                }
+            })
             coverage = 'NoTargets'
             coverageReason = [string]$targetResolution.noTargetReason
             timeBudgetExceeded = $false
@@ -5054,6 +5300,25 @@ function Invoke-CstScan {
         $scanData = Find-CstFileFindings -Mode $Mode -EnvironmentMode $envMode -Targets $targets -Rules $rules -RulesPath $RulesPath -MaxFiles $maxFiles -MaxMinutes $effectiveMaxMinutes -OfflineOnly $OfflineOnly -IncludesDriveRootScan ([bool]$targetResolution.includesDriveRootScan)
         if (-not $scanData.PSObject.Properties['noEligibleTargets']) {
             $scanData | Add-Member -NotePropertyName noEligibleTargets -NotePropertyValue $false -Force
+        }
+        if ($rulesLoadWarningCount -gt 0) {
+            $existingScanErrorDetails = @()
+            if ($scanData.PSObject.Properties['scanErrorDetails']) {
+                $existingScanErrorDetails = @($scanData.scanErrorDetails)
+            }
+            $existingScanErrorDetails += @($rulesLoadWarnings | ForEach-Object {
+                [PSCustomObject]@{
+                    stage = 'RulesLoad'
+                    message = [string]$_
+                }
+            })
+            $scanData | Add-Member -NotePropertyName scanErrorDetails -NotePropertyValue @($existingScanErrorDetails) -Force
+
+            $existingScanErrors = 0
+            if ($scanData.PSObject.Properties['scanErrors']) {
+                $existingScanErrors = [int]$scanData.scanErrors
+            }
+            $scanData | Add-Member -NotePropertyName scanErrors -NotePropertyValue ($existingScanErrors + $rulesLoadWarningCount) -Force
         }
     }
 
@@ -5182,6 +5447,10 @@ function Invoke-CstScan {
             maxArchiveEntryCount = [int]$policy.maxArchiveEntryCount
             maxArchiveEntrySizeMb = [int]$policy.maxArchiveEntrySizeMb
             maxPerFileAnalysisMs = [int]$policy.maxPerFileAnalysisMs
+            maxSignatureVerificationMs = [int]$policy.maxSignatureVerificationMs
+            maxSignatureVerificationMsBase = [int]$policy.maxSignatureVerificationMsBase
+            signatureTimeoutAdaptiveEnabled = [bool]$policy.signatureTimeoutAdaptiveProfile.enabled
+            signatureTimeoutAdaptiveProfile = $policy.signatureTimeoutAdaptiveProfile
             hashGateMb = [int]$policy.hashGateMb
             filePatterns = @($policy.filePatterns)
             hashEligibleExtensions = @($policy.hashEligibleExtensions)
@@ -5206,6 +5475,12 @@ function Invoke-CstScan {
             requestedTargets = @($targetResolution.rawTargets)
             missingTargets = @($targetResolution.missingTargets)
             targets = @($targets)
+            rulesLoadWarnings = @($rulesLoadWarnings)
+            helperIntegrity = [PSCustomObject]@{
+                trusted = [bool]$script:CstKnownGoodHelperTrusted
+                status = [string]$script:CstKnownGoodHelperStatus
+                message = [string]$script:CstKnownGoodHelperMessage
+            }
         }
         summary = [PSCustomObject]@{
             itemsScanned = $scanData.scanned
@@ -5240,6 +5515,7 @@ function Invoke-CstScan {
             bootErrors = [int]$bootData.errors
             skipLogEntries = @($scanData.skipLog).Count
             skipLogTruncated = [bool]$scanData.skipLogTruncated
+            rulesLoadWarnings = $rulesLoadWarningCount
         }
         onlineReputation = $scanData.onlineReputation
         scanErrorDetails = @($scanData.scanErrorDetails)

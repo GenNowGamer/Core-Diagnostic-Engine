@@ -3,6 +3,17 @@
 **Last updated:** 2026-07-06  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
 
+## 2026-07-06 update — canonical publish run + verification pass
+
+- Executed canonical publish script: `Toolkit\App\Publish-ToolkitGUI.ps1` after session changes affecting CST/CDE integration.
+- Publish verification completed with overall pass; report written to `Toolkit\CDE\Runtime\Data\publish_verify_20260706_192515.json`.
+- Verification included:
+  - CST release gates pass (PolicyContract, RuleQuality, BootFixture, PathExclusionPolicy, DependencyTrust, IsolatedScanStability),
+  - CHU EFI manifest hash pass,
+  - CdeCpuSimdCli payload pass,
+  - ToolkitGUI unit tests pass.
+- Persistent workflow rule (operator requirement): after relevant CDE/CST/CHU source changes, run a fresh `Publish-ToolkitGUI.ps1` before USB deployment (`SyncUSB.bat`) so runtime payloads include latest changes.
+
 ## 2026-07-06 update — CHU display backends, CHUPrep boot chain, scroll fix (field-verified)
 
 - **CHU boot path** — rEFInd menu entry loads **`EFI\CDE\CHUPrep.efi`** (console prep), which chainloads **`EFI\CDE\CoreDiag.efi`**. `refind.conf` updated; `CHUPrep.efi` built and staged by `BUILD_CHU_UEFI.ps1`.
