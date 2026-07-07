@@ -6,6 +6,7 @@ param(
     [ValidateSet('ThreatScan','FullScan','CustomScan')]
     [string]$Mode = 'ThreatScan',
     [string[]]$Target = @(),
+    [string[]]$BehaviorArtifactsPath = @(),
     [string]$RulesPath,
     [string]$OutputPath,
     [int]$MaxMinutes = 15,
@@ -118,7 +119,7 @@ $modulePath = Join-Path $PSScriptRoot 'CoreSecurityTool.psm1'
 Import-Module $modulePath -Force -DisableNameChecking
 
 if ($Operation -eq 'Scan') {
-    $result = Invoke-CstScan -Mode $Mode -Target $Target -RulesPath $RulesPath -MaxMinutes $MaxMinutes -DetectionScope $DetectionScope -ActionMode $ActionMode -EnablePersistenceCollectors:(-not $DisablePersistenceCollectors) -OfflineOnly:$OfflineOnly
+    $result = Invoke-CstScan -Mode $Mode -Target $Target -BehaviorArtifactsPath $BehaviorArtifactsPath -RulesPath $RulesPath -MaxMinutes $MaxMinutes -DetectionScope $DetectionScope -ActionMode $ActionMode -EnablePersistenceCollectors:(-not $DisablePersistenceCollectors) -OfflineOnly:$OfflineOnly
 } elseif ($Operation -eq 'Remediate') {
     if ([string]::IsNullOrWhiteSpace($FindingsInputPath) -or -not (Test-Path $FindingsInputPath)) {
         throw "FindingsInputPath is required for remediation and must exist: $FindingsInputPath"

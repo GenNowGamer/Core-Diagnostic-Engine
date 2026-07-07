@@ -38,6 +38,103 @@ function Resolve-CoreSecurityToolPath {
     return $null
 }
 
+function Resolve-CdeBehaviorCollectorPath {
+    $candidates = @()
+
+    if (-not [string]::IsNullOrWhiteSpace($env:TOOLKIT_ROOT)) {
+        $root = $env:TOOLKIT_ROOT.TrimEnd('\', '/')
+        $candidates += (Join-Path $root 'CDE\ToolkitGUI\bin\Release\net8.0-windows\CdeBehaviorCollector.exe')
+        $candidates += (Join-Path $root 'App\ToolkitGUI\bin\Release\net8.0-windows\CdeBehaviorCollector.exe')
+    }
+
+    $toolkitRoot = [System.IO.Path]::GetFullPath((Join-Path $ScriptDir '..\..'))
+    $candidates += (Join-Path $toolkitRoot 'CDE\ToolkitGUI\bin\Release\net8.0-windows\CdeBehaviorCollector.exe')
+    $candidates += (Join-Path $toolkitRoot 'App\ToolkitGUI\bin\Release\net8.0-windows\CdeBehaviorCollector.exe')
+
+    try {
+        $p1 = Split-Path $ScriptDir -Parent
+        $p2 = if ($p1) { Split-Path $p1 -Parent } else { $null }
+        $p3 = if ($p2) { Split-Path $p2 -Parent } else { $null }
+        $appBuildsRoot = if ($p3) { Split-Path $p3 -Parent } else { $null }
+        if (-not [string]::IsNullOrWhiteSpace($appBuildsRoot)) {
+            $candidates += (Join-Path $appBuildsRoot 'Core Diagnostic Engine\Toolkit\App\ToolkitGUI\bin\Release\net8.0-windows\CdeBehaviorCollector.exe')
+        }
+    } catch { }
+
+    foreach ($path in $candidates) {
+        if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-Path -LiteralPath $path -PathType Leaf)) {
+            return $path
+        }
+    }
+
+    return $null
+}
+
+function Invoke-CdeBehaviorTelemetryCollection {
+    param(
+        [Parameter(Mandatory)][string]$OutputPath,
+        [double]$SinceHours = 24,
+        [int]$MaxEvents = 32
+    )
+
+    $collectorPath = Resolve-CdeBehaviorCollectorPath
+    if (-not $collectorPath) {
+        return [PSCustomObject]@{
+            status = 'Unavailable'
+            collectorPath = ''
+            outputPath = ''
+            artifactCount = 0
+            channelCount = 0
+            message = 'CdeBehaviorCollector.exe not found in expected runtime paths.'
+        }
+    }
+
+    $outputDir = Split-Path -Path $OutputPath -Parent
+    if (-not [string]::IsNullOrWhiteSpace($outputDir) -and -not (Test-Path -LiteralPath $outputDir)) {
+        New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
+    }
+
+    $collectorOutput = @(& $collectorPath collect --output $OutputPath --since-hours $SinceHours --max-events $MaxEvents 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        return [PSCustomObject]@{
+            status = 'Error'
+            collectorPath = $collectorPath
+            outputPath = $OutputPath
+            artifactCount = 0
+            channelCount = 0
+            message = (($collectorOutput | ForEach-Object { [string]$_ }) -join [Environment]::NewLine)
+        }
+    }
+
+    $artifactCount = 0
+    $channelCount = 0
+    $status = 'Collected'
+    $message = 'Behavior telemetry bundle created.'
+    if (Test-Path -LiteralPath $OutputPath -PathType Leaf) {
+        try {
+            $payload = Get-Content -LiteralPath $OutputPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            $artifactCount = @($payload.artifacts).Count
+            $channelCount = @($payload.channels).Count
+            if ($artifactCount -eq 0) {
+                $status = 'NoArtifacts'
+                $message = 'Behavior telemetry bundle created, but no qualifying events were present.'
+            }
+        } catch {
+            $status = 'Warn'
+            $message = "Behavior telemetry bundle created, but could not be summarized: $($_.Exception.Message)"
+        }
+    }
+
+    return [PSCustomObject]@{
+        status = $status
+        collectorPath = $collectorPath
+        outputPath = $OutputPath
+        artifactCount = $artifactCount
+        channelCount = $channelCount
+        message = $message
+    }
+}
+
 function Resolve-CstWinPeScanRoot {
     $offlineRoot = [string]$env:OFFLINE_WINDOWS_ROOT
     if (-not [string]::IsNullOrWhiteSpace($offlineRoot)) {
@@ -63,6 +160,7 @@ function Invoke-CoreSecurityTool {
     param($r)
 
     Write-Log "Running Core Security Tool ($CstMode)..."
+    $behaviorTelemetry = $null
     try {
         $cstScript = Resolve-CoreSecurityToolPath
         if (-not $cstScript) {
@@ -87,6 +185,9 @@ function Invoke-CoreSecurityTool {
             Get-Date -Format 'yyyyMMdd_HHmmss'
         }
         $resultArtifactPath = Join-Path $cstDataRoot ("CST_Result_{0}.json" -f $sessionTs)
+        $behaviorArtifactPath = Join-Path $cstDataRoot ("CST_BehaviorTelemetry_{0}.json" -f $sessionTs)
+
+        $behaviorTelemetry = Invoke-CdeBehaviorTelemetryCollection -OutputPath $behaviorArtifactPath -SinceHours 24 -MaxEvents 32
 
         $invokeArgs = @{
             Mode = $CstMode
@@ -98,6 +199,10 @@ function Invoke-CoreSecurityTool {
         }
         if ($null -ne $maxMinutes) {
             $invokeArgs.MaxMinutes = [int]$maxMinutes
+        }
+
+        if ($behaviorTelemetry.status -in @('Collected', 'NoArtifacts', 'Warn') -and -not [string]::IsNullOrWhiteSpace([string]$behaviorTelemetry.outputPath) -and (Test-Path -LiteralPath $behaviorTelemetry.outputPath -PathType Leaf)) {
+            $invokeArgs.BehaviorArtifactsPath = @($behaviorTelemetry.outputPath)
         }
 
         if ($CstMode -eq 'CustomScan' -and $ScanTarget -and $ScanTarget.Count -gt 0) {
@@ -183,6 +288,19 @@ function Invoke-CoreSecurityTool {
         if ($resultArtifactPath) {
             $display += "Result Artifact    : $resultArtifactPath`n"
         }
+        $display += "Behavior Telemetry : status=$($behaviorTelemetry.status), artifacts=$($behaviorTelemetry.artifactCount), channels=$($behaviorTelemetry.channelCount)`n"
+        if ($behaviorTelemetry.outputPath) {
+            $display += "Telemetry Bundle   : $($behaviorTelemetry.outputPath)`n"
+        }
+        if ($behaviorTelemetry.collectorPath) {
+            $display += "Telemetry Source   : $($behaviorTelemetry.collectorPath)`n"
+        }
+        if ($behaviorTelemetry.message) {
+            $display += "Telemetry Note     : $($behaviorTelemetry.message)`n"
+        }
+        if ($scanConfig.behaviorArtifactsPath) {
+            $display += "Telemetry Inputs   : $(@($scanConfig.behaviorArtifactsPath) -join ', ')`n"
+        }
         $display += "Rules Version      : $($result.rulesVersion)`n"
         $display += "Items Scanned      : $($summary.itemsScanned)`n"
         $display += "Threats Found      : $($summary.threatsFound)`n"
@@ -249,7 +367,20 @@ function Invoke-CoreSecurityTool {
         Write-Log $display
         $r.Steps.Add([PSCustomObject]@{ Name='CoreSecurityTool'; Status=$status; Output=$display })
     } catch {
-        $r.Steps.Add([PSCustomObject]@{ Name='CoreSecurityTool'; Status='Warn'; Output=$_.Exception.Message })
+        $warningOutput = [string]$_.Exception.Message
+        if ($null -ne $behaviorTelemetry) {
+            $warningOutput += "`n`nBehavior Telemetry : status=$($behaviorTelemetry.status), artifacts=$($behaviorTelemetry.artifactCount), channels=$($behaviorTelemetry.channelCount)"
+            if ($behaviorTelemetry.outputPath) {
+                $warningOutput += "`nTelemetry Bundle   : $($behaviorTelemetry.outputPath)"
+            }
+            if ($behaviorTelemetry.collectorPath) {
+                $warningOutput += "`nTelemetry Source   : $($behaviorTelemetry.collectorPath)"
+            }
+            if ($behaviorTelemetry.message) {
+                $warningOutput += "`nTelemetry Note     : $($behaviorTelemetry.message)"
+            }
+        }
+        $r.Steps.Add([PSCustomObject]@{ Name='CoreSecurityTool'; Status='Warn'; Output=$warningOutput })
     }
 }
 

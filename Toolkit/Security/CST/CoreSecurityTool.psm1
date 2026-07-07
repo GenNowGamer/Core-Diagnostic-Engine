@@ -4024,14 +4024,50 @@ function New-CstArtifact {
         [string]$Location = '',
         [string]$State = 'Observed',
         [string]$ObjectType = 'Persistence',
-        [string]$Evidence = ''
+        [string]$Evidence = '',
+        [string]$EntityType = '',
+        [int]$Pid = 0,
+        [int]$ParentPid = 0,
+        [int]$SessionId = -1,
+        [string]$UserSid = '',
+        [string]$IntegrityLevel = '',
+        [string]$SignerStatus = 'Unknown',
+        [string]$Publisher = '',
+        [string]$Sha256 = '',
+        [string]$SourceChannel = '',
+        [string]$EvidenceKind = 'Observation',
+        [string[]]$RiskTags = @(),
+        [string]$ParentEntityId = '',
+        [string]$EdgeType = '',
+        [double]$CorrelationStrength = 0.0,
+        [double]$ConfidenceDelta = 0.0,
+        [string]$FirstSeenUtc = '',
+        [string]$LastSeenUtc = ''
     )
 
     $identitySeed = "{0}|{1}|{2}|{3}" -f $Kind.ToLowerInvariant(), $Source.ToLowerInvariant(), $Path.ToLowerInvariant(), $CommandLine.ToLowerInvariant()
     $artifactId = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($identitySeed)).TrimEnd('=')
+    $entityTypeValue = if ([string]::IsNullOrWhiteSpace($EntityType)) { $Kind } else { $EntityType }
+    $entityId = if ($Kind -eq 'Process' -and $Pid -gt 0) {
+        "process:$Pid"
+    }
+    elseif ($Kind -eq 'ProcessModule' -and $Pid -gt 0) {
+        "processmodule:{0}:{1}" -f $Pid, $artifactId
+    }
+    else {
+        "artifact:$artifactId"
+    }
+    if ([string]::IsNullOrWhiteSpace($FirstSeenUtc)) {
+        $FirstSeenUtc = (Get-Date).ToUniversalTime().ToString('o')
+    }
+    if ([string]::IsNullOrWhiteSpace($LastSeenUtc)) {
+        $LastSeenUtc = $FirstSeenUtc
+    }
 
     return [PSCustomObject]@{
         artifactId = $artifactId
+        entityId = $entityId
+        entityType = $entityTypeValue
         kind = $Kind
         source = $Source
         name = $Name
@@ -4042,7 +4078,114 @@ function New-CstArtifact {
         state = $State
         objectType = $ObjectType
         evidence = $Evidence
+        pid = if ($Pid -gt 0) { $Pid } else { $null }
+        parentPid = if ($ParentPid -gt 0) { $ParentPid } else { $null }
+        sessionId = if ($SessionId -ge 0) { $SessionId } else { $null }
+        userSid = $UserSid
+        integrityLevel = $IntegrityLevel
+        signerStatus = $SignerStatus
+        publisher = $Publisher
+        sha256 = $Sha256
+        sourceChannel = $SourceChannel
+        evidenceKind = $EvidenceKind
+        riskTags = @($RiskTags)
+        parentEntityId = $ParentEntityId
+        edgeType = $EdgeType
+        correlationStrength = $CorrelationStrength
+        confidenceDelta = $ConfidenceDelta
+        firstSeenUtc = $FirstSeenUtc
+        lastSeenUtc = $LastSeenUtc
     }
+}
+
+function Import-CstBehaviorArtifacts {
+    param(
+        [string[]]$InputPath = @()
+    )
+
+    $imported = New-Object System.Collections.Generic.List[object]
+    $seenImportedArtifactIds = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($path in @($InputPath)) {
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf -ErrorAction SilentlyContinue)) { continue }
+
+        try {
+            $extension = [IO.Path]::GetExtension($path)
+            $records = @()
+            if ($extension -ieq '.jsonl') {
+                $records = @(Get-Content -LiteralPath $path -ErrorAction Stop | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object {
+                    $_ | ConvertFrom-Json -ErrorAction Stop
+                })
+            }
+            else {
+                $parsed = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+                if ($parsed -is [System.Collections.IEnumerable] -and -not ($parsed -is [string])) {
+                    $records = @($parsed)
+                }
+                elseif ($parsed.PSObject.Properties['artifacts']) {
+                    $records = @($parsed.artifacts)
+                }
+                else {
+                    $records = @($parsed)
+                }
+            }
+
+            foreach ($record in @($records)) {
+                if ($null -eq $record) { continue }
+                $kind = if ($record.PSObject.Properties['kind']) { [string]$record.kind } else { '' }
+                if ([string]::IsNullOrWhiteSpace($kind)) { continue }
+
+                $riskTags = @()
+                if ($record.PSObject.Properties['riskTags']) {
+                    $riskTags = @($record.riskTags | ForEach-Object { [string]$_ })
+                }
+
+                $artifact = (New-CstArtifact `
+                    -Kind $kind `
+                    -Source $(if ($record.PSObject.Properties['source']) { [string]$record.source } else { 'BehaviorImport' }) `
+                    -Path $(if ($record.PSObject.Properties['path']) { [string]$record.path } else { '' }) `
+                    -TargetPath $(if ($record.PSObject.Properties['targetPath']) { [string]$record.targetPath } else { '' }) `
+                    -CommandLine $(if ($record.PSObject.Properties['commandLine']) { [string]$record.commandLine } else { '' }) `
+                    -Name $(if ($record.PSObject.Properties['name']) { [string]$record.name } else { '' }) `
+                    -Location $(if ($record.PSObject.Properties['location']) { [string]$record.location } else { [string]$path }) `
+                    -State $(if ($record.PSObject.Properties['state']) { [string]$record.state } else { 'Observed' }) `
+                    -ObjectType $(if ($record.PSObject.Properties['objectType']) { [string]$record.objectType } else { 'Telemetry' }) `
+                    -Evidence $(if ($record.PSObject.Properties['evidence']) { [string]$record.evidence } else { 'Imported behavior artifact.' }) `
+                    -EntityType $(if ($record.PSObject.Properties['entityType']) { [string]$record.entityType } else { $kind }) `
+                    -Pid $(if ($record.PSObject.Properties['pid']) { [int]$record.pid } else { 0 }) `
+                    -ParentPid $(if ($record.PSObject.Properties['parentPid']) { [int]$record.parentPid } else { 0 }) `
+                    -SessionId $(if ($record.PSObject.Properties['sessionId']) { [int]$record.sessionId } else { -1 }) `
+                    -UserSid $(if ($record.PSObject.Properties['userSid']) { [string]$record.userSid } else { '' }) `
+                    -IntegrityLevel $(if ($record.PSObject.Properties['integrityLevel']) { [string]$record.integrityLevel } else { '' }) `
+                    -SignerStatus $(if ($record.PSObject.Properties['signerStatus']) { [string]$record.signerStatus } else { 'Unknown' }) `
+                    -Publisher $(if ($record.PSObject.Properties['publisher']) { [string]$record.publisher } else { '' }) `
+                    -Sha256 $(if ($record.PSObject.Properties['sha256']) { [string]$record.sha256 } else { '' }) `
+                    -SourceChannel $(if ($record.PSObject.Properties['sourceChannel']) { [string]$record.sourceChannel } else { 'ImportedBehavior' }) `
+                    -EvidenceKind $(if ($record.PSObject.Properties['evidenceKind']) { [string]$record.evidenceKind } else { 'ImportedTelemetry' }) `
+                    -RiskTags $riskTags `
+                    -ParentEntityId $(if ($record.PSObject.Properties['parentEntityId']) { [string]$record.parentEntityId } else { '' }) `
+                    -EdgeType $(if ($record.PSObject.Properties['edgeType']) { [string]$record.edgeType } else { '' }) `
+                    -CorrelationStrength $(if ($record.PSObject.Properties['correlationStrength']) { [double]$record.correlationStrength } else { 0.0 }) `
+                    -ConfidenceDelta $(if ($record.PSObject.Properties['confidenceDelta']) { [double]$record.confidenceDelta } else { 0.0 }) `
+                    -FirstSeenUtc $(if ($record.PSObject.Properties['firstSeenUtc']) { [string]$record.firstSeenUtc } else { '' }) `
+                    -LastSeenUtc $(if ($record.PSObject.Properties['lastSeenUtc']) { [string]$record.lastSeenUtc } else { '' }))
+
+                if ($null -eq $artifact) { continue }
+                $artifactId = [string]$artifact.artifactId
+                if ([string]::IsNullOrWhiteSpace($artifactId)) {
+                    $artifactId = (([string]$artifact.kind).ToLowerInvariant() + '|' + ([string]$artifact.source).ToLowerInvariant() + '|' + ([string]$artifact.path).ToLowerInvariant() + '|' + ([string]$artifact.commandLine).ToLowerInvariant())
+                }
+                if ($seenImportedArtifactIds.Add($artifactId)) {
+                    $imported.Add($artifact) | Out-Null
+                }
+            }
+        }
+        catch {
+            Write-Warning ("Behavior artifact import failed for {0}: {1}" -f $path, $_.Exception.Message)
+        }
+    }
+
+    return [object[]]$imported.ToArray()
 }
 
 function Get-CstSafeCommandLine {
@@ -4063,20 +4206,29 @@ function Get-CstPersistenceArtifacts {
     try {
         foreach ($proc in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
             if ($null -eq $proc) { continue }
+            $procId = [int]$proc.ProcessId
+            $parentPid = [int]$proc.ParentProcessId
             $exePath = [string]$proc.ExecutablePath
             $cmd = Get-CstSafeCommandLine -Object $proc
-            $artifacts.Add((New-CstArtifact -Kind 'Process' -Source 'LiveCollector' -Path $exePath -CommandLine $cmd -Name ([string]$proc.Name) -Location 'Win32_Process' -ObjectType 'Process' -Evidence 'Live process observed.'))
+            $procObj = $null
+            $sessionId = -1
+            try {
+                $procObj = Get-Process -Id $procId -ErrorAction SilentlyContinue
+                if ($null -ne $procObj -and $procObj.PSObject.Properties['SessionId']) {
+                    $sessionId = [int]$procObj.SessionId
+                }
+            } catch {}
+
+            $artifacts.Add((New-CstArtifact -Kind 'Process' -Source 'LiveCollector' -Path $exePath -CommandLine $cmd -Name ([string]$proc.Name) -Location 'Win32_Process' -ObjectType 'Process' -Evidence 'Live process observed.' -EntityType 'Process' -Pid $procId -ParentPid $parentPid -SessionId $sessionId -SourceChannel 'Win32_Process' -EvidenceKind 'LiveTelemetry'))
 
             try {
-                $procId = [int]$proc.ProcessId
-                $procObj = Get-Process -Id $procId -ErrorAction SilentlyContinue
                 if ($null -ne $procObj -and $procObj.PSObject.Properties['Modules']) {
                     $moduleCount = 0
                     foreach ($module in @($procObj.Modules)) {
                         if ($null -eq $module) { continue }
                         $modulePath = [string]$module.FileName
                         if ([string]::IsNullOrWhiteSpace($modulePath)) { continue }
-                        $artifacts.Add((New-CstArtifact -Kind 'ProcessModule' -Source 'LiveCollector' -Path $modulePath -TargetPath $exePath -CommandLine $cmd -Name ([string]$module.ModuleName) -Location ('PID ' + $procId) -ObjectType 'Process' -Evidence 'Loaded module observed in process.'))
+                        $artifacts.Add((New-CstArtifact -Kind 'ProcessModule' -Source 'LiveCollector' -Path $modulePath -TargetPath $exePath -CommandLine $cmd -Name ([string]$module.ModuleName) -Location ('PID ' + $procId) -ObjectType 'Process' -Evidence 'Loaded module observed in process.' -EntityType 'Module' -Pid $procId -ParentPid $parentPid -SessionId $sessionId -ParentEntityId ("process:$procId") -EdgeType 'loaded_module' -SourceChannel 'Win32_Process' -EvidenceKind 'LiveTelemetry'))
                         $moduleCount++
                         if ($moduleCount -ge 8) { break }
                     }
@@ -4090,7 +4242,7 @@ function Get-CstPersistenceArtifacts {
         foreach ($svc in @(Get-CimInstance Win32_Service -ErrorAction SilentlyContinue)) {
             if ($null -eq $svc) { continue }
             $path = [string]$svc.PathName
-            $artifacts.Add((New-CstArtifact -Kind 'Service' -Source 'ServiceControlManager' -Path $path -CommandLine $path -Name ([string]$svc.Name) -Location 'Win32_Service' -State ([string]$svc.State) -ObjectType 'Persistence' -Evidence 'Service image path observed.'))
+            $artifacts.Add((New-CstArtifact -Kind 'Service' -Source 'ServiceControlManager' -Path $path -CommandLine $path -Name ([string]$svc.Name) -Location 'Win32_Service' -State ([string]$svc.State) -ObjectType 'Persistence' -Evidence 'Service image path observed.' -EntityType 'Service' -SourceChannel 'Win32_Service' -EvidenceKind 'LiveTelemetry'))
         }
     } catch {}
 
@@ -4117,7 +4269,7 @@ function Get-CstPersistenceArtifacts {
                 }
             }
             $cmd = ($actions -join ' || ')
-            $artifacts.Add((New-CstArtifact -Kind 'ScheduledTask' -Source 'TaskScheduler' -Path $cmd -CommandLine $cmd -Name $taskName -Location ($taskPath + $taskName) -State $state -ObjectType 'Persistence' -Evidence 'Scheduled task action observed.'))
+            $artifacts.Add((New-CstArtifact -Kind 'ScheduledTask' -Source 'TaskScheduler' -Path $cmd -CommandLine $cmd -Name $taskName -Location ($taskPath + $taskName) -State $state -ObjectType 'Persistence' -Evidence 'Scheduled task action observed.' -EntityType 'ScheduledTask' -SourceChannel 'TaskScheduler' -EvidenceKind 'LiveTelemetry'))
         }
     } catch {}
 
@@ -4137,7 +4289,7 @@ function Get-CstPersistenceArtifacts {
                 if ($prop.Name -in @('PSPath','PSParentPath','PSChildName','PSDrive','PSProvider')) { continue }
                 $cmd = [string]$prop.Value
                 if ([string]::IsNullOrWhiteSpace($cmd)) { continue }
-                $artifacts.Add((New-CstArtifact -Kind 'RunKey' -Source 'Registry' -Path $cmd -CommandLine $cmd -Name ([string]$prop.Name) -Location $regPath -ObjectType 'Persistence' -Evidence 'Run/RunOnce registry entry observed.'))
+                $artifacts.Add((New-CstArtifact -Kind 'RunKey' -Source 'Registry' -Path $cmd -CommandLine $cmd -Name ([string]$prop.Name) -Location $regPath -ObjectType 'Persistence' -Evidence 'Run/RunOnce registry entry observed.' -EntityType 'RegistryPersistence' -SourceChannel 'Registry' -EvidenceKind 'LiveTelemetry'))
             }
         } catch {}
     }
@@ -4157,7 +4309,7 @@ function Get-CstPersistenceArtifacts {
                         $cmdLine = [string]$consumer.ScriptText
                         $path = '(inline script)'
                     }
-                    $artifacts.Add((New-CstArtifact -Kind 'WmiSubscription' -Source 'WmiEventConsumer' -Path $path -CommandLine $cmdLine -Name $consumerName -Location 'root\subscription:__EventConsumer' -ObjectType 'Persistence' -Evidence 'WMI event consumer subscription observed.'))
+                    $artifacts.Add((New-CstArtifact -Kind 'WmiSubscription' -Source 'WmiEventConsumer' -Path $path -CommandLine $cmdLine -Name $consumerName -Location 'root\subscription:__EventConsumer' -ObjectType 'Persistence' -Evidence 'WMI event consumer subscription observed.' -EntityType 'WmiConsumer' -SourceChannel 'Microsoft-Windows-WMI-Activity' -EvidenceKind 'LiveTelemetry'))
                 }
             } catch {}
             try {
@@ -4167,7 +4319,7 @@ function Get-CstPersistenceArtifacts {
                     $filterName = [string]$filter.Name
                     if ($filterName -in $benignFilters) { continue }
                     $query = if ($filter.PSObject.Properties['Query']) { [string]$filter.Query } else { '' }
-                    $artifacts.Add((New-CstArtifact -Kind 'WmiFilter' -Source 'WmiEventFilter' -Path '' -CommandLine $query -Name $filterName -Location 'root\subscription:__EventFilter' -ObjectType 'Persistence' -Evidence 'WMI event filter subscription observed.'))
+                    $artifacts.Add((New-CstArtifact -Kind 'WmiFilter' -Source 'WmiEventFilter' -Path '' -CommandLine $query -Name $filterName -Location 'root\subscription:__EventFilter' -ObjectType 'Persistence' -Evidence 'WMI event filter subscription observed.' -EntityType 'WmiFilter' -SourceChannel 'Microsoft-Windows-WMI-Activity' -EvidenceKind 'LiveTelemetry'))
                 }
             } catch {}
         }
@@ -4183,7 +4335,7 @@ function Get-CstPersistenceArtifacts {
         try {
             if (-not (Test-Path $startup)) { continue }
             foreach ($item in @(Get-ChildItem -Path $startup -File -ErrorAction SilentlyContinue)) {
-                $artifacts.Add((New-CstArtifact -Kind 'StartupFolder' -Source 'StartupFolder' -Path $item.FullName -TargetPath $item.FullName -Name $item.Name -Location $startup -ObjectType 'Persistence' -Evidence 'Startup folder item observed.'))
+                $artifacts.Add((New-CstArtifact -Kind 'StartupFolder' -Source 'StartupFolder' -Path $item.FullName -TargetPath $item.FullName -Name $item.Name -Location $startup -ObjectType 'Persistence' -Evidence 'Startup folder item observed.' -EntityType 'StartupFolderItem' -SourceChannel 'FileSystem' -EvidenceKind 'LiveTelemetry'))
             }
         } catch {}
     }
@@ -4200,7 +4352,7 @@ function Get-CstPersistenceArtifacts {
             try {
                 if (Test-Path $offlineStartup) {
                     foreach ($item in @(Get-ChildItem -Path $offlineStartup -File -ErrorAction SilentlyContinue)) {
-                        $artifacts.Add((New-CstArtifact -Kind 'OfflineStartupFolder' -Source 'OfflineStartup' -Path $item.FullName -TargetPath $item.FullName -Name $item.Name -Location $offlineStartup -ObjectType 'Persistence' -Evidence 'Offline startup item observed.'))
+                        $artifacts.Add((New-CstArtifact -Kind 'OfflineStartupFolder' -Source 'OfflineStartup' -Path $item.FullName -TargetPath $item.FullName -Name $item.Name -Location $offlineStartup -ObjectType 'Persistence' -Evidence 'Offline startup item observed.' -EntityType 'OfflineStartupFolderItem' -SourceChannel 'OfflineFileSystem' -EvidenceKind 'OfflineArtifact'))
                     }
                 }
             } catch {}
@@ -4209,14 +4361,14 @@ function Get-CstPersistenceArtifacts {
             try {
                 if (Test-Path $tasksRoot) {
                     foreach ($task in @(Get-ChildItem -Path $tasksRoot -File -Recurse -ErrorAction SilentlyContinue)) {
-                        $artifacts.Add((New-CstArtifact -Kind 'OfflineScheduledTask' -Source 'OfflineTaskXml' -Path $task.FullName -TargetPath $task.FullName -Name $task.Name -Location $tasksRoot -ObjectType 'Persistence' -Evidence 'Offline scheduled task XML observed.'))
+                        $artifacts.Add((New-CstArtifact -Kind 'OfflineScheduledTask' -Source 'OfflineTaskXml' -Path $task.FullName -TargetPath $task.FullName -Name $task.Name -Location $tasksRoot -ObjectType 'Persistence' -Evidence 'Offline scheduled task XML observed.' -EntityType 'OfflineScheduledTask' -SourceChannel 'OfflineTaskXml' -EvidenceKind 'OfflineArtifact'))
                     }
                 }
             } catch {}
 
             $servicesHive = Join-Path $root 'Windows\System32\config\SYSTEM'
             if (Test-Path $servicesHive -ErrorAction SilentlyContinue) {
-                $artifacts.Add((New-CstArtifact -Kind 'OfflineServiceRegistry' -Source 'OfflineRegistryHive' -Path $servicesHive -TargetPath $servicesHive -Name 'SYSTEM hive' -Location $servicesHive -ObjectType 'Persistence' -Evidence 'Offline SYSTEM hive available for service correlation.'))
+                $artifacts.Add((New-CstArtifact -Kind 'OfflineServiceRegistry' -Source 'OfflineRegistryHive' -Path $servicesHive -TargetPath $servicesHive -Name 'SYSTEM hive' -Location $servicesHive -ObjectType 'Persistence' -Evidence 'Offline SYSTEM hive available for service correlation.' -EntityType 'OfflineRegistryHive' -SourceChannel 'OfflineRegistryHive' -EvidenceKind 'OfflineArtifact'))
 
                 try {
                     $mountName = 'HKLM\CSTOffline_' + $drive.Name
@@ -4239,7 +4391,7 @@ function Get-CstPersistenceArtifacts {
                                     $imagePath = [string]$svcProps.ImagePath
                                 }
                             } catch {}
-                            $artifacts.Add((New-CstArtifact -Kind 'OfflineServiceEntry' -Source 'OfflineRegistryHive' -Path $imagePath -CommandLine $imagePath -Name $svcName -Location $servicesRoot -ObjectType 'Persistence' -Evidence 'Offline service registry entry observed.'))
+                            $artifacts.Add((New-CstArtifact -Kind 'OfflineServiceEntry' -Source 'OfflineRegistryHive' -Path $imagePath -CommandLine $imagePath -Name $svcName -Location $servicesRoot -ObjectType 'Persistence' -Evidence 'Offline service registry entry observed.' -EntityType 'OfflineServiceEntry' -SourceChannel 'OfflineRegistryHive' -EvidenceKind 'OfflineArtifact'))
                             $count++
                             if ($count -ge 200) { break }
                         }
@@ -4277,6 +4429,8 @@ function Invoke-CstArtifactCorrelation {
     $artifactRecords = New-Object System.Collections.Generic.List[object]
     $artifactsByExactToken = @{}
     $artifactsByLeafName = @{}
+    $artifactsByEntityId = @{}
+    $artifactsByParentEntityId = @{}
     $tryGetLeafName = {
         param([string]$value)
 
@@ -4303,6 +4457,24 @@ function Invoke-CstArtifactCorrelation {
             haystack = $haystack
         }
         $artifactRecords.Add($record)
+
+        $entityIdValue = [string]$artifact.entityId
+        if (-not [string]::IsNullOrWhiteSpace($entityIdValue)) {
+            $entityKey = $entityIdValue.ToLowerInvariant()
+            if (-not $artifactsByEntityId.ContainsKey($entityKey)) {
+                $artifactsByEntityId[$entityKey] = New-Object System.Collections.Generic.List[object]
+            }
+            $artifactsByEntityId[$entityKey].Add($record)
+        }
+
+        $parentEntityIdValue = [string]$artifact.parentEntityId
+        if (-not [string]::IsNullOrWhiteSpace($parentEntityIdValue)) {
+            $parentEntityKey = $parentEntityIdValue.ToLowerInvariant()
+            if (-not $artifactsByParentEntityId.ContainsKey($parentEntityKey)) {
+                $artifactsByParentEntityId[$parentEntityKey] = New-Object System.Collections.Generic.List[object]
+            }
+            $artifactsByParentEntityId[$parentEntityKey].Add($record)
+        }
 
         foreach ($tokenCandidate in @($pathValue, $targetPathValue, $nameValue, $resolvedCmdPath)) {
             if ([string]::IsNullOrWhiteSpace($tokenCandidate)) { continue }
@@ -4412,13 +4584,108 @@ function Invoke-CstArtifactCorrelation {
             $f | Add-Member -NotePropertyName correlatedArtifacts -NotePropertyValue @($topHits) -Force
 
             $kinds = (@($topHits | ForEach-Object { [string]$_.kind } | Select-Object -Unique) -join ', ')
-            $f.evidence = "{0} Correlated artifacts: {1}." -f $f.evidence, $kinds
+            $telemetryChannels = @($topHits | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.sourceChannel) } | ForEach-Object { [string]$_.sourceChannel } | Select-Object -Unique)
+            $riskTags = @($topHits | Where-Object { $null -ne $_.riskTags } | ForEach-Object { @($_.riskTags) } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ } | Select-Object -Unique)
+            $maxCorrelationStrength = 0.0
+            $maxConfidenceDelta = 0.0
+            $graphArtifacts = New-Object System.Collections.Generic.List[object]
+            $graphSeen = @{}
+            foreach ($hit in $topHits) {
+                if ($hit.PSObject.Properties['correlationStrength']) {
+                    $maxCorrelationStrength = [math]::Max($maxCorrelationStrength, [double]$hit.correlationStrength)
+                }
+                if ($hit.PSObject.Properties['confidenceDelta']) {
+                    $maxConfidenceDelta = [math]::Max($maxConfidenceDelta, [double]$hit.confidenceDelta)
+                }
+
+                $hitEntityId = [string]$hit.entityId
+                if (-not [string]::IsNullOrWhiteSpace($hitEntityId)) {
+                    $entityKey = $hitEntityId.ToLowerInvariant()
+                    if ($artifactsByParentEntityId.ContainsKey($entityKey)) {
+                        foreach ($linkedRecord in $artifactsByParentEntityId[$entityKey]) {
+                            $linkedArtifact = $linkedRecord.artifact
+                            $linkedKey = [string]$linkedArtifact.artifactId
+                            if ([string]::IsNullOrWhiteSpace($linkedKey)) { continue }
+                            if ($seenHitKeys.ContainsKey($linkedKey) -or $graphSeen.ContainsKey($linkedKey)) { continue }
+                            $graphSeen[$linkedKey] = $true
+                            $graphArtifacts.Add($linkedArtifact)
+                        }
+                    }
+                }
+
+                $hitParentEntityId = [string]$hit.parentEntityId
+                if (-not [string]::IsNullOrWhiteSpace($hitParentEntityId)) {
+                    $parentKey = $hitParentEntityId.ToLowerInvariant()
+                    if ($artifactsByEntityId.ContainsKey($parentKey)) {
+                        foreach ($linkedRecord in $artifactsByEntityId[$parentKey]) {
+                            $linkedArtifact = $linkedRecord.artifact
+                            $linkedKey = [string]$linkedArtifact.artifactId
+                            if ([string]::IsNullOrWhiteSpace($linkedKey)) { continue }
+                            if ($seenHitKeys.ContainsKey($linkedKey) -or $graphSeen.ContainsKey($linkedKey)) { continue }
+                            $graphSeen[$linkedKey] = $true
+                            $graphArtifacts.Add($linkedArtifact)
+                        }
+                    }
+                }
+            }
+
+            $graphSeedArtifacts = @($topHits | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.edgeType) -or -not [string]::IsNullOrWhiteSpace([string]$_.parentEntityId) })
+            $graphContextArtifacts = New-Object System.Collections.Generic.List[object]
+            foreach ($graphSeed in $graphSeedArtifacts) {
+                $graphContextArtifacts.Add($graphSeed) | Out-Null
+            }
+            foreach ($graphArtifact in $graphArtifacts) {
+                $graphContextArtifacts.Add($graphArtifact) | Out-Null
+            }
+            $graphEdgeTypes = @($graphContextArtifacts | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.edgeType) } | ForEach-Object { [string]$_.edgeType } | Select-Object -Unique)
+            $graphRiskTags = @($graphArtifacts | Where-Object { $null -ne $_.riskTags } | ForEach-Object { @($_.riskTags) } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ } | Select-Object -Unique)
+            if (@($graphRiskTags).Count -gt 0) {
+                $riskTags = @($riskTags + $graphRiskTags | Select-Object -Unique)
+            }
+
+            $evidenceSegments = New-Object System.Collections.Generic.List[string]
+            $evidenceSegments.Add(("Correlated artifacts: {0}." -f $kinds))
+            if (@($telemetryChannels).Count -gt 0) {
+                $evidenceSegments.Add(("Telemetry channels: {0}." -f (@($telemetryChannels) -join ', ')))
+            }
+            if (@($riskTags).Count -gt 0) {
+                $evidenceSegments.Add(("Risk tags: {0}." -f (@($riskTags) -join ', ')))
+            }
+            if (@($graphEdgeTypes).Count -gt 0) {
+                $evidenceSegments.Add(("Graph edges: {0}." -f (@($graphEdgeTypes) -join ', ')))
+            }
+            $f.evidence = ((@([string]$f.evidence) + @($evidenceSegments.ToArray())) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ' '
+
+            $baseBoost = 0.12
+            $telemetryBoost = [math]::Min(0.25, ([math]::Max(0.0, $maxConfidenceDelta) + ([math]::Max(0.0, $maxCorrelationStrength) * 0.08)))
+            $graphArtifactCount = [int]$graphArtifacts.Count
+            $graphRelationCount = [int]$graphContextArtifacts.Count
+            $graphEdgeCount = [int]$graphEdgeTypes.Count
+            $graphBoost = [math]::Min(0.08, (($graphRelationCount * 0.04) + ($graphEdgeCount * 0.02)))
+            $appliedBoost = 0.0
 
             $detectorWeight = Get-CstDetectorWeight -Detector ([string]$f.detector) -HasCorrelation $true
             if ($promotionEnabled -and $detectorWeight -ge $promoteMinDetectorWeight) {
-                $f.confidence = [math]::Round([math]::Min(1.0, ([double]$f.confidence + 0.12)), 2)
+                $appliedBoost = [math]::Round([math]::Min(0.43, ($baseBoost + $telemetryBoost + $graphBoost)), 2)
+                $f.confidence = [math]::Round([math]::Min(1.0, ([double]$f.confidence + $appliedBoost)), 2)
                 if ($f.type -eq 'Suspicious') { $f.type = 'PUM' }
             }
+
+            $f | Add-Member -NotePropertyName behaviorCorrelationSummary -NotePropertyValue ([PSCustomObject]@{
+                artifactCount = @($topHits).Count
+                telemetryChannels = @($telemetryChannels)
+                riskTags = @($riskTags)
+                maxCorrelationStrength = [math]::Round($maxCorrelationStrength, 2)
+                maxConfidenceDelta = [math]::Round($maxConfidenceDelta, 2)
+                baseConfidenceBoost = $baseBoost
+                appliedConfidenceBoost = $appliedBoost
+            }) -Force
+            $f | Add-Member -NotePropertyName graphCorrelationSummary -NotePropertyValue ([PSCustomObject]@{
+                relatedArtifactCount = $graphArtifactCount
+                relationCount = $graphRelationCount
+                edgeTypes = @($graphEdgeTypes)
+                graphBoost = [math]::Round($graphBoost, 2)
+            }) -Force
         }
 
         $correlated.Add($f)
@@ -5230,6 +5497,7 @@ function Invoke-CstScan {
     param(
         [ValidateSet('ThreatScan','FullScan','CustomScan')][string]$Mode = 'ThreatScan',
         [string[]]$Target = @(),
+        [string[]]$BehaviorArtifactsPath = @(),
         [string]$RulesPath,
         [int]$MaxMinutes = 15,
         [ValidateSet('All','MalwareOnly','VirusOnly')][string]$DetectionScope = 'All',
@@ -5348,6 +5616,10 @@ function Invoke-CstScan {
     if ($collectPersistence) {
         Write-CstLiveProgress -Scanned $postScanScanned -ProgressTotal $maxFiles -CurrentPath '' -ElapsedSec (((Get-Date) - $start).TotalSeconds) -Phase 'Scanning' -PhasePercent 97.0 -OverallPercent 97.0 -Detail 'Collecting persistence artifacts...'
         $artifacts = @(Get-CstPersistenceArtifacts -EnvironmentMode $envMode)
+    }
+    if (@($BehaviorArtifactsPath).Count -gt 0) {
+        Write-CstLiveProgress -Scanned $postScanScanned -ProgressTotal $maxFiles -CurrentPath '' -ElapsedSec (((Get-Date) - $start).TotalSeconds) -Phase 'Scanning' -PhasePercent 97.5 -OverallPercent 97.5 -Detail 'Importing behavior artifacts...'
+        $artifacts += @(Import-CstBehaviorArtifacts -InputPath $BehaviorArtifactsPath)
     }
     Write-CstLiveProgress -Scanned $postScanScanned -ProgressTotal $maxFiles -CurrentPath '' -ElapsedSec (((Get-Date) - $start).TotalSeconds) -Phase 'Scanning' -PhasePercent 98.0 -OverallPercent 98.0 -Detail 'Correlating findings...'
     $findings = @(Invoke-CstArtifactCorrelation -Findings @($findings) -Artifacts $artifacts -Rules $rules)
@@ -5471,6 +5743,7 @@ function Invoke-CstScan {
             requestedTargets = @($targetResolution.rawTargets)
             missingTargets = @($targetResolution.missingTargets)
             targets = @($targets)
+            behaviorArtifactsPath = @($BehaviorArtifactsPath)
             rulesLoadWarnings = @($rulesLoadWarnings)
             helperIntegrity = [PSCustomObject]@{
                 trusted = [bool]$script:CstKnownGoodHelperTrusted
@@ -5506,6 +5779,7 @@ function Invoke-CstScan {
             knownGoodStorageMode = if ($scanData.PSObject.Properties['knownGoodStorageMode']) { [string]$scanData.knownGoodStorageMode } else { 'Unknown' }
             onlineLookupsPerformed = if ($scanData.PSObject.Properties['onlineLookupsPerformed']) { [int]$scanData.onlineLookupsPerformed } else { 0 }
             confidenceSuppressedFindings = @($confidenceFilteredFindings).Count
+            importedBehaviorArtifacts = @($artifacts | Where-Object { $_.evidenceKind -eq 'ImportedTelemetry' }).Count
             bootItemsScanned = [int]$bootData.itemsScanned
             bootWarnings = [int]$bootData.warnings
             bootErrors = [int]$bootData.errors
@@ -5522,10 +5796,38 @@ function Invoke-CstScan {
         findings = @($findings)
         suppressedAuditFindings = @($suppressedAuditFindings)
         artifacts = @($artifacts)
+        behaviorEvidence = [PSCustomObject]@{
+            entityCount = @($artifacts).Count
+            entityTypes = @($artifacts | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.entityType) } | Group-Object -Property entityType | Sort-Object Name | ForEach-Object {
+                [PSCustomObject]@{
+                    entityType = $_.Name
+                    count = $_.Count
+                }
+            })
+            telemetrySources = @($artifacts | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.sourceChannel) } | Group-Object -Property sourceChannel | Sort-Object Name | ForEach-Object {
+                [PSCustomObject]@{
+                    sourceChannel = $_.Name
+                    count = $_.Count
+                }
+            })
+            evidenceKinds = @($artifacts | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.evidenceKind) } | Group-Object -Property evidenceKind | Sort-Object Name | ForEach-Object {
+                [PSCustomObject]@{
+                    evidenceKind = $_.Name
+                    count = $_.Count
+                }
+            })
+            correlationCoverage = [PSCustomObject]@{
+                findingsWithCorrelation = @($findings | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.correlationId) }).Count
+                findingsWithoutCorrelation = @($findings | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.correlationId) }).Count
+            }
+        }
         artifactSummary = [PSCustomObject]@{
             totalArtifacts = @($artifacts).Count
             processArtifacts = @($artifacts | Where-Object { $_.kind -eq 'Process' }).Count
+            processModuleArtifacts = @($artifacts | Where-Object { $_.kind -eq 'ProcessModule' }).Count
             persistenceArtifacts = @($artifacts | Where-Object { $_.objectType -eq 'Persistence' }).Count
+            offlineArtifacts = @($artifacts | Where-Object { $_.evidenceKind -eq 'OfflineArtifact' }).Count
+            importedBehaviorArtifacts = @($artifacts | Where-Object { $_.evidenceKind -eq 'ImportedTelemetry' }).Count
             correlationHits = @($findings | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.correlationId) }).Count
         }
         detectorCounts = [PSCustomObject]@{

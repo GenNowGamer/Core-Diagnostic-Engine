@@ -1551,6 +1551,39 @@ Then `SyncUSB.bat` or `Prepare-BootableUSB.ps1` before hardware WinPE validation
 - Source CST release gates were re-run post-mirror and all passed (`-SkipMinuteCapTest`).
 - Current workflow remains local-only across repos in this workspace; no remote push step is required.
 
+## 2026-07-07 (Latest) — CST behavioral telemetry workflow integration
+
+### What changed
+
+- Added `App\CdeBehaviorCollector\` helper project and published runtime executable `CdeBehaviorCollector.exe`.
+- `App\Publish-ToolkitGUI.ps1` now publishes the collector alongside the GUI/runtime payload and mirrors it into `Toolkit\CDE\ToolkitGUI\bin\Release\net8.0-windows\`.
+- `Scripts\Core\SecurityAuditChecks.ps1` now hooks behavior telemetry generation into `Invoke-CoreSecurityTool`:
+  - generates a behavior bundle in `Toolkit\CDE\Runtime\Data\cst\`
+  - passes the bundle into CST automatically
+  - surfaces telemetry bundle details in workflow output
+- Synced CST runtime mirror now includes behavior-artifact import, telemetry-weighted correlation, graph-edge summaries, and imported-artifact deduplication.
+
+### Validation
+
+- Canonical publish script completed successfully after collector and workflow changes.
+- CST validators passed after sync:
+  - `Validate-CstBehaviorArtifactImport.ps1`
+  - `Validate-CstBehaviorCollector.ps1`
+  - `Validate-CstOfflineCorrelation.ps1`
+- Runtime smoke tests under `Toolkit\CDE\Runtime\Data\cst\` confirmed:
+  - `behaviorArtifactsPath` is present in CST result JSON
+  - imported behavior telemetry is consumed
+  - deduped imported behavior count now resolves to `2` unique imported artifacts for repeated `System-7045` events
+
+### Operator notes
+
+- Full workflow proof of telemetry-weighted scoring in a runtime artifact still depends on host logging availability.
+- Existing runtime smoke tests proved:
+  - workflow hook works
+  - imported telemetry bundle is handed to CST
+  - benign script test triggers file-content detection and live Run-key collection
+- Validator runs remain the authoritative proof for telemetry weighting and graph-edge scoring when host event logs do not naturally provide matching imported process/autorun events.
+
 ---
 
 ## 2026-05-28 (Latest) — PrepareUSB GPT + Sync Propagation Fixes

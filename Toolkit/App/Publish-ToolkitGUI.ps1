@@ -149,6 +149,38 @@ if (-not (Test-Path -LiteralPath $expectedSimdCli)) {
 Write-Host ("CdeCpuSimdCli: {0}" -f $expectedSimdCli) -ForegroundColor Green
 Write-Host ("CdeCpuSimdCli LastWrite: {0}" -f (Get-Item -LiteralPath $expectedSimdCli).LastWriteTime)
 
+$cdeBehaviorCollectorProject = Join-Path $PSScriptRoot 'CdeBehaviorCollector\CdeBehaviorCollector.csproj'
+if (-not (Test-Path -LiteralPath $cdeBehaviorCollectorProject)) {
+    throw "CdeBehaviorCollector project not found: $cdeBehaviorCollectorProject"
+}
+
+$cdeBehaviorCollectorArgs = @(
+    'publish',
+    $cdeBehaviorCollectorProject,
+    '-c', 'Release',
+    '-r', 'win-x64',
+    '--self-contained', 'true',
+    '-o', $publishDir,
+    '-p:AppendTargetFrameworkToOutputPath=false',
+    '-p:AppendRuntimeIdentifierToOutputPath=false'
+)
+if ($Force) {
+    $cdeBehaviorCollectorArgs += '--force'
+}
+
+Write-Host "`nPublishing CdeBehaviorCollector (self-contained, colocated with GUI runtime)..." -ForegroundColor Cyan
+dotnet @cdeBehaviorCollectorArgs | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "CdeBehaviorCollector publish failed with exit code $LASTEXITCODE"
+}
+
+$expectedBehaviorCollector = Join-Path $publishDir 'CdeBehaviorCollector.exe'
+if (-not (Test-Path -LiteralPath $expectedBehaviorCollector)) {
+    throw "CdeBehaviorCollector publish completed but executable was not found at: $expectedBehaviorCollector"
+}
+Write-Host ("CdeBehaviorCollector: {0}" -f $expectedBehaviorCollector) -ForegroundColor Green
+Write-Host ("CdeBehaviorCollector LastWrite: {0}" -f (Get-Item -LiteralPath $expectedBehaviorCollector).LastWriteTime)
+
 $launcherArgs = @(
     'publish',
     $launcherProjectPath,
