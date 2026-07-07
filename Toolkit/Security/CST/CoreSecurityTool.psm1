@@ -3405,7 +3405,6 @@ function Find-CstFileFindings {
             return
         }
         if ($timeLimitSec -gt 0 -and (((Get-Date) - $scanStart).TotalSeconds -ge $timeLimitSec)) {
-            $timeBudgetExceeded = $true
             & $addSkipEntry -Reason 'MaxMinutesCap' -Path $FileInfo.FullName -Detail ("Stopped at MaxMinutes cap ({0})." -f $effectiveMaxMinutes) -DetailPayload @{
                 phase = 'ScanLoop'
                 maxMinutes = $effectiveMaxMinutes
@@ -3507,7 +3506,6 @@ function Find-CstFileFindings {
             $contentScansPerformed++
 
             $onlineKnownGood = $false
-            $onlineTrust = 0
             $fileSignerStatus = 'NotEvaluated'
             $filePublisher = ''
             $fileSigInfo = $null
@@ -3546,7 +3544,6 @@ function Find-CstFileFindings {
                     if ($onlineKnownGoodMap.ContainsKey($sha1Lookup)) {
                         $onlineState = $onlineKnownGoodMap[$sha1Lookup]
                         $onlineKnownGood = [bool]$onlineState.knownGood
-                        $onlineTrust = [int]$onlineState.trust
                         if ($onlineKnownGood) {
                             $onlineStatus.knownGoodHits++
                         }
@@ -4071,15 +4068,15 @@ function Get-CstPersistenceArtifacts {
             $artifacts.Add((New-CstArtifact -Kind 'Process' -Source 'LiveCollector' -Path $exePath -CommandLine $cmd -Name ([string]$proc.Name) -Location 'Win32_Process' -ObjectType 'Process' -Evidence 'Live process observed.'))
 
             try {
-                $pid = [int]$proc.ProcessId
-                $procObj = Get-Process -Id $pid -ErrorAction SilentlyContinue
+                $procId = [int]$proc.ProcessId
+                $procObj = Get-Process -Id $procId -ErrorAction SilentlyContinue
                 if ($null -ne $procObj -and $procObj.PSObject.Properties['Modules']) {
                     $moduleCount = 0
                     foreach ($module in @($procObj.Modules)) {
                         if ($null -eq $module) { continue }
                         $modulePath = [string]$module.FileName
                         if ([string]::IsNullOrWhiteSpace($modulePath)) { continue }
-                        $artifacts.Add((New-CstArtifact -Kind 'ProcessModule' -Source 'LiveCollector' -Path $modulePath -TargetPath $exePath -CommandLine $cmd -Name ([string]$module.ModuleName) -Location ('PID ' + $pid) -ObjectType 'Process' -Evidence 'Loaded module observed in process.'))
+                        $artifacts.Add((New-CstArtifact -Kind 'ProcessModule' -Source 'LiveCollector' -Path $modulePath -TargetPath $exePath -CommandLine $cmd -Name ([string]$module.ModuleName) -Location ('PID ' + $procId) -ObjectType 'Process' -Evidence 'Loaded module observed in process.'))
                         $moduleCount++
                         if ($moduleCount -ge 8) { break }
                     }
@@ -4115,8 +4112,8 @@ function Get-CstPersistenceArtifacts {
                 foreach ($action in @($task.Actions)) {
                     if ($null -eq $action) { continue }
                     $execute = if ($action.PSObject.Properties['Execute']) { [string]$action.Execute } else { '' }
-                    $args = if ($action.PSObject.Properties['Arguments']) { [string]$action.Arguments } else { '' }
-                    $actions += ("{0} {1}" -f $execute, $args).Trim()
+                    $actionArgs = if ($action.PSObject.Properties['Arguments']) { [string]$action.Arguments } else { '' }
+                    $actions += ("{0} {1}" -f $execute, $actionArgs).Trim()
                 }
             }
             $cmd = ($actions -join ' || ')
@@ -4179,8 +4176,8 @@ function Get-CstPersistenceArtifacts {
     $startupPaths = @(
         (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Startup')
     )
-    foreach ($profile in @(Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue)) {
-        $startupPaths += (Join-Path $profile.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup')
+    foreach ($userProfile in @(Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue)) {
+        $startupPaths += (Join-Path $userProfile.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup')
     }
     foreach ($startup in ($startupPaths | Select-Object -Unique)) {
         try {
@@ -4755,12 +4752,12 @@ function Resolve-CstBootHashAllowlist {
         }
     }
 
-    foreach ($profile in @($Rules.bootFilePolicies.hashAllowlistProfiles)) {
-        if ($null -eq $profile) { continue }
+    foreach ($allowProfile in @($Rules.bootFilePolicies.hashAllowlistProfiles)) {
+        if ($null -eq $allowProfile) { continue }
 
-        $profileName = if ($profile.PSObject.Properties['name']) { [string]$profile.name } else { 'UnnamedProfile' }
-        $buildRegex = if ($profile.PSObject.Properties['osBuildRegex']) { [string]$profile.osBuildRegex } else { '' }
-        $productRegex = if ($profile.PSObject.Properties['productRegex']) { [string]$profile.productRegex } else { '' }
+        $profileName = if ($allowProfile.PSObject.Properties['name']) { [string]$allowProfile.name } else { 'UnnamedProfile' }
+        $buildRegex = if ($allowProfile.PSObject.Properties['osBuildRegex']) { [string]$allowProfile.osBuildRegex } else { '' }
+        $productRegex = if ($allowProfile.PSObject.Properties['productRegex']) { [string]$allowProfile.productRegex } else { '' }
 
         $buildMatch = $true
         if (-not [string]::IsNullOrWhiteSpace($buildRegex)) {
@@ -4774,7 +4771,7 @@ function Resolve-CstBootHashAllowlist {
 
         if (-not ($buildMatch -and $productMatch)) { continue }
 
-        foreach ($hEntry in @($profile.hashes)) {
+        foreach ($hEntry in @($allowProfile.hashes)) {
             if ($hEntry -is [string]) {
                 $h = ([string]$hEntry).Trim().ToUpperInvariant()
                 if (-not [string]::IsNullOrWhiteSpace($h) -and -not $hashes.Contains($h)) {
@@ -5026,7 +5023,7 @@ function Find-CstBootChainFindings {
                 if ($read -eq 512) {
                     $gptHeaderBuffer = New-Object byte[] 512
                     $stream.Position = 512
-                    $gptRead = $stream.Read($gptHeaderBuffer, 0, 512)
+                    [void]$stream.Read($gptHeaderBuffer, 0, 512)
 
                     $inspection = Invoke-CstMbrGptSectorInspection -MbrSector $buffer -GptHeaderSector $gptHeaderBuffer -Rules $Rules -EnableBootCodeHash ([bool]$Rules.bootPolicies.enableBootCodeHash) -Location '\\.\\PhysicalDrive0'
                     $result.itemsScanned += [int]$inspection.scannedSectors
@@ -5407,7 +5404,6 @@ function Invoke-CstScan {
     $malCount = @($findings | Where-Object { $_.type -eq 'Malware' }).Count
     $warnCount = @($findings | Where-Object { $_.type -in @('PUP','PUM','Suspicious') }).Count
 
-    $duration = [math]::Round(((Get-Date) - $start).TotalSeconds, 1)
     $coverageReason = $scanData.coverageReason
 
     if ($scanData.timeBudgetExceeded -and $status -eq 'Pass') {
