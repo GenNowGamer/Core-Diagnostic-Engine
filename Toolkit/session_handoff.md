@@ -1,6 +1,15 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-07
+**Last updated:** 2026-07-09
+
+## 2026-07-09 — Temp File Cleaner: locked/unavailable files no longer warn
+
+- **Behavior** — Files that cannot be deleted because they are **in use**, **locked**, or return **access denied** (common for `VBCSCompiler` / Roslyn analyzer DLLs while Cursor or `dotnet build` is active) are counted as **skipped**, not failures. Cleanup reports **Pass** / **Workflow completed successfully** when only these expected skips occur.
+- **Still warns** — Genuine delete failures (other I/O errors, unexpected exceptions) continue to surface as **Warn** with `[WARN]` log lines.
+- **Reporting** — Summary output includes `In-use: N` and per-folder `N skipped (in use).` for transparency without downgrading overall health.
+- **Implementation** — `Scripts\Workflows\TempFileCleaner.ps1`: `Test-IsUnavailableForDeletionException`, `Register-RemovalFailure` (classifies sharing violation, lock violation, access denied, `UnauthorizedAccessException`).
+- **User guide** — `Docs\UserGuide\07_Maintenance_Utilities.md` (Temp File Cleaner section).
+- **Publish** — PowerShell-only change; no GUI rebuild required for dev toolkit (`Toolkit\Scripts\`). Run `App\Publish-ToolkitGUI.ps1` before USB sync if deploying to removable media.
 
 ## 2026-07-07 — BenchLab safe-only scenario pack + SSE3 SIMD fix
 
@@ -788,7 +797,7 @@ powershell -File Scripts\Workflows\SystemAudit.ps1 -ToolName StartupAudit
 - **`Toolkit.Core.psm1`** — `Get-WorkflowStepCounts`, `Get-WorkflowOverallHealth`, `Set-WorkflowOverallHealth`, `Group-WorkflowEvents`, `Format-WorkflowEventSummaryText`. `Generate-Report` exports `OverallHealth` when set.
 - **Health fix** — `QuickHealth.ps1` / `DeepDiagnostics.ps1` / `OSRepair.ps1` use shared helpers (fixes single-Warn → `Healthy` bug from scalar `.Count`).
 - **Deep Diagnostics** — `CriticalEvents` step includes `EventSummary`, `EventCount`, grouped `Output`; exports `DeepDiagnostics_Events_*.json` when count > 20.
-- **Temp File Cleaner** — per-folder `FailedItems`, actual `FreedBytes`, `CleanedWithWarnings` → Warn steps.
+- **Temp File Cleaner** — per-folder `FailedItems`, actual `FreedBytes`, `CleanedWithWarnings` → Warn steps. *(2026-07-09: in-use / locked / access-denied skips no longer increment `FailedItems` or warn — see 2026-07-09 handoff section.)*
 - **Regression** — `Scripts\Tests\Invoke-CdeRegressionSuite.ps1` (unit + syntax; `-IncludeWorkflowSmoke` optional).
 - **Dashboard** — OS Repair / Backup card copy corrected.
 

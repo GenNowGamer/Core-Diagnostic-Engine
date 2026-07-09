@@ -152,7 +152,16 @@ When CPU or RAM checks warn or fail, use the recommendation link **Process Analy
 3. Review sizes and select folders
 4. **Clean** selected items
 
----
+### Completion status
+
+A successful clean may still leave some files behind when another process has them open — this is normal on a running system. CDE treats these as **skipped (in use)**, not failures:
+
+- Files reported as *being used by another process*
+- Files where delete returns *access denied* (common for `VBCSCompiler` / Roslyn analyzer DLLs while an IDE or `dotnet build` is active)
+
+When only these expected skips occur, the workflow reports **Completed** / **Pass** — not a warning. The summary may note how many items were skipped (for example, `In-use: 5`). Genuine delete errors (unexpected I/O problems) still show as warnings.
+
+> **Tip:** Close heavy build tools or reboot before cleaning if you want the temp folder as empty as possible.
 
 ## Uninstall Manager
 

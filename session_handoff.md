@@ -1,7 +1,13 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-06  
+**Last updated:** 2026-07-09  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-09 update — Temp File Cleaner skip locked/unavailable files
+
+- **Temp File Cleaner** — Locked, in-use, and access-denied temp files (e.g. `VBCSCompiler` analyzer DLLs during active builds) are **skipped** instead of reported as workflow warnings. Overall cleanup status is **Pass** when only these expected skips occur; summary still shows `In-use: N`.
+- **Script** — `Toolkit\Scripts\Workflows\TempFileCleaner.ps1` (`Test-IsUnavailableForDeletionException`, `Register-RemovalFailure`).
+- **Docs** — `Toolkit\session_handoff.md` (2026-07-09 section); `Toolkit\Docs\UserGuide\07_Maintenance_Utilities.md`.
 
 ## 2026-07-06 update — canonical publish run + verification pass
 

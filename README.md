@@ -42,6 +42,7 @@ Current field status:
 - **CST remediation USB root** (2026-07-03): Malware Cleanup remediation works when the toolkit runs from a drive-letter USB root (`G:\`).
 - **Diag & Repair CST status** (2026-07-03): CST scans with warnings show **Warn** in the results table (not **N/A**).
 - **GitHub source** (2026-07-03): `https://github.com/GenNowGamer/Core-Diagnostic-Engine` — source-only clone (~50 MB). Rebuild with `Toolkit\App\Publish-ToolkitGUI.ps1`; large binaries not in git — see `Toolkit\Tools\PLACEHOLDER_ACQUISITION.md`.
+- **Temp File Cleaner skip policy** (2026-07-09): Locked, in-use, and access-denied temp files are skipped without workflow warnings; cleanup reports success when only expected skips remain. See `Toolkit\session_handoff.md`.
 
 ## Session status (2026-07-03)
 

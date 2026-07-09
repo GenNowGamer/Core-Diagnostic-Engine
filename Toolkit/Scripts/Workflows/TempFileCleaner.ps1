@@ -237,6 +237,50 @@ function Invoke-Scan {
     $locations | ConvertTo-Json -Depth 4
 }
 
+function Test-IsUnavailableForDeletionException {
+    param([System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $message = [string]$ErrorRecord.Exception.Message
+    if ($message -match 'being used by another process') { return $true }
+    if ($message -match 'cannot access the file.*because it is being used') { return $true }
+    if ($message -match 'Access to the path .* is denied\.?') { return $true }
+
+    $exception = $ErrorRecord.Exception
+    if ($exception -is [System.UnauthorizedAccessException]) { return $true }
+    if ($exception -is [System.IO.IOException] -and $message -match 'is denied') { return $true }
+
+    $inner = $exception.InnerException
+    if ($null -ne $inner) {
+        $innerMessage = [string]$inner.Message
+        if ($innerMessage -match 'being used by another process') { return $true }
+        if ($innerMessage -match 'cannot access the file.*because it is being used') { return $true }
+        if ($innerMessage -match 'Access to the path .* is denied\.?') { return $true }
+        if ($inner -is [System.UnauthorizedAccessException]) { return $true }
+    }
+
+    $win32 = $exception.HResult -band 0xFFFF
+    if ($win32 -in @(0x0020, 0x0021, 0x0005)) { return $true }
+
+    return $false
+}
+
+function Register-RemovalFailure {
+    param(
+        [string]$ItemPath,
+        [System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [ref]$FailedCount,
+        [ref]$SkippedInUseCount
+    )
+
+    if (Test-IsUnavailableForDeletionException -ErrorRecord $ErrorRecord) {
+        $SkippedInUseCount.Value++
+        return
+    }
+
+    $FailedCount.Value++
+    Write-Log "[WARN] Failed to remove ${ItemPath}: $($ErrorRecord.Exception.Message)" -Level Warning
+}
+
 function Invoke-Clean {
     $selected = Get-JsonArrayInput -Json $PathsJson -FilePath $PathsFile
     $whitelistRaw = Get-JsonArrayInput -Json $WhitelistJson -FilePath $WhitelistFile
@@ -251,6 +295,7 @@ function Invoke-Clean {
 
     $totalDeleted = 0
     $totalFailed = 0
+    $totalSkippedInUse = 0
     $totalBytes = 0L
     $totalScannedBytes = 0L
     $skippedProtected = 0
@@ -320,6 +365,7 @@ function Invoke-Clean {
 
             $removedCount = 0
             $failedCount = 0
+            $skippedInUseCount = 0
             $freedBytes = 0L
             foreach ($item in ($fileItems | Sort-Object FullName -Descending)) {
                 try {
@@ -328,16 +374,17 @@ function Invoke-Clean {
                     $removedCount++
                     $freedBytes += $fileLength
                 } catch {
-                    $failedCount++
-                    Write-Log "[WARN] Failed to remove $($item.FullName): $($_.Exception.Message)" -Level Warning
+                    Register-RemovalFailure -ItemPath $item.FullName -ErrorRecord $_ `
+                        -FailedCount ([ref]$failedCount) -SkippedInUseCount ([ref]$skippedInUseCount)
                 }
             }
 
             foreach ($item in ($dirItems | Sort-Object FullName -Descending)) {
                 try {
-                    Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                    Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction Stop
                 } catch {
-                    Write-Log "[WARN] Failed to remove $($item.FullName): $($_.Exception.Message)" -Level Warning
+                    Register-RemovalFailure -ItemPath $item.FullName -ErrorRecord $_ `
+                        -FailedCount ([ref]$failedCount) -SkippedInUseCount ([ref]$skippedInUseCount)
                 }
             }
 
@@ -355,18 +402,22 @@ function Invoke-Clean {
             $totalScannedBytes += $scannedBytes
             $totalDeleted += $removedCount
             $totalFailed += $failedCount
+            $totalSkippedInUse += $skippedInUseCount
             $folderFreedText = Format-SizeHuman -Bytes $freedBytes
             $folderStatus = if ($failedCount -eq 0) { 'Cleaned' } else { 'CleanedWithWarnings' }
-            $folderMessage = if ($failedCount -eq 0) {
-                "Freed $folderFreedText, Deleted $removedCount item(s)."
-            } else {
-                "Freed $folderFreedText, Deleted $removedCount item(s), $failedCount failed (in use)."
+            $folderMessage = "Freed $folderFreedText, Deleted $removedCount item(s)."
+            if ($skippedInUseCount -gt 0) {
+                $folderMessage += " $skippedInUseCount skipped (in use)."
+            }
+            if ($failedCount -gt 0) {
+                $folderMessage += " $failedCount failed."
             }
             $folderResults.Add([PSCustomObject]@{
                 Path = $path
                 Status = $folderStatus
                 DeletedItems = $removedCount
                 FailedItems = $failedCount
+                SkippedInUse = $skippedInUseCount
                 FreedBytes = [long]$freedBytes
                 ScannedBytes = [long]$scannedBytes
                 Message = $folderMessage
@@ -386,6 +437,7 @@ function Invoke-Clean {
     [PSCustomObject]@{
         DeletedItems = $totalDeleted
         FailedItems = $totalFailed
+        SkippedInUse = $totalSkippedInUse
         FreedBytes = [long]$totalBytes
         ScannedBytes = [long]$totalScannedBytes
         FreedMb = [math]::Round($totalBytes / 1MB, 1)
@@ -412,10 +464,11 @@ try {
                 $freedText = Format-SizeHuman -Bytes ([long]$summary.FreedBytes)
                 $topStatus = if ($summary.FailedItems -gt 0) { 'Warn' } else { 'Pass' }
                 $failedSuffix = if ($summary.FailedItems -gt 0) { " Failed: $($summary.FailedItems)." } else { '' }
+                $inUseSuffix = if ($summary.SkippedInUse -gt 0) { " In-use: $($summary.SkippedInUse)." } else { '' }
                 $r.Steps.Add([PSCustomObject]@{
                     Name = 'TempFileClean'
                     Status = $topStatus
-                    Output = "Cleaned $($summary.DeletedItems) items and freed ~$freedText across $($summary.PathsCount) selected location(s). Skipped: protected=$($summary.SkippedProtected), invalid=$($summary.SkippedInvalid), missing=$($summary.SkippedMissing).$failedSuffix"
+                    Output = "Cleaned $($summary.DeletedItems) items and freed ~$freedText across $($summary.PathsCount) selected location(s). Skipped: protected=$($summary.SkippedProtected), invalid=$($summary.SkippedInvalid), missing=$($summary.SkippedMissing).$inUseSuffix$failedSuffix"
                 })
 
                 foreach ($folder in @($summary.FolderResults)) {

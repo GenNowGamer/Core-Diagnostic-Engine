@@ -14,6 +14,11 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-07-09)
+
+- **Temp File Cleaner** — Locked, in-use, and access-denied deletes (sharing violation, `UnauthorizedAccessException`, Win32 `0x0005`) count as **skipped**, not **Warn**. Typical when `VBCSCompiler` / Roslyn holds analyzer DLLs during Cursor or `dotnet build`. Genuine I/O failures still warn. `Scripts/Workflows/TempFileCleaner.ps1`.
+- **User guide** — `Docs/UserGuide/07_Maintenance_Utilities.md` (Temp File Cleaner completion behavior).
+
 ## Session Update (2026-07-06)
 
 - **CHU boot chain** — rEFInd CHU entry loads `EFI\CDE\CHUPrep.efi` (console prep), which chainloads `CoreDiag.efi`. Staged by `Core Hardware Utility\UEFI\BUILD_CHU_UEFI.ps1`.
