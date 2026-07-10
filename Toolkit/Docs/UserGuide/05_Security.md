@@ -14,12 +14,14 @@
 ### Steps — Core Security Tool
 
 1. Sidebar → **Malware Cleanup**
-2. Click **Core Security Tool** (or open **⚙ Config** first)
-3. In the config dialog, set scan type (**Threat Scan** or **Full Scan**), targets, and remediation options
-4. Run the scan and watch progress in the workflow window
-5. Review structured results and the post-scan findings dialog
+2. Click **Open** on **Core Security Tool**
+3. In the config dialog, set scan type (**ThreatScan** / **FullScan** / **CustomScan**), detection scope (**All** recommended), and optional custom paths
+4. The **CST Scan Results** window opens immediately with live progress (same layout as File Manager / Startup Manager / Process Analyzer)
+5. When finished, the same window shows the verdict (with scan-mode label), metrics, coverage notes, and findings
+6. Select **actionable** findings and use **Quarantine Selected**, **Remove Selected**, or **Restore from Manifest...** — no separate post-scan operator dialog
+7. **Archive hits:** inner `zip::entry` rows are review-only; select the **parent .zip/.jar** row to quarantine or remove the container
 
-**Structured results (default)** — Malware Cleanup and Diag & Repair CST rows show actionable findings only (Malware, Virus, PUP, PUM). Expand **Show all findings and scan metadata** in the workflow window for detector details and scan metadata. Use **Open full CST report (PDF)** for the operator PDF under `Logs\` (not the raw JSON artifact). Process Analyzer CST keeps its dedicated results dialog.
+> **ThreatScan** is a high-risk-path triage (not full-disk AV). Prefer **FullScan** or **CustomScan** on a suspect tree when hunting. Authenticode timeouts appear as low-confidence warnings (“signer not verified”), not confirmed malware.
 
 > **WinPE + offline OS:** Boot menu **option 2** so CST can scan the customer's Windows folder. Without offline load, CST may show "no Windows volume found."
 

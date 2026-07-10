@@ -3,6 +3,13 @@
 **Last updated:** 2026-07-10  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
 
+## 2026-07-10 update — CST Scan Results + detection/archive remediation
+
+- **UI** — Unified **CST Scan Results** (live progress + findings + Quarantine/Remove/Restore); horizontal scroll fixed; mode/coverage labels; archive parent-file remediation path.
+- **CST sync** — ThreatScan DLL/light-archive peek, timeout-as-unknown, narrowed trusted-signer early exit + cheap spot-check, correlation/boot baseline tweaks (source: Core Security Tool).
+- **Full notes** — `Toolkit\session_handoff.md`; CST `CST\session_handoff.md`; user guide `Toolkit\Docs\UserGuide\05_Security.md`.
+- **Publish** — `Toolkit\App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`.
+
 ## 2026-07-10 update — Diag & Repair / CST live-Windows polish
 
 - **CIRCL** — Live-Windows CST ThreatScan/FullScan/CustomScan use CIRCL Hashlookup when not WinPE/`OfflineOnly` (synced from Core Security Tool).

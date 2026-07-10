@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -669,6 +671,442 @@ namespace ToolkitGUI.ViewModels
             if (!string.IsNullOrWhiteSpace(result.ExceptionMessage)) return result.ExceptionMessage;
             if (!string.IsNullOrWhiteSpace(result.Output)) return result.Output;
             return "Unknown execution error";
+        }
+
+        // ─── Context-menu jump actions (no Enable/Disable/Delete) ─────────────────
+
+        public string? TryResolveEntryFilePath(StartupEntry? entry)
+            => StartupCommandPathResolver.TryResolveExistingFile(entry?.FilePath);
+
+        public string? TryResolveServiceFilePath(ServiceEntry? service)
+            => StartupCommandPathResolver.TryResolveExistingFile(service?.FilePath);
+
+        public void OpenEntryFileLocation(StartupEntry entry)
+            => OpenResolvedFileLocation(TryResolveEntryFilePath(entry), entry.FilePath);
+
+        public void OpenServiceFileLocation(ServiceEntry service)
+            => OpenResolvedFileLocation(TryResolveServiceFilePath(service), service.FilePath);
+
+        public void CopyEntryFilePath(StartupEntry entry)
+        {
+            var path = TryResolveEntryFilePath(entry) ?? entry.FilePath;
+            CopyTextToClipboard(path, "File path copied.");
+        }
+
+        public void CopyEntryCommandLine(StartupEntry entry)
+            => CopyTextToClipboard(entry.FilePath, "Command line copied.");
+
+        public void CopyServiceFilePath(ServiceEntry service)
+        {
+            var path = TryResolveServiceFilePath(service) ?? service.FilePath;
+            CopyTextToClipboard(path, "File path copied.");
+        }
+
+        public void CopyServiceName(ServiceEntry service)
+            => CopyTextToClipboard(service.ServiceName, "Service name copied.");
+
+        public void CopyEntryRegistryPath(StartupEntry entry)
+        {
+            var path = GetBestRegistryPath(entry);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                MessageBox.Show("This entry has no registry path.", "Startup Manager",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            CopyTextToClipboard(path, "Registry path copied.");
+        }
+
+        public void OpenEntryInRegistryEditor(StartupEntry entry)
+        {
+            var path = GetBestRegistryPath(entry);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                MessageBox.Show("This entry has no registry path.", "Startup Manager",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                var lastKey = ToRegeditLastKey(path);
+                using (var key = Registry.CurrentUser.CreateSubKey(
+                           @"Software\Microsoft\Windows\CurrentVersion\Applets\Regedit"))
+                {
+                    key?.SetValue("LastKey", lastKey);
+                }
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "regedit.exe",
+                    UseShellExecute = true
+                });
+                StatusText = "Opened Registry Editor.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Open in Registry Editor",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        public async Task ScanEntryWithCstAsync(StartupEntry entry)
+        {
+            await ScanStartupEntryWithCstAsync(entry, service: null);
+        }
+
+        public async Task ScanServiceWithCstAsync(ServiceEntry service)
+        {
+            await ScanStartupEntryWithCstAsync(entry: null, service);
+        }
+
+        private Task ScanStartupEntryWithCstAsync(StartupEntry? entry, ServiceEntry? service)
+        {
+            string displayName;
+            string commandLine;
+            IReadOnlyList<string> resolvedPaths;
+            object metadataEntry;
+
+            if (entry is not null)
+            {
+                displayName = entry.Name;
+                commandLine = entry.FilePath ?? string.Empty;
+                resolvedPaths = StartupCommandPathResolver.CollectExistingFiles(entry.FilePath);
+                metadataEntry = new
+                {
+                    name = entry.Name,
+                    commandLine,
+                    resolvedPaths,
+                    rowType = entry.RowType,
+                    sourceGroup = entry.SourceGroup,
+                    category = entry.Category,
+                    registryPath = GetBestRegistryPath(entry) ?? string.Empty,
+                    valueName = string.IsNullOrWhiteSpace(entry.ValueName) ? entry.Name : entry.ValueName,
+                    user = entry.User,
+                    publisher = entry.Publisher,
+                    isSigned = entry.IsSigned,
+                    riskLevel = entry.RiskLevel,
+                    analysisDetail = entry.AnalysisDetail,
+                    isHijackSuspicious = entry.IsHijackSuspicious,
+                    deviationReason = entry.DeviationReason,
+                    correlationSummary = entry.CorrelationSummary
+                };
+            }
+            else if (service is not null)
+            {
+                displayName = service.DisplayName ?? service.ServiceName;
+                commandLine = service.FilePath ?? string.Empty;
+                resolvedPaths = StartupCommandPathResolver.CollectExistingFiles(service.FilePath);
+                metadataEntry = new
+                {
+                    name = service.ServiceName,
+                    commandLine,
+                    resolvedPaths,
+                    rowType = "Service",
+                    sourceGroup = "Services",
+                    category = "Services",
+                    registryPath = string.Empty,
+                    valueName = service.ServiceName,
+                    user = service.User,
+                    publisher = string.Empty,
+                    isSigned = service.IsSigned,
+                    riskLevel = service.HasAnalysisWarning ? "Warning" : "Unknown",
+                    analysisDetail = service.AnalysisDetail,
+                    isHijackSuspicious = false,
+                    deviationReason = string.Empty,
+                    correlationSummary = string.Empty
+                };
+            }
+            else
+            {
+                return Task.CompletedTask;
+            }
+
+            IsLoading = true;
+            StatusText = $"Running CST startup-entry scan on {displayName}...";
+            string? metaPath = null;
+            try
+            {
+                var cstDir = ReportPathHelper.GetCstDataRoot();
+                Directory.CreateDirectory(cstDir);
+                metaPath = Path.Combine(cstDir, $"startup_entry_scan_{DateTime.UtcNow:yyyyMMdd_HHmmss_fff}.json");
+                var payload = new { startupEntry = metadataEntry, scanOptions = new { maxMinutes = 3 } };
+                File.WriteAllText(metaPath, JsonConvert.SerializeObject(payload, Formatting.Indented));
+
+                var script = WorkflowViewModelBase_GetScriptPath("ProcessAnalyzer.ps1");
+                var owner = Application.Current?.Windows.OfType<Window>()
+                    .FirstOrDefault(window => window.IsActive);
+                var primaryPath = resolvedPaths.Count > 0 ? resolvedPaths[0] : commandLine;
+                var parameters = $"-Action StartupEntryCstScan -StartupEntryMetadataPath \"{metaPath}\"";
+
+                ProcessAnalyzerCstResultService.ShowLiveScan(
+                    owner,
+                    displayName,
+                    primaryPath,
+                    "Startup entry scan — File / Command line / Persistence",
+                    isStartupEntryScan: true,
+                    script,
+                    parameters,
+                    (presentation, rawOutput) =>
+                    {
+                        var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(rawOutput)
+                            ?? FindLatestCstArtifactPath();
+                        WorkOrderService.TryRecordCstScanRun(artifactPath, primaryPath, presentation.Verdict);
+                        StatusText = "CST startup-entry scan completed.";
+                    },
+                    onFinished: () =>
+                    {
+                        try
+                        {
+                            if (!string.IsNullOrWhiteSpace(metaPath) && File.Exists(metaPath))
+                                File.Delete(metaPath);
+                        }
+                        catch { }
+                    });
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"CST scan error: {ex.Message}";
+                MessageBox.Show(ex.Message, "CST Scan", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public void ShowEntryDetails(StartupEntry entry)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Name: {entry.Name}");
+            sb.AppendLine($"Source: {entry.SourceGroup}");
+            sb.AppendLine($"Category / type: {entry.Category} / {entry.RowType}");
+            sb.AppendLine($"User: {entry.User}");
+            sb.AppendLine($"Publisher: {entry.Publisher}");
+            sb.AppendLine($"Signed: {entry.SignedDisplay}");
+            sb.AppendLine($"Risk: {entry.RiskLevel}");
+            sb.AppendLine($"Enabled: {entry.IsEnabled}");
+            if (!string.IsNullOrWhiteSpace(entry.AnalysisDetail))
+                sb.AppendLine($"Analysis: {entry.AnalysisDetail}");
+            if (!string.IsNullOrWhiteSpace(entry.CorrelationSummary))
+                sb.AppendLine($"Related: {entry.CorrelationSummary}");
+            if (!string.IsNullOrWhiteSpace(entry.DeviationReason))
+                sb.AppendLine($"Deviation: {entry.DeviationReason}");
+            sb.AppendLine();
+            sb.AppendLine("Command / path:");
+            sb.AppendLine(entry.FilePath);
+            var resolved = TryResolveEntryFilePath(entry);
+            if (!string.IsNullOrWhiteSpace(resolved) &&
+                !string.Equals(resolved, entry.FilePath, StringComparison.OrdinalIgnoreCase))
+            {
+                sb.AppendLine();
+                sb.AppendLine("Resolved file:");
+                sb.AppendLine(resolved);
+            }
+
+            var reg = GetBestRegistryPath(entry);
+            if (!string.IsNullOrWhiteSpace(reg))
+            {
+                sb.AppendLine();
+                sb.AppendLine("Registry:");
+                sb.AppendLine(reg);
+                if (!string.IsNullOrWhiteSpace(entry.ValueName))
+                    sb.AppendLine($"Value name: {entry.ValueName}");
+            }
+
+            MessageBox.Show(sb.ToString(), "Startup entry details",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        public void ShowServiceDetails(ServiceEntry service)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Service: {service.ServiceName}");
+            sb.AppendLine($"Display name: {service.DisplayName}");
+            sb.AppendLine($"Status: {service.Status}");
+            sb.AppendLine($"Startup type: {service.StartupType}");
+            sb.AppendLine($"User: {service.User}");
+            sb.AppendLine($"Signed: {service.SignedDisplay}");
+            if (!string.IsNullOrWhiteSpace(service.AnalysisDetail))
+                sb.AppendLine($"Analysis: {service.AnalysisDetail}");
+            if (!string.IsNullOrWhiteSpace(service.Description))
+            {
+                sb.AppendLine();
+                sb.AppendLine("Description:");
+                sb.AppendLine(service.Description);
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Image path:");
+            sb.AppendLine(service.FilePath);
+            var resolved = TryResolveServiceFilePath(service);
+            if (!string.IsNullOrWhiteSpace(resolved) &&
+                !string.Equals(resolved, service.FilePath, StringComparison.OrdinalIgnoreCase))
+            {
+                sb.AppendLine();
+                sb.AppendLine("Resolved file:");
+                sb.AppendLine(resolved);
+            }
+
+            MessageBox.Show(sb.ToString(), "Service details",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        public void OpenMalwareCleanup()
+            => NavigationService.Request("MalwareCleanup");
+
+        public void OpenProcessAnalyzer()
+            => NavigationService.Request("ProcessAnalyzer");
+
+        private async Task ScanPathWithCstAsync(string? path, string displayName)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                MessageBox.Show(
+                    "No accessible file path to scan for this entry.",
+                    "CST Scan",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            IsLoading = true;
+            StatusText = $"Running CST scan on {Path.GetFileName(path)}...";
+            try
+            {
+                var script = WorkflowViewModelBase_GetScriptPath("ProcessAnalyzer.ps1");
+                var escapedPath = path.Replace("'", "''");
+                var result = await PowerShellService.ExecuteAsync(
+                    $"& '{script}' -Action CstScan -TargetPath '{escapedPath}'");
+
+                if (!result.Success)
+                {
+                    StatusText = $"CST scan failed: {FormatExecError(result)}";
+                    MessageBox.Show(FormatExecError(result), "CST Scan",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                StatusText = "CST scan completed.";
+                var owner = Application.Current?.Windows.OfType<Window>()
+                    .FirstOrDefault(window => window.IsActive);
+                if (ProcessAnalyzerCstResultService.TryBuildPresentation(
+                        result.Output, path, displayName, out var presentation, out _))
+                {
+                    var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(result.Output)
+                        ?? FindLatestCstArtifactPath();
+                    WorkOrderService.TryRecordCstScanRun(artifactPath, path, presentation.Verdict);
+                }
+
+                ProcessAnalyzerCstResultService.TryShowResults(result.Output, path, displayName, owner);
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"CST scan error: {ex.Message}";
+                MessageBox.Show(ex.Message, "CST Scan", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+        }
+
+        private void OpenResolvedFileLocation(string? resolvedPath, string? rawPath)
+        {
+            if (string.IsNullOrWhiteSpace(resolvedPath) || !File.Exists(resolvedPath))
+            {
+                var hint = string.IsNullOrWhiteSpace(rawPath) ? "No path is available." : rawPath;
+                MessageBox.Show(
+                    $"No accessible file path for this entry.\n\n{hint}",
+                    "Open file location",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{resolvedPath}\"",
+                    UseShellExecute = true
+                });
+                StatusText = "Opened file location.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Open file location",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void CopyTextToClipboard(string? text, string successStatus)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                MessageBox.Show("Nothing to copy.", "Startup Manager",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                Clipboard.SetText(text);
+                StatusText = successStatus;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Copy", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private static string? GetBestRegistryPath(StartupEntry entry)
+        {
+            if (!string.IsNullOrWhiteSpace(entry.RegistryPath))
+                return entry.RegistryPath.Trim();
+            if (!string.IsNullOrWhiteSpace(entry.RegistryKey))
+                return entry.RegistryKey.Trim();
+            if (!string.IsNullOrWhiteSpace(entry.Source)
+                && (entry.Source.StartsWith("HK", StringComparison.OrdinalIgnoreCase)
+                    || entry.Source.StartsWith("HKEY_", StringComparison.OrdinalIgnoreCase)))
+                return entry.Source.Trim();
+            return null;
+        }
+
+        private static string ToRegeditLastKey(string registryPath)
+        {
+            var path = registryPath.Trim().TrimStart('\\');
+            path = path
+                .Replace("HKCU\\", "HKEY_CURRENT_USER\\", StringComparison.OrdinalIgnoreCase)
+                .Replace("HKLM\\", "HKEY_LOCAL_MACHINE\\", StringComparison.OrdinalIgnoreCase)
+                .Replace("HKU\\", "HKEY_USERS\\", StringComparison.OrdinalIgnoreCase)
+                .Replace("HKCR\\", "HKEY_CLASSES_ROOT\\", StringComparison.OrdinalIgnoreCase);
+
+            if (!path.StartsWith("HKEY_", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("Computer\\", StringComparison.OrdinalIgnoreCase))
+            {
+                // Leave as-is; Regedit LastKey still often works with HK* forms on modern Windows.
+            }
+
+            if (!path.StartsWith("Computer\\", StringComparison.OrdinalIgnoreCase))
+                path = "Computer\\" + path;
+
+            return path;
+        }
+
+        private static string? FindLatestCstArtifactPath()
+        {
+            var cstDir = ReportPathHelper.GetCstDataRoot();
+            if (!Directory.Exists(cstDir))
+                return null;
+
+            return Directory.GetFiles(cstDir, "CST_Result_*.json")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

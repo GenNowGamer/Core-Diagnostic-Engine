@@ -3,6 +3,8 @@ param(
     [string]$Action = 'List',
     [int]$TargetPid = 0,
     [string]$TargetPath = '',
+    [string]$TargetPathsFile = '',
+    [string]$StartupEntryMetadataPath = '',
     [int]$SampleMs = 1000,
     [switch]$DeepScan,
     [string]$OutputPath = '',
@@ -10,7 +12,7 @@ param(
     [switch]$ElevatedRelay
 )
 
-$ErrorActionPreference = if ($Action -in @('List', 'Detail', 'MatchStartup', 'CstScan', 'Export')) { 'SilentlyContinue' } else { 'Stop' }
+$ErrorActionPreference = if ($Action -in @('List', 'Detail', 'MatchStartup', 'CstScan', 'StartupEntryCstScan', 'PathCstScan', 'Export')) { 'SilentlyContinue' } else { 'Stop' }
 
 $Script:ProcessAnalyzerScriptPath = $MyInvocation.MyCommand.Path
 $ScriptDir = Split-Path $Script:ProcessAnalyzerScriptPath
@@ -28,6 +30,8 @@ function Get-ProcessAnalyzerRelayArgumentString {
         Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'TargetPid' -Value ([string]$TargetPid)
     }
     Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'TargetPath' -Value $TargetPath
+    Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'TargetPathsFile' -Value $TargetPathsFile
+    Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'StartupEntryMetadataPath' -Value $StartupEntryMetadataPath
     if ($SampleMs -ne 1000) {
         Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'SampleMs' -Value ([string]$SampleMs)
     }
@@ -266,6 +270,12 @@ switch ($Action) {
     }
     'CstScan' {
         (Invoke-ProcessCstCustomScan -TargetPath $TargetPath -ToolkitRoot $ToolkitRoot) | ConvertTo-Json -Depth 6
+    }
+    'PathCstScan' {
+        (Invoke-PathCstScan -TargetPath $TargetPath -TargetPathsFile $TargetPathsFile -ToolkitRoot $ToolkitRoot) | ConvertTo-Json -Depth 8 -Compress:$false
+    }
+    'StartupEntryCstScan' {
+        (Invoke-StartupEntryCstScan -MetadataPath $StartupEntryMetadataPath -ToolkitRoot $ToolkitRoot) | ConvertTo-Json -Depth 12 -Compress:$false
     }
     'Export' {
         $rows = Get-ProcessListPayload -CpuSampleMs $SampleMs -IncludeDeepScan:$DeepScan

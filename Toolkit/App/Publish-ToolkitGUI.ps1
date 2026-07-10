@@ -263,7 +263,7 @@ if ($null -eq $cstSourceDir) {
 $cstRuntimeDir = Join-Path $toolkitRoot 'Security\CST'
 Write-Host "`nSyncing CST runtime files from source..." -ForegroundColor Cyan
 Write-Host ("  Source: {0}" -f $cstSourceDir)
-foreach ($cstFile in @('CoreSecurityTool.ps1', 'CoreSecurityTool.psm1', 'Cst.KnownGood.ps1')) {
+foreach ($cstFile in @('CoreSecurityTool.ps1', 'CoreSecurityTool.psm1', 'Cst.KnownGood.ps1', 'Cst.StartupEntryScan.ps1')) {
     $src = Join-Path $cstSourceDir $cstFile
     $dst = Join-Path $cstRuntimeDir $cstFile
     if (Test-Path -LiteralPath $src) {

@@ -386,8 +386,256 @@ function Invoke-ProcessCstCustomScan {
     $output = (& $cstScript -Operation Scan -Mode CustomScan -Target $target -EmitJson -MaxMinutes 3 2>&1 | Out-String)
     return [PSCustomObject]@{
         Available = $true
-        Success   = ($LASTEXITCODE -eq 0)
+        Success   = ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2)
         Output    = $output.Trim()
         ExitCode  = $LASTEXITCODE
     }
+}
+
+function Invoke-PathCstScan {
+    param(
+        [string]$TargetPath = '',
+        [string]$TargetPathsFile = '',
+        [Parameter(Mandatory)][string]$ToolkitRoot
+    )
+
+    $cstScript = Join-Path $ToolkitRoot 'Security\CST\CoreSecurityTool.ps1'
+    if (-not (Test-Path -LiteralPath $cstScript)) {
+        return [PSCustomObject]@{
+            Available = $false
+            Message   = 'CST runtime not found on this toolkit.'
+            ScanKind  = 'PathScan'
+        }
+    }
+
+    $targets = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($TargetPathsFile)) {
+        if (-not (Test-Path -LiteralPath $TargetPathsFile -PathType Leaf)) {
+            return [PSCustomObject]@{
+                Available = $true
+                Success   = $false
+                Message   = "Target paths file not found: $TargetPathsFile"
+                ScanKind  = 'PathScan'
+            }
+        }
+
+        try {
+            $doc = Get-Content -LiteralPath $TargetPathsFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            $rawPaths = @()
+            if ($null -ne $doc.targets) { $rawPaths = @($doc.targets) }
+            elseif ($null -ne $doc.Paths) { $rawPaths = @($doc.Paths) }
+            elseif ($doc -is [System.Array]) { $rawPaths = @($doc) }
+
+            foreach ($p in $rawPaths) {
+                $s = [string]$p
+                if ([string]::IsNullOrWhiteSpace($s)) { continue }
+                $targets.Add($s.Trim().Trim('"'))
+            }
+        }
+        catch {
+            return [PSCustomObject]@{
+                Available = $true
+                Success   = $false
+                Message   = "Could not parse target paths file: $($_.Exception.Message)"
+                ScanKind  = 'PathScan'
+            }
+        }
+    }
+
+    if ($targets.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($TargetPath)) {
+        $targets.Add($TargetPath.Trim().Trim('"'))
+    }
+
+    if ($targets.Count -eq 0) {
+        return [PSCustomObject]@{
+            Available = $true
+            Success   = $false
+            Message   = 'No scan targets were provided.'
+            ScanKind  = 'PathScan'
+        }
+    }
+
+    $resolved = [System.Collections.Generic.List[string]]::new()
+    $missing = [System.Collections.Generic.List[string]]::new()
+    $hasDirectory = $false
+    foreach ($t in $targets) {
+        if (-not (Test-Path -LiteralPath $t)) {
+            $missing.Add($t)
+            continue
+        }
+        try {
+            $full = [System.IO.Path]::GetFullPath($t)
+        }
+        catch {
+            $full = $t
+        }
+        if ((Test-Path -LiteralPath $full -PathType Container)) {
+            $hasDirectory = $true
+        }
+        if (-not ($resolved | Where-Object { $_ -ieq $full })) {
+            $resolved.Add($full)
+        }
+    }
+
+    if ($resolved.Count -eq 0) {
+        return [PSCustomObject]@{
+            Available = $true
+            Success   = $false
+            Message   = "Target not found: $($missing -join '; ')"
+            ScanKind  = 'PathScan'
+        }
+    }
+
+    $maxMinutes = if ($hasDirectory -or $resolved.Count -gt 1) { 8 } else { 3 }
+    $raw = (& $cstScript -Operation Scan -Mode CustomScan -Target @($resolved.ToArray()) -EmitJson -MaxMinutes $maxMinutes 2>&1 | Out-String)
+    $exitCode = $LASTEXITCODE
+    $json = Get-CstLastJsonObjectFromText -Text $raw
+    if ([string]::IsNullOrWhiteSpace($json)) {
+        return [PSCustomObject]@{
+            Available = $true
+            Success   = $false
+            Message   = 'CST path scan returned no JSON payload.'
+            Output    = $raw.Trim()
+            ExitCode  = $exitCode
+            ScanKind  = 'PathScan'
+            Targets   = @($resolved.ToArray())
+        }
+    }
+
+    return [PSCustomObject]@{
+        Available = $true
+        Success   = ($exitCode -eq 0 -or $exitCode -eq 1 -or $exitCode -eq 2)
+        Output    = $json
+        ExitCode  = $exitCode
+        ScanKind  = 'PathScan'
+        Targets   = @($resolved.ToArray())
+        Missing   = @($missing.ToArray())
+    }
+}
+
+function Invoke-StartupEntryCstScan {
+    param(
+        [Parameter(Mandatory)][string]$MetadataPath,
+        [Parameter(Mandatory)][string]$ToolkitRoot
+    )
+
+    $cstScript = Join-Path $ToolkitRoot 'Security\CST\CoreSecurityTool.ps1'
+    if (-not (Test-Path -LiteralPath $cstScript)) {
+        return [PSCustomObject]@{
+            Available = $false
+            Message   = 'CST runtime not found on this toolkit.'
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $MetadataPath -PathType Leaf)) {
+        return [PSCustomObject]@{
+            Available = $true
+            Success   = $false
+            Message   = "Startup entry metadata not found: $MetadataPath"
+        }
+    }
+
+    $raw = (& $cstScript -Operation Scan -StartupEntryMetadataPath $MetadataPath -EmitJson -MaxMinutes 3 2>&1 | Out-String)
+    $exitCode = $LASTEXITCODE
+    $json = Get-CstLastJsonObjectFromText -Text $raw
+    if ([string]::IsNullOrWhiteSpace($json)) {
+        return [PSCustomObject]@{
+            Available = $true
+            Success   = $false
+            Message   = 'CST startup-entry scan returned no JSON payload.'
+            Output    = $raw.Trim()
+            ExitCode  = $exitCode
+            ScanKind  = 'StartupEntryScan'
+        }
+    }
+
+    return [PSCustomObject]@{
+        Available = $true
+        Success   = ($exitCode -eq 0 -or $exitCode -eq 1 -or $exitCode -eq 2)
+        Output    = $json
+        ExitCode  = $exitCode
+        ScanKind  = 'StartupEntryScan'
+    }
+}
+
+function Get-CstLastJsonObjectFromText {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return ''
+    }
+
+    $best = ''
+    $bestScore = -1
+    for ($i = 0; $i -lt $Text.Length; $i++) {
+        if ($Text[$i] -ne '{') { continue }
+
+        $depth = 0
+        $inString = $false
+        $escape = $false
+        for ($j = $i; $j -lt $Text.Length; $j++) {
+            $ch = $Text[$j]
+            if ($inString) {
+                if ($escape) { $escape = $false; continue }
+                if ($ch -eq '\') { $escape = $true; continue }
+                if ($ch -eq '"') { $inString = $false }
+                continue
+            }
+
+            if ($ch -eq '"') { $inString = $true; continue }
+            if ($ch -eq '{') { $depth++ }
+            elseif ($ch -eq '}') {
+                $depth--
+                if ($depth -eq 0) {
+                    $candidate = $Text.Substring($i, $j - $i + 1)
+                    $score = 0
+                    if ($candidate -match '"scanKind"\s*:\s*"StartupEntryScan"') { $score += 100 }
+                    if ($candidate -match '"verdicts"') { $score += 40 }
+                    if ($candidate -match '"findings"') { $score += 20 }
+                    if ($candidate -match '"overallVerdict"') { $score += 20 }
+                    if ($candidate -match '"scanMode"\s*:\s*"CustomScan"') { $score += 50 }
+                    if ($candidate -match '"summary"') { $score += 15 }
+                    if ($candidate -match '"threatsFound"') { $score += 15 }
+                    if ($candidate -match '"itemsScanned"') { $score += 10 }
+                    if ($score -gt $bestScore) {
+                        $bestScore = $score
+                        $best = $candidate
+                    }
+                    $i = $j
+                    break
+                }
+            }
+        }
+    }
+
+    if ($bestScore -gt 0) { return $best }
+
+    # Fallback: last balanced object
+    $last = ''
+    for ($i = 0; $i -lt $Text.Length; $i++) {
+        if ($Text[$i] -ne '{') { continue }
+        $depth = 0
+        $inString = $false
+        $escape = $false
+        for ($j = $i; $j -lt $Text.Length; $j++) {
+            $ch = $Text[$j]
+            if ($inString) {
+                if ($escape) { $escape = $false; continue }
+                if ($ch -eq '\') { $escape = $true; continue }
+                if ($ch -eq '"') { $inString = $false }
+                continue
+            }
+            if ($ch -eq '"') { $inString = $true; continue }
+            if ($ch -eq '{') { $depth++ }
+            elseif ($ch -eq '}') {
+                $depth--
+                if ($depth -eq 0) {
+                    $last = $Text.Substring($i, $j - $i + 1)
+                    $i = $j
+                    break
+                }
+            }
+        }
+    }
+    return $last
 }

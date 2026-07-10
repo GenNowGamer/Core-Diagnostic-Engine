@@ -2,6 +2,22 @@
 
 **Last updated:** 2026-07-10
 
+## 2026-07-10 — CST Scan Results UX + detection hardening + archive remediation
+
+- **Results UI** — File Manager / Startup Manager / Malware Cleanup / Process Analyzer share **CST Scan Results** (live progress → findings). Remediation (**Quarantine / Remove / Restore**) is in that window; separate post-scan operator dialog is no longer auto-opened after Malware Cleanup CST.
+- **Horizontal scroll** — Findings grid uses an outer horizontal `ScrollViewer` with fixed column widths. App-wide `ScrollBar` style clears forced `Width=12` for **horizontal** bars (was collapsing to a tiny button).
+- **Verdict / coverage** — Mode labels in verdict/action text (ThreatScan vs FullScan vs CustomScan); coverage notes surface Partial / known-good skips / trusted-signer exits.
+- **Archive findings** — Inner `zip::entry` rows stay review-only; CST also emits an actionable **parent archive** `File` finding so techs can Quarantine/Remove the `.zip`/`.jar`. UI notes explain the path.
+- **CST engine (synced)** — ThreatScan includes DLLs + light archive peek; Authenticode timeouts emit Low/Unknown (not silence); trusted-signer early exit narrowed to Microsoft-family + cheap spot-check on known-good/trusted skips; stronger correlation promote; empty EFI hash baselines → signer-only + explicit note. See CST `CST\session_handoff.md`.
+- **Publish** — `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (GUI + CST runtime sync). Latest GUI payload this session ~**2:54 PM**.
+
+## 2026-07-10 — Startup Manager CST StartupEntryScan
+
+- **Scan with CST** (context menu) now runs `StartupEntryCstScan`: multi-target file CustomScan, command-line LOLBin analysis, synthetic persistence artifact correlation, and Startup Manager risk context.
+- **UI** — CST result dialog shows **File / Command line / Persistence** verdicts for startup-entry scans.
+- **CST** — `Cst.StartupEntryScan.ps1` / `Invoke-CstStartupEntryScan`; synced by publish.
+- **Publish** — `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (GUI payload).
+
 ## 2026-07-10 — Diag & Repair: stuck Running rows + CST PDF button
 
 - **Stuck Running** — Non-ASCII detail text (e.g. em-dash in Memory Coverage Warn) could corrupt live `[HW:TEST]` JSON under console capture so the GUI never saw completion. `Write-HwTestResult` in `HardwareCommon.ps1` now ASCII-sanitizes detail; end-of-run `FinalizeStuckHardwareTests` in `DiagAndRepairViewModel` reconciles any remaining Queued/Running rows from the workflow JSON.

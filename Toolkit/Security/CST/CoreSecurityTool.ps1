@@ -25,7 +25,8 @@ param(
     [switch]$RequireElevation,
     [switch]$AutoElevate,
     [switch]$EmitJson,
-    [switch]$ExternalizeSkipLog
+    [switch]$ExternalizeSkipLog,
+    [string]$StartupEntryMetadataPath
 )
 
 function Test-CstIsElevated {
@@ -119,7 +120,11 @@ $modulePath = Join-Path $PSScriptRoot 'CoreSecurityTool.psm1'
 Import-Module $modulePath -Force -DisableNameChecking
 
 if ($Operation -eq 'Scan') {
-    $result = Invoke-CstScan -Mode $Mode -Target $Target -BehaviorArtifactsPath $BehaviorArtifactsPath -RulesPath $RulesPath -MaxMinutes $MaxMinutes -DetectionScope $DetectionScope -ActionMode $ActionMode -EnablePersistenceCollectors:(-not $DisablePersistenceCollectors) -OfflineOnly:$OfflineOnly
+    if (-not [string]::IsNullOrWhiteSpace($StartupEntryMetadataPath)) {
+        $result = Invoke-CstStartupEntryScan -StartupEntry $StartupEntryMetadataPath -RulesPath $RulesPath -MaxMinutes $MaxMinutes -OfflineOnly:$OfflineOnly
+    } else {
+        $result = Invoke-CstScan -Mode $Mode -Target $Target -BehaviorArtifactsPath $BehaviorArtifactsPath -RulesPath $RulesPath -MaxMinutes $MaxMinutes -DetectionScope $DetectionScope -ActionMode $ActionMode -EnablePersistenceCollectors:(-not $DisablePersistenceCollectors) -OfflineOnly:$OfflineOnly
+    }
 } elseif ($Operation -eq 'Remediate') {
     if ([string]::IsNullOrWhiteSpace($FindingsInputPath) -or -not (Test-Path $FindingsInputPath)) {
         throw "FindingsInputPath is required for remediation and must exist: $FindingsInputPath"

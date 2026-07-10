@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -13,6 +14,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using ToolkitGUI.Services;
+using ToolkitGUI.ViewModels;
 
 namespace ToolkitGUI.Views
 {
@@ -31,6 +33,7 @@ namespace ToolkitGUI.Views
         private readonly Dictionary<Pane, PaneSortState> _sortStates = new();
         private List<string>? _clipboardPaths;
         private bool _clipboardIsCut;
+        private bool _cstScanInProgress;
 
         public FileManagerView()
         {
@@ -532,6 +535,10 @@ namespace ToolkitGUI.Views
             }
 
             menu.Items.Add(CreateMenuItem("Copy path", () => CopyPathsToClipboard(selected), selected.Count > 0));
+            menu.Items.Add(CreateMenuItem(
+                "Scan with CST",
+                () => _ = ScanPathsWithCstAsync(selected.Select(i => i.FullPath).ToList()),
+                selected.Count > 0 && !_cstScanInProgress));
             menu.Items.Add(new Separator());
 
             if (!readOnly)
@@ -582,6 +589,10 @@ namespace ToolkitGUI.Views
                 if (!string.IsNullOrWhiteSpace(folderPath))
                     Clipboard.SetText(folderPath);
             }, !string.IsNullOrWhiteSpace(folderPath)));
+            menu.Items.Add(CreateMenuItem(
+                "Scan this folder with CST",
+                () => _ = ScanPathsWithCstAsync(new[] { folderPath }),
+                !string.IsNullOrWhiteSpace(folderPath) && !_cstScanInProgress));
             menu.Items.Add(CreateMenuItem("Open in Windows Explorer", () =>
             {
                 if (!string.IsNullOrWhiteSpace(folderPath))
@@ -802,6 +813,97 @@ namespace ToolkitGUI.Views
             }
 
             OpenPathInExplorer(items[0].IsDirectory ? path : Path.GetDirectoryName(path) ?? path);
+        }
+
+        private async Task ScanPathsWithCstAsync(IReadOnlyList<string> paths)
+        {
+            if (_cstScanInProgress)
+            {
+                SetStatus("A CST scan is already running.");
+                return;
+            }
+
+            var targets = paths
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(p => File.Exists(p) || Directory.Exists(p))
+                .ToList();
+
+            if (targets.Count == 0)
+            {
+                SetStatus("Select an existing file or folder to scan with CST.");
+                MessageBox.Show(
+                    "Select an existing file or folder to scan with CST.",
+                    "CST Scan",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            _cstScanInProgress = true;
+            var displayName = targets.Count == 1
+                ? Path.GetFileName(targets[0].TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                : $"{targets.Count} items";
+            if (string.IsNullOrWhiteSpace(displayName))
+                displayName = targets[0];
+
+            SetStatus($"Running CST scan on {displayName}...");
+            string? pathsFile = null;
+            try
+            {
+                var cstDir = ReportPathHelper.GetCstDataRoot();
+                Directory.CreateDirectory(cstDir);
+                pathsFile = Path.Combine(cstDir, $"path_scan_{DateTime.UtcNow:yyyyMMdd_HHmmss_fff}.json");
+                var payload = new { targets };
+                await File.WriteAllTextAsync(pathsFile, JsonSerializer.Serialize(payload));
+
+                var script = WorkflowViewModelBase.GetScriptPath("ProcessAnalyzer.ps1");
+                var owner = Window.GetWindow(this)
+                    ?? Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive);
+                var primaryPath = targets[0];
+                var parameters = $"-Action PathCstScan -TargetPathsFile \"{pathsFile}\"";
+
+                ProcessAnalyzerCstResultService.ShowLiveScan(
+                    owner,
+                    displayName,
+                    primaryPath,
+                    targets.Count == 1 && Directory.Exists(primaryPath)
+                        ? "Folder CustomScan"
+                        : targets.Count > 1
+                            ? "Multi-path CustomScan"
+                            : "File CustomScan",
+                    isStartupEntryScan: false,
+                    script,
+                    parameters,
+                    (presentation, rawOutput) =>
+                    {
+                        var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(rawOutput);
+                        WorkOrderService.TryRecordCstScanRun(artifactPath, primaryPath, presentation.Verdict);
+                        SetStatus("CST scan completed.");
+                    },
+                    onFinished: () =>
+                    {
+                        try
+                        {
+                            if (!string.IsNullOrWhiteSpace(pathsFile) && File.Exists(pathsFile))
+                                File.Delete(pathsFile);
+                        }
+                        catch
+                        {
+                            // Best-effort cleanup of temp metadata.
+                        }
+                    });
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"CST scan error: {ex.Message}");
+                MessageBox.Show(ex.Message, "CST Scan", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                _cstScanInProgress = false;
+            }
         }
 
         private static void OpenPathInExplorer(string path)

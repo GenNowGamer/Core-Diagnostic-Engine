@@ -199,11 +199,20 @@
                 <Setter Property="Padding" Value="18"/>
             </Style>
 
-            <!-- ScrollBar -->
+            <!-- ScrollBar: Width applies to vertical bars; horizontal bars must clear Width
+                 or they collapse to a ~12px square (unusable "tiny button"). -->
             <Style TargetType="ScrollBar">
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="Width" Value="{StaticResource ScrollBarWidth}"/>
                 <Setter Property="MinWidth" Value="{StaticResource ScrollBarWidth}"/>
+                <Style.Triggers>
+                    <Trigger Property="Orientation" Value="Horizontal">
+                        <Setter Property="Width" Value="Auto"/>
+                        <Setter Property="MinWidth" Value="0"/>
+                        <Setter Property="Height" Value="16"/>
+                        <Setter Property="MinHeight" Value="16"/>
+                    </Trigger>
+                </Style.Triggers>
             </Style>
 
             <!-- Global TextBlock default -->

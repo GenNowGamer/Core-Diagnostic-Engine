@@ -308,7 +308,23 @@ function Test-CstTrustedSignerEarlyExit {
         $requireValid = [bool]$early.requireValidSignature
     }
     if ($requireValid -and [string]$SignerStatus -ne 'Valid') { return $false }
-    return (Test-CstPublisherIsAllowlisted -Publisher $Publisher -Rules $Rules)
+
+    # Prefer a narrow early-exit publisher allowlist (Microsoft family by default).
+    # Broader signerPolicies.allowPublishers still soft-suppress weak content findings.
+    if ($early.PSObject.Properties['publisherAllowlist'] -and @($early.publisherAllowlist).Count -gt 0) {
+        $pubLower = [string]$Publisher.ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($pubLower)) { return $false }
+        foreach ($allowed in @($early.publisherAllowlist)) {
+            $allowedText = [string]$allowed
+            if ([string]::IsNullOrWhiteSpace($allowedText)) { continue }
+            if ($pubLower.Contains($allowedText.ToLowerInvariant())) {
+                return $true
+            }
+        }
+        return $false
+    }
+
+    return (Test-CstPublisherIsTrustedVendor -Publisher $Publisher)
 }
 
 function Test-CstShouldSkipContentScan {

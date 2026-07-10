@@ -67,6 +67,21 @@
 
 When the same app appears through more than one mechanism, the **RELATED** column and analysis tooltip warn you (e.g. Teams via MSIX task and a Run key).
 
+### Right-click actions
+
+Right-click a row for technician jump tools (Enable / Disable / Delete stay on the row buttons only):
+
+| Action | Use for |
+|--------|---------|
+| **Open file location** | Explorer select on the resolved target (prefers `-File` scripts over `powershell.exe`) |
+| **Copy file path / command line** | Paste into notes or another tool |
+| **Scan with CST** | Startup-entry scan: multi-target file CustomScan + command-line LOLBin analysis + persistence correlation; result dialog shows **File / Command line / Persistence** verdicts |
+| **Copy registry path / Open in Registry Editor** | When the entry has a registry location |
+| **Show entry details** | Full name, source, risk, analysis, path, related |
+| **Open Malware Cleanup / Process Analyzer** | Jump to related workflows |
+
+Services tab offers the same file/CST/copy/details jumps (plus **Copy service name**).
+
 > **Tip:** Use **System Health Check → Scheduled Tasks** (security audit) to review non-Microsoft scheduled tasks for persistence risk. The default Startup Manager view focuses on user-facing startup mechanisms like Task Manager.
 
 ### Winlogon reset
@@ -91,7 +106,8 @@ If `Userinit` or `Shell` values were changed by malware, they appear highlighted
 2. Expand **Computer** → select a **drive** or **shadow copy**
 3. The right pane shows folder contents
 4. Use checkboxes to select multiple files or folders for batch copy, move, or delete
-5. Right-click for Open, Cut/Copy/Paste, Rename, Delete, Properties, Show in Explorer, or New folder
+5. Right-click for Open, Cut/Copy/Paste, Rename, Delete, Properties, Show in Explorer, **Scan with CST**, or New folder
+6. **Scan with CST** — right-click a file or folder (or multi-select) to run a Core Security Tool CustomScan on those paths. Empty area of the pane: **Scan this folder with CST** scans the current folder. Results open in **CST Scan Results** (live progress → findings). Archive threats: select the parent `.zip`/`.jar` row to quarantine/remove; inner entry rows are review-only.
 
 The directories pane starts empty until you select a location.
 

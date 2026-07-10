@@ -14,6 +14,115 @@ namespace ToolkitGUI.Services
 {
     internal static class CstRemediationService
     {
+        public static async Task<bool> ExecuteRemediationAsync(
+            string artifactPath,
+            string action,
+            IEnumerable<string> selectedFindingIds,
+            Window? owner = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(artifactPath) || !File.Exists(artifactPath))
+                {
+                    MessageBox.Show(
+                        "CST result artifact is missing. Re-run the scan before remediating.",
+                        "Core Security Tool",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return false;
+                }
+
+                var selectedIds = selectedFindingIds
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                if (selectedIds.Length == 0)
+                {
+                    MessageBox.Show(
+                        "Select at least one finding before running a remediation action.",
+                        "Core Security Tool",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return false;
+                }
+
+                var cstScriptPath = ResolveCoreSecurityToolPath();
+                if (string.IsNullOrWhiteSpace(cstScriptPath) || !File.Exists(cstScriptPath))
+                {
+                    MessageBox.Show(
+                        "Core Security Tool remediation script was not found.",
+                        "Core Security Tool",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return false;
+                }
+
+                var remediationCommand = new StringBuilder();
+                remediationCommand.Append("$result = & ");
+                remediationCommand.Append(QuoteForPowerShell(cstScriptPath));
+                remediationCommand.Append(" -Operation Remediate -FindingsInputPath ");
+                remediationCommand.Append(QuoteForPowerShell(artifactPath));
+                remediationCommand.Append(" -RemediationAction ");
+                remediationCommand.Append(action);
+                remediationCommand.Append(" -SelectedFindingId ");
+                remediationCommand.Append(BuildPowerShellArray(selectedIds));
+                remediationCommand.Append(" -AutoElevate -RequireElevation -EmitJson; $result");
+
+                var (output, error) = await PowerShellService.QueryAsync(remediationCommand.ToString());
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    MessageBox.Show(
+                        $"Remediation reported errors:\n{error}",
+                        "Core Security Tool",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return false;
+                }
+
+                var jsonText = ExtractJsonBlock(output);
+                if (string.IsNullOrWhiteSpace(jsonText))
+                {
+                    MessageBox.Show(
+                        "Remediation completed but returned no JSON payload.",
+                        "Core Security Tool",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return false;
+                }
+
+                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var remediation = JsonSerializer.Deserialize<CstRemediationResult>(jsonText, opts);
+                if (remediation is null)
+                {
+                    MessageBox.Show(
+                        "Remediation completed but the result payload could not be parsed.",
+                        "Core Security Tool",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return false;
+                }
+
+                MessageBox.Show(
+                    BuildRemediationSummary(remediation),
+                    "Core Security Tool",
+                    MessageBoxButton.OK,
+                    remediation.Failed > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+                return remediation.Failed == 0;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Remediation failed: {ex.Message}",
+                    "Core Security Tool",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return false;
+            }
+        }
+
+        public static Task ExecuteRollbackFromManifestAsync(string rollbackManifestPath)
+            => ExecuteCstRollbackAsync(rollbackManifestPath);
+
         public static async Task TryOpenFindingsOperatorDialogAsync(string? reportJsonPath)
         {
             try
@@ -29,10 +138,63 @@ namespace ToolkitGUI.Services
                 if (cstStep is null || string.IsNullOrWhiteSpace(cstStep.Output))
                     return;
 
-                var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(cstStep.Output);
+                await TryOpenFindingsOperatorDialogFromScanOutputAsync(cstStep.Output);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Unable to open CST findings selection: {ex.Message}",
+                    "Core Security Tool",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        public static async Task TryOpenFindingsOperatorDialogFromScanOutputAsync(string? scanOutput)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(scanOutput))
+                    return;
+
+                var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(scanOutput);
+                if (string.IsNullOrWhiteSpace(artifactPath) || !File.Exists(artifactPath))
+                {
+                    // Workflow JSON may be embedded in live-scan stdout.
+                    var workflowJson = WorkflowReportExportHelper.TryExtractWorkflowJson(scanOutput);
+                    if (!string.IsNullOrWhiteSpace(workflowJson))
+                    {
+                        var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                        var report = JsonSerializer.Deserialize<WorkflowExecutionReport>(workflowJson, opts);
+                        var cstStep = report?.Steps?.FirstOrDefault(step =>
+                            string.Equals(step.Name, "CoreSecurityTool", StringComparison.OrdinalIgnoreCase));
+                        if (cstStep is not null && !string.IsNullOrWhiteSpace(cstStep.Output))
+                        {
+                            artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(cstStep.Output);
+                        }
+                    }
+                }
+
                 if (string.IsNullOrWhiteSpace(artifactPath) || !File.Exists(artifactPath))
                     return;
 
+                await OpenFindingsOperatorDialogFromArtifactAsync(artifactPath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Unable to open CST findings selection: {ex.Message}",
+                    "Core Security Tool",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        private static async Task OpenFindingsOperatorDialogFromArtifactAsync(string artifactPath)
+        {
+            try
+            {
+                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var scanArtifact = JsonSerializer.Deserialize<CstScanArtifact>(
                     await File.ReadAllTextAsync(artifactPath), opts);
 
@@ -340,16 +502,22 @@ namespace ToolkitGUI.Services
             var location = finding.Location ?? string.Empty;
             var fileExists = !string.IsNullOrWhiteSpace(location) && File.Exists(location);
             var objectType = string.IsNullOrWhiteSpace(finding.ObjectType) ? "File" : finding.ObjectType!;
+            var isArchiveEntry = string.Equals(objectType, "ArchiveEntry", StringComparison.OrdinalIgnoreCase)
+                || location.Contains("::", StringComparison.Ordinal);
             var isConcreteFileTrace = string.Equals(objectType, "File", StringComparison.OrdinalIgnoreCase) && fileExists;
             var canRemediate = isConcreteFileTrace;
 
             var selectionNote = canRemediate
                 ? isSuppressedByScope
                     ? "Outside selected scope; operator override allowed"
-                    : "Selectable for remediation"
-                : fileExists
-                    ? $"Review only ({objectType})"
-                    : "File not found";
+                    : (string.Equals(finding.Detector, "ArchiveInspector", StringComparison.OrdinalIgnoreCase)
+                        ? "Selectable — quarantine/remove this archive"
+                        : "Selectable for remediation")
+                : isArchiveEntry
+                    ? "Review only — select the parent archive row to quarantine/remove"
+                    : fileExists
+                        ? $"Review only ({objectType})"
+                        : "File not found";
 
             var warningBadge = GetCstWarningBadge(finding, isSuppressedByScope);
 

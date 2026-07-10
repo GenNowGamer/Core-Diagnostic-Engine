@@ -1085,6 +1085,12 @@ namespace ToolkitGUI.ViewModels
         {
             if (IsRunning) return;
 
+            if (string.Equals(item.ToolKey, "CoreSecurityTool", StringComparison.OrdinalIgnoreCase))
+            {
+                await RunCoreSecurityToolLiveScanAsync(item, scriptPath);
+                return;
+            }
+
             var parameters = BuildToolParameters(item.ToolKey);
             if (parameters is null)
             {
@@ -1092,24 +1098,131 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
-            if (string.Equals(item.ToolKey, "CoreSecurityTool", StringComparison.OrdinalIgnoreCase))
-            {
-                ResetLiveFindingState();
-            }
-
             item.IsRunning = true;
-            item.StatusText = item.ToolKey == "CoreSecurityTool" ? "Opening..." : "Running...";
+            item.StatusText = "Running...";
             try
             {
                 await RunWorkflowAsync(scriptPath, parameters, item.Name, item.Description);
-                if (string.Equals(item.ToolKey, "CoreSecurityTool", StringComparison.OrdinalIgnoreCase))
-                {
-                    await TryOpenCstFindingsOperatorDialogAsync();
-                }
                 item.StatusText = "Done \u2713";
             }
             catch (Exception ex) { item.StatusText = $"Error: {ex.Message}"; }
             finally { item.IsRunning = false; }
+        }
+
+        private Task RunCoreSecurityToolLiveScanAsync(ToolItem item, string scriptPath)
+        {
+            var config = PromptCoreSecurityToolConfig();
+            if (config is null)
+            {
+                item.StatusText = "Cancelled";
+                return Task.CompletedTask;
+            }
+
+            ResetLiveFindingState();
+            item.IsRunning = true;
+            item.StatusText = "Scanning...";
+            IsRunning = true;
+
+            try
+            {
+                var owner = Application.Current?.Windows.OfType<Window>()
+                    .FirstOrDefault(window => window.IsActive);
+                var displayName = "Core Security Tool";
+                var targetPath = config.TargetSummary;
+                var subtitle = $"{config.ScanMode} • {config.DetectionScope}";
+
+                ProcessAnalyzerCstResultService.ShowLiveScan(
+                    owner,
+                    displayName,
+                    targetPath,
+                    subtitle,
+                    isStartupEntryScan: false,
+                    scriptPath,
+                    config.Parameters,
+                    onSuccess: (presentation, rawOutput) =>
+                    {
+                        var artifactPath = string.IsNullOrWhiteSpace(presentation.ArtifactPath)
+                            ? CstStructuredResultsService.ResolveArtifactPathFromStepOutput(rawOutput)
+                            : presentation.ArtifactPath;
+                        WorkOrderService.TryRecordCstScanRun(artifactPath, targetPath, presentation.Verdict);
+                        item.StatusText = $"Done — {presentation.Verdict}";
+                    },
+                    showMalwareCleanupButton: false);
+
+                if (string.Equals(item.StatusText, "Scanning...", StringComparison.Ordinal))
+                    item.StatusText = "Done \u2713";
+            }
+            catch (Exception ex)
+            {
+                item.StatusText = $"Error: {ex.Message}";
+                MessageBox.Show(ex.Message, "Core Security Tool", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                item.IsRunning = false;
+                IsRunning = false;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        private sealed class CoreSecurityToolLaunchConfig
+        {
+            public string Parameters { get; init; } = string.Empty;
+            public string ScanMode { get; init; } = "ThreatScan";
+            public string DetectionScope { get; init; } = "Strict";
+            public string TargetSummary { get; init; } = "System scan";
+        }
+
+        private CoreSecurityToolLaunchConfig? PromptCoreSecurityToolConfig()
+        {
+            try
+            {
+                var dialog = new CoreSecurityToolConfigDialog
+                {
+                    Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive),
+                    OnUpdateHashIocRequested = RunHashIocUpdateAsync
+                };
+                if (dialog.ShowDialog() != true)
+                    return null;
+
+                var args = $"-ToolName CoreSecurityTool -CstMode {dialog.ScanMode} -CstDetectionScope {dialog.DetectionScope} -CstActionMode ScanOnly";
+                var targetSummary = $"{dialog.ScanMode} targets";
+
+                if (string.Equals(dialog.ScanMode, "CustomScan", StringComparison.OrdinalIgnoreCase)
+                    && dialog.CustomTargetPaths.Count > 0)
+                {
+                    args += BuildNamedCliArguments("-ScanTarget", dialog.CustomTargetPaths);
+                    targetSummary = dialog.CustomTargetPaths.Count == 1
+                        ? dialog.CustomTargetPaths[0]
+                        : $"{dialog.CustomTargetPaths.Count} custom paths";
+                }
+                else if (string.Equals(dialog.ScanMode, "ThreatScan", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetSummary = "ThreatScan (quick high-risk paths)";
+                }
+                else if (string.Equals(dialog.ScanMode, "FullScan", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetSummary = "FullScan (broad system coverage)";
+                }
+
+                return new CoreSecurityToolLaunchConfig
+                {
+                    Parameters = args,
+                    ScanMode = dialog.ScanMode,
+                    DetectionScope = dialog.DetectionScope,
+                    TargetSummary = targetSummary
+                };
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Unable to open Core Security Tool configuration: {ex.Message}",
+                    "Core Security Tool",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return null;
+            }
         }
 
         public sealed class CstLiveFindingEvent
@@ -1205,44 +1318,8 @@ namespace ToolkitGUI.ViewModels
 
         private string? BuildToolParameters(string toolKey)
         {
-            if (string.Equals(toolKey, "CoreSecurityTool", StringComparison.OrdinalIgnoreCase))
-            {
-                return BuildCoreSecurityToolParameters();
-            }
-
             return $"-ToolName {toolKey}";
         }
-
-        private string? BuildCoreSecurityToolParameters()
-        {
-            try
-            {
-                var dialog = new CoreSecurityToolConfigDialog
-                {
-                    Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive),
-                    OnUpdateHashIocRequested = RunHashIocUpdateAsync
-                };
-                if (dialog.ShowDialog() != true)
-                    return null;
-
-                var args = $"-ToolName CoreSecurityTool -CstMode {dialog.ScanMode} -CstDetectionScope {dialog.DetectionScope} -CstActionMode ScanOnly";
-
-                if (string.Equals(dialog.ScanMode, "CustomScan", StringComparison.OrdinalIgnoreCase) && dialog.CustomTargetPaths.Count > 0)
-                {
-                    args += BuildNamedCliArguments("-ScanTarget", dialog.CustomTargetPaths);
-                }
-
-                return args;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Unable to open Core Security Tool configuration: {ex.Message}", "Core Security Tool", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return null;
-            }
-        }
-
-        private Task TryOpenCstFindingsOperatorDialogAsync()
-            => CstRemediationService.TryOpenFindingsOperatorDialogAsync(ReportJsonPath);
 
         private static string BuildNamedCliArguments(string parameterName, IEnumerable<string> values)
         {

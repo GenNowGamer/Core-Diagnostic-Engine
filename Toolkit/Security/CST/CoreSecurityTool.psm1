@@ -229,14 +229,17 @@ function Get-CstRuleSet {
     if (-not $rules.heuristicThresholds.PSObject.Properties['maxPerFileAnalysisMsFull']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxPerFileAnalysisMsFull -NotePropertyValue 3200 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['maxYaraTextFileSizeMb']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxYaraTextFileSizeMb -NotePropertyValue 4 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['maxYaraByteFileSizeMb']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxYaraByteFileSizeMb -NotePropertyValue 8 -Force }
-    if (-not $rules.heuristicThresholds.PSObject.Properties['maxSignatureVerificationMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxSignatureVerificationMs -NotePropertyValue 500 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['maxSignatureVerificationMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxSignatureVerificationMs -NotePropertyValue 2500 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutAdaptiveEnabled']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutAdaptiveEnabled -NotePropertyValue $true -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutMinMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutMinMs -NotePropertyValue 150 -Force }
-    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutMaxMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutMaxMs -NotePropertyValue 1500 -Force }
-    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutBudgetFraction']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutBudgetFraction -NotePropertyValue 0.35 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutMaxMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutMaxMs -NotePropertyValue 2500 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutBudgetFraction']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutBudgetFraction -NotePropertyValue 0.45 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutThreatMultiplier']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutThreatMultiplier -NotePropertyValue 0.8 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutFullMultiplier']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutFullMultiplier -NotePropertyValue 1.25 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutCustomMultiplier']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutCustomMultiplier -NotePropertyValue 0.9 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['signatureTimeoutWinPeMultiplier']) { $rules.heuristicThresholds | Add-Member -NotePropertyName signatureTimeoutWinPeMultiplier -NotePropertyValue 0.7 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['threatScanMaxArchiveEntryCount']) { $rules.heuristicThresholds | Add-Member -NotePropertyName threatScanMaxArchiveEntryCount -NotePropertyValue 10 -Force }
+    if (-not $rules.heuristicThresholds.PSObject.Properties['threatScanMaxArchiveAnalysisMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName threatScanMaxArchiveAnalysisMs -NotePropertyValue 200 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['maxArchiveAnalysisMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxArchiveAnalysisMs -NotePropertyValue 400 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['maxEntropyBytesToScan']) { $rules.heuristicThresholds | Add-Member -NotePropertyName maxEntropyBytesToScan -NotePropertyValue 65536 -Force }
     if (-not $rules.heuristicThresholds.PSObject.Properties['slowFileThresholdMs']) { $rules.heuristicThresholds | Add-Member -NotePropertyName slowFileThresholdMs -NotePropertyValue 1500 -Force }
@@ -453,16 +456,19 @@ function Get-CstRuleSet {
             )
             sqlitePath = 'goodware.db'
             fuzzyHashEnabled = $false
+            cheapSpotCheckEnabled = $true
             trustedSignerEarlyExit = [PSCustomObject]@{
                 enabled = $true
                 extensions = @('.exe', '.dll', '.sys')
                 requireValidSignature = $true
+                publisherAllowlist = @('Microsoft Corporation', 'Microsoft Windows', 'Microsoft Windows Publisher', 'Microsoft .NET')
             }
         }) -Force
     }
     if (-not $rules.knownGoodPolicy.PSObject.Properties['enabled']) { $rules.knownGoodPolicy | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force }
     if (-not $rules.knownGoodPolicy.PSObject.Properties['storageMode']) { $rules.knownGoodPolicy | Add-Member -NotePropertyName storageMode -NotePropertyValue 'Memory' -Force }
     if (-not $rules.knownGoodPolicy.PSObject.Properties['skipContentScan']) { $rules.knownGoodPolicy | Add-Member -NotePropertyName skipContentScan -NotePropertyValue $true -Force }
+    if (-not $rules.knownGoodPolicy.PSObject.Properties['cheapSpotCheckEnabled']) { $rules.knownGoodPolicy | Add-Member -NotePropertyName cheapSpotCheckEnabled -NotePropertyValue $true -Force }
     if (-not $rules.knownGoodPolicy.PSObject.Properties['hashAllowlist']) { $rules.knownGoodPolicy | Add-Member -NotePropertyName hashAllowlist -NotePropertyValue @() -Force }
     if (-not $rules.knownGoodPolicy.PSObject.Properties['hashAllowlistProfiles']) { $rules.knownGoodPolicy | Add-Member -NotePropertyName hashAllowlistProfiles -NotePropertyValue @() -Force }
     if (-not $rules.knownGoodPolicy.PSObject.Properties['sqlitePath']) { $rules.knownGoodPolicy | Add-Member -NotePropertyName sqlitePath -NotePropertyValue 'goodware.db' -Force }
@@ -472,7 +478,10 @@ function Get-CstRuleSet {
             enabled = $true
             extensions = @('.exe', '.dll', '.sys')
             requireValidSignature = $true
+            publisherAllowlist = @('Microsoft Corporation', 'Microsoft Windows', 'Microsoft Windows Publisher', 'Microsoft .NET')
         }) -Force
+    } elseif (-not $rules.knownGoodPolicy.trustedSignerEarlyExit.PSObject.Properties['publisherAllowlist']) {
+        $rules.knownGoodPolicy.trustedSignerEarlyExit | Add-Member -NotePropertyName publisherAllowlist -NotePropertyValue @('Microsoft Corporation', 'Microsoft Windows', 'Microsoft Windows Publisher', 'Microsoft .NET') -Force
     }
 
     return $rules
@@ -608,9 +617,10 @@ function Get-CstSignatureTimeoutProfile {
         [Parameter(Mandatory)][int]$MaxPerFileAnalysisMs,
         [bool]$AdaptiveEnabled = $true,
         [int]$MinTimeoutMs = 150,
-        [int]$MaxTimeoutMs = 1500,
-        [double]$BudgetFraction = 0.35,
+        [int]$MaxTimeoutMs = 2500,
+        [double]$BudgetFraction = 0.45,
         [double]$ThreatMultiplier = 0.8,
+        [double]$FullMultiplier = 1.25,
         [double]$CustomMultiplier = 0.9,
         [double]$WinPeMultiplier = 0.7
     )
@@ -625,6 +635,8 @@ function Get-CstSignatureTimeoutProfile {
     $modeMultiplier = 1.0
     if ($Mode -eq 'ThreatScan') {
         $modeMultiplier = $ThreatMultiplier
+    } elseif ($Mode -eq 'FullScan') {
+        $modeMultiplier = $FullMultiplier
     } elseif ($Mode -eq 'CustomScan') {
         $modeMultiplier = $CustomMultiplier
     }
@@ -811,8 +823,9 @@ function Get-CstScanPolicy {
     $filePatterns = @('*.exe','*.dll','*.sys','*.ps1','*.vbs','*.js','*.jse','*.wsf','*.bat','*.cmd','*.scr','*.pif','*.docm','*.xlsm','*.pptm','*.lnk','*.zip','*.jar')
     $hashEligibleExt = @('.exe','.dll','.sys','.ps1','.vbs','.js','.jse','.wsf','.bat','.cmd','.scr','.pif','.docm','.xlsm','.pptm','.lnk')
     if ($Mode -eq 'ThreatScan') {
-        $filePatterns = @('*.exe','*.ps1','*.vbs','*.js','*.jse','*.wsf','*.bat','*.cmd','*.scr','*.pif','*.docm','*.xlsm','*.pptm','*.lnk')
-        $hashEligibleExt = @('.exe','.ps1','.vbs','.js','.jse','.wsf','.bat','.cmd','.scr','.pif','.docm','.xlsm','.pptm','.lnk')
+        # Quick triage: include DLLs and light archive peek in risk paths; skip .sys for speed.
+        $filePatterns = @('*.exe','*.dll','*.ps1','*.vbs','*.js','*.jse','*.wsf','*.bat','*.cmd','*.scr','*.pif','*.docm','*.xlsm','*.pptm','*.lnk','*.zip','*.jar')
+        $hashEligibleExt = @('.exe','.dll','.ps1','.vbs','.js','.jse','.wsf','.bat','.cmd','.scr','.pif','.docm','.xlsm','.pptm','.lnk')
     }
 
     $quickHashMb = 16
@@ -839,6 +852,12 @@ function Get-CstScanPolicy {
     if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxArchiveEntryCount']) {
         $maxArchiveEntryCount = [int]$Rules.heuristicThresholds.maxArchiveEntryCount
     }
+    if ($Mode -eq 'ThreatScan') {
+        $maxArchiveEntryCount = 10
+        if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['threatScanMaxArchiveEntryCount']) {
+            $maxArchiveEntryCount = [int]$Rules.heuristicThresholds.threatScanMaxArchiveEntryCount
+        }
+    }
 
     $maxArchiveEntrySizeMb = 8
     if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxArchiveEntrySizeMb']) {
@@ -853,41 +872,47 @@ function Get-CstScanPolicy {
     $maxPerFileFullMs = 3200
     if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxPerFileAnalysisMsFull']) {
         $maxPerFileFullMs = [int]$Rules.heuristicThresholds.maxPerFileAnalysisMsFull
-        $maxYaraTextFileSizeMb = 4
-        if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxYaraTextFileSizeMb']) {
-            $maxYaraTextFileSizeMb = [int]$Rules.heuristicThresholds.maxYaraTextFileSizeMb
-        }
+    }
 
-        $maxYaraByteFileSizeMb = 8
-        if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxYaraByteFileSizeMb']) {
-            $maxYaraByteFileSizeMb = [int]$Rules.heuristicThresholds.maxYaraByteFileSizeMb
-        }
+    $maxYaraTextFileSizeMb = 4
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxYaraTextFileSizeMb']) {
+        $maxYaraTextFileSizeMb = [int]$Rules.heuristicThresholds.maxYaraTextFileSizeMb
+    }
 
-        $maxSignatureVerificationMs = 500
-        if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxSignatureVerificationMs']) {
-            $maxSignatureVerificationMs = [int]$Rules.heuristicThresholds.maxSignatureVerificationMs
-        }
+    $maxYaraByteFileSizeMb = 8
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxYaraByteFileSizeMb']) {
+        $maxYaraByteFileSizeMb = [int]$Rules.heuristicThresholds.maxYaraByteFileSizeMb
+    }
 
-        $maxArchiveAnalysisMs = 400
-        if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxArchiveAnalysisMs']) {
-            $maxArchiveAnalysisMs = [int]$Rules.heuristicThresholds.maxArchiveAnalysisMs
-        }
+    $maxSignatureVerificationMs = 2500
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxSignatureVerificationMs']) {
+        $maxSignatureVerificationMs = [int]$Rules.heuristicThresholds.maxSignatureVerificationMs
+    }
 
-        $maxEntropyBytesToScan = 65536
-        if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxEntropyBytesToScan']) {
-            $maxEntropyBytesToScan = [int]$Rules.heuristicThresholds.maxEntropyBytesToScan
+    $maxArchiveAnalysisMs = 400
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxArchiveAnalysisMs']) {
+        $maxArchiveAnalysisMs = [int]$Rules.heuristicThresholds.maxArchiveAnalysisMs
+    }
+    if ($Mode -eq 'ThreatScan') {
+        $maxArchiveAnalysisMs = 200
+        if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['threatScanMaxArchiveAnalysisMs']) {
+            $maxArchiveAnalysisMs = [int]$Rules.heuristicThresholds.threatScanMaxArchiveAnalysisMs
         }
+    }
 
-        $slowFileThresholdMs = 1500
-        if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['slowFileThresholdMs']) {
-            $slowFileThresholdMs = [int]$Rules.heuristicThresholds.slowFileThresholdMs
-        }
+    $maxEntropyBytesToScan = 65536
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxEntropyBytesToScan']) {
+        $maxEntropyBytesToScan = [int]$Rules.heuristicThresholds.maxEntropyBytesToScan
+    }
 
-        $maxSlowFileTelemetryEntries = 25
-        if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxSlowFileTelemetryEntries']) {
-            $maxSlowFileTelemetryEntries = [int]$Rules.heuristicThresholds.maxSlowFileTelemetryEntries
-        }
+    $slowFileThresholdMs = 1500
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['slowFileThresholdMs']) {
+        $slowFileThresholdMs = [int]$Rules.heuristicThresholds.slowFileThresholdMs
+    }
 
+    $maxSlowFileTelemetryEntries = 25
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['maxSlowFileTelemetryEntries']) {
+        $maxSlowFileTelemetryEntries = [int]$Rules.heuristicThresholds.maxSlowFileTelemetryEntries
     }
 
     $signatureTimeoutAdaptiveEnabled = $true
@@ -898,17 +923,21 @@ function Get-CstScanPolicy {
     if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutMinMs']) {
         $signatureTimeoutMinMs = [int]$Rules.heuristicThresholds.signatureTimeoutMinMs
     }
-    $signatureTimeoutMaxMs = 1500
+    $signatureTimeoutMaxMs = 2500
     if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutMaxMs']) {
         $signatureTimeoutMaxMs = [int]$Rules.heuristicThresholds.signatureTimeoutMaxMs
     }
-    $signatureTimeoutBudgetFraction = 0.35
+    $signatureTimeoutBudgetFraction = 0.45
     if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutBudgetFraction']) {
         $signatureTimeoutBudgetFraction = [double]$Rules.heuristicThresholds.signatureTimeoutBudgetFraction
     }
     $signatureTimeoutThreatMultiplier = 0.8
     if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutThreatMultiplier']) {
         $signatureTimeoutThreatMultiplier = [double]$Rules.heuristicThresholds.signatureTimeoutThreatMultiplier
+    }
+    $signatureTimeoutFullMultiplier = 1.25
+    if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutFullMultiplier']) {
+        $signatureTimeoutFullMultiplier = [double]$Rules.heuristicThresholds.signatureTimeoutFullMultiplier
     }
     $signatureTimeoutCustomMultiplier = 0.9
     if ($Rules.heuristicThresholds -and $Rules.heuristicThresholds.PSObject.Properties['signatureTimeoutCustomMultiplier']) {
@@ -920,7 +949,7 @@ function Get-CstScanPolicy {
     }
 
     $maxPerFileMs = if ($Mode -eq 'ThreatScan') { $maxPerFileThreatMs } else { $maxPerFileFullMs }
-    $signatureTimeoutProfile = Get-CstSignatureTimeoutProfile -Mode $Mode -EnvironmentMode $EnvironmentMode -BaseTimeoutMs $maxSignatureVerificationMs -MaxPerFileAnalysisMs $maxPerFileMs -AdaptiveEnabled $signatureTimeoutAdaptiveEnabled -MinTimeoutMs $signatureTimeoutMinMs -MaxTimeoutMs $signatureTimeoutMaxMs -BudgetFraction $signatureTimeoutBudgetFraction -ThreatMultiplier $signatureTimeoutThreatMultiplier -CustomMultiplier $signatureTimeoutCustomMultiplier -WinPeMultiplier $signatureTimeoutWinPeMultiplier
+    $signatureTimeoutProfile = Get-CstSignatureTimeoutProfile -Mode $Mode -EnvironmentMode $EnvironmentMode -BaseTimeoutMs $maxSignatureVerificationMs -MaxPerFileAnalysisMs $maxPerFileMs -AdaptiveEnabled $signatureTimeoutAdaptiveEnabled -MinTimeoutMs $signatureTimeoutMinMs -MaxTimeoutMs $signatureTimeoutMaxMs -BudgetFraction $signatureTimeoutBudgetFraction -ThreatMultiplier $signatureTimeoutThreatMultiplier -FullMultiplier $signatureTimeoutFullMultiplier -CustomMultiplier $signatureTimeoutCustomMultiplier -WinPeMultiplier $signatureTimeoutWinPeMultiplier
 
     $threatScanRiskRegex = Get-CstThreatScanRiskPathRegex
 
@@ -1017,7 +1046,8 @@ function Get-CstScanPolicy {
         hashGateMb = if ($Mode -eq 'ThreatScan') { $quickHashMb } else { $fullHashMb }
         enableSignerTrust = $true
         riskPathFilterEnabled = ($Mode -eq 'ThreatScan')
-        archiveInspectionEnabled = ($Mode -ne 'ThreatScan')
+        archiveInspectionEnabled = $true
+        archiveLightPeek = ($Mode -eq 'ThreatScan')
         archiveExtensions = @('.zip', '.jar')
         archiveMaxFileSizeMb = if ($Mode -eq 'ThreatScan') { $quickArchiveMb } else { $fullArchiveMb }
         maxArchiveEntryCount = $maxArchiveEntryCount
@@ -2863,18 +2893,28 @@ function Find-CstSignerTrustFinding {
 
     if (-not $sigInfo.available) {
         $statusCode = [string]$sigInfo.statusCode
-        if ($systemPath -and -not $riskyPath -and $statusCode -in @('TimeoutDuringInspection', 'InspectionFailed')) {
-            # Avoid noisy signer findings for trusted install paths when Authenticode probing times out/fails.
-            return $null
+        $statusMessage = [string]$sigInfo.statusMessage
+        if ([string]::IsNullOrWhiteSpace($statusMessage)) {
+            $statusMessage = 'Signer inspection unavailable.'
+        }
+
+        # Timeouts / inspection failures are "unknown", not "safe". Always surface a low-confidence finding.
+        $unknownType = 'Suspicious'
+        $unknownSeverity = 'Low'
+        $unknownConfidence = 0.4
+        if ($statusCode -eq 'TimeoutDuringInspection') {
+            $unknownConfidence = if ($riskyPath) { 0.48 } else { 0.4 }
+        } elseif ($systemPath -and -not $riskyPath) {
+            $unknownConfidence = 0.32
         }
 
         return [PSCustomObject]@{
-            type = 'Suspicious'
-            severity = 'Low'
-            confidence = 0.3
-            evidence = "Signer inspection unavailable: $($sigInfo.statusMessage)"
+            type = $unknownType
+            severity = $unknownSeverity
+            confidence = $unknownConfidence
+            evidence = "Signer inspection unavailable: $statusMessage"
             publisher = $publisher
-            signerStatus = $signerStatus
+            signerStatus = if ([string]::IsNullOrWhiteSpace($signerStatus)) { 'Unknown' } else { $signerStatus }
         }
     }
 
@@ -3092,6 +3132,50 @@ function Get-CstArchiveEntryText {
     }
 }
 
+function Find-CstCheapContentSpotCheck {
+    param(
+        [Parameter(Mandatory)]$FileInfo,
+        [Parameter(Mandatory)]$Rules,
+        [Parameter(Mandatory)][string]$FullPath,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$NameLower,
+        [Parameter(Mandatory)][string]$PathLower,
+        [string]$SignerStatus = 'NotEvaluated',
+        [string]$Publisher = ''
+    )
+
+    $malwareHit = Test-CstPatternMatch -Value $NameLower -Patterns @($Rules.patterns.malware)
+    if ($malwareHit) {
+        $adjusted = Get-CstAdjustedContentClassification -Severity 'Critical' -Type 'Malware' -Confidence 0.95 -PathLower $PathLower
+        return (New-CstFinding -Type $adjusted.type -Severity $adjusted.severity -Name $Name -Location $FullPath -Evidence "Known-good/trusted skip spot-check matched malware pattern: $malwareHit" -Detector 'PatternEngine' -Confidence $adjusted.confidence -ObjectType 'File' -SignerStatus $SignerStatus -Publisher $Publisher)
+    }
+
+    # Only evaluate high-severity YARA-like rules during the cheap spot check.
+    $criticalRules = @($Rules.yaraLikeRules | Where-Object {
+        $sev = if ($_.PSObject.Properties['severity']) { [string]$_.severity } else { '' }
+        $sev -in @('Critical', 'High')
+    })
+    if ($criticalRules.Count -eq 0) {
+        return $null
+    }
+
+    $spotRules = [PSCustomObject]@{
+        yaraLikeRules = $criticalRules
+        patterns = $Rules.patterns
+        heuristicThresholds = $Rules.heuristicThresholds
+    }
+    $textCache = @{}
+    $byteCache = @{}
+    $peMetaCache = @{}
+    $yaraMatch = Find-CstYaraLikeMatch -FileInfo $FileInfo -Rules $spotRules -TextCache $textCache -ByteCache $byteCache -PeMetaCache $peMetaCache -MaxTextBytes (512KB) -MaxByteScanBytes (1MB)
+    if ($null -eq $yaraMatch) {
+        return $null
+    }
+
+    $adjusted = Get-CstAdjustedContentClassification -Severity $yaraMatch.severity -Type $yaraMatch.type -Confidence $yaraMatch.confidence -PathLower $PathLower
+    return (New-CstFinding -Type $adjusted.type -Severity $adjusted.severity -Name $Name -Location $FullPath -Evidence "Known-good/trusted skip spot-check YARA-like hit [$($yaraMatch.ruleName)]: $($yaraMatch.matchSummary)" -Detector 'YaraLike' -Confidence $adjusted.confidence -ObjectType $yaraMatch.objectType -SignerStatus $SignerStatus -Publisher $Publisher)
+}
+
 function Find-CstArchiveFindings {
     param(
         [Parameter(Mandatory)]$FileInfo,
@@ -3126,6 +3210,18 @@ function Find-CstArchiveFindings {
     if ($maxEntryBytes -lt 1) { $maxEntryBytes = 1 }
     $hits = 0
     $maxHits = 10
+    $entryHitSummaries = New-Object System.Collections.Generic.List[string]
+    $worstType = 'Suspicious'
+    $worstSeverity = 'Low'
+    $worstConfidence = 0.0
+    $worstRank = 0
+
+    $getHitRank = {
+        param([string]$Type, [string]$Severity, [double]$Confidence)
+        $typeRank = switch ($Type) { 'Malware' { 400 } 'PUP' { 300 } 'PUM' { 200 } 'Suspicious' { 100 } default { 0 } }
+        $sevRank = switch ($Severity) { 'Critical' { 40 } 'High' { 30 } 'Medium' { 20 } 'Low' { 10 } default { 0 } }
+        return ($typeRank + $sevRank + [int]([math]::Round($Confidence * 10)))
+    }
 
     try {
         Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue | Out-Null
@@ -3143,41 +3239,70 @@ function Find-CstArchiveFindings {
                 $entryName = [string]$entry.Name
                 $entryNameLower = $entryName.ToLowerInvariant()
                 $archiveLocation = "{0}::{1}" -f $FileInfo.FullName, $entry.FullName
+                $hitType = $null
+                $hitSeverity = $null
+                $hitConfidence = 0.0
+                $hitEvidence = ''
+                $hitSummary = ''
 
                 $malwareHit = Test-CstPatternMatch -Value $entryNameLower -Patterns @($Rules.patterns.malware)
                 if ($malwareHit) {
-                    $archiveFindings.Add((New-CstFinding -Type 'Malware' -Severity 'High' -Name $entryName -Location $archiveLocation -Evidence "Archive entry name matched malware pattern: $malwareHit" -Detector 'ArchiveInspector' -Confidence 0.88 -ObjectType 'ArchiveEntry' -SignerStatus 'NotEvaluated' -CanRemediate $false))
-                    $hits++
-                    continue
-                }
-
-                $pupHit = Test-CstPatternMatch -Value $entryNameLower -Patterns @($Rules.patterns.pup)
-                if ($pupHit) {
-                    $archiveFindings.Add((New-CstFinding -Type 'PUP' -Severity 'Medium' -Name $entryName -Location $archiveLocation -Evidence "Archive entry name matched PUP pattern: $pupHit" -Detector 'ArchiveInspector' -Confidence 0.67 -ObjectType 'ArchiveEntry' -SignerStatus 'NotEvaluated' -CanRemediate $false))
-                    $hits++
-                    continue
-                }
-
-                if ($entryNameLower -match '\.(txt|jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx|ppt|pptx)\.(exe|scr|pif|js|jse|vbs|wsf|bat|cmd)$') {
-                    $archiveFindings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Medium' -Name $entryName -Location $archiveLocation -Evidence 'Archive entry has double-extension masquerading pattern.' -Detector 'ArchiveInspector' -Confidence 0.62 -ObjectType 'ArchiveEntry' -SignerStatus 'NotEvaluated' -CanRemediate $false))
-                    $hits++
-                    continue
-                }
-
-                $scriptExt = [System.IO.Path]::GetExtension($entryNameLower)
-                if ($scriptExt -in @('.ps1','.vbs','.js','.jse','.wsf','.bat','.cmd')) {
-                    $entryText = Get-CstArchiveEntryText -ZipEntry $entry -MaxBytes 65536
-                    if (-not [string]::IsNullOrWhiteSpace($entryText) -and ($entryText.Contains('invoke-webrequest') -or $entryText.Contains('powershell -nop') -or $entryText.Contains(' -enc '))) {
-                        $archiveFindings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Medium' -Name $entryName -Location $archiveLocation -Evidence 'Archive script entry contains high-risk execution markers.' -Detector 'ArchiveInspector' -Confidence 0.7 -ObjectType 'ArchiveEntry' -SignerStatus 'NotEvaluated' -CanRemediate $false))
-                        $hits++
+                    $hitType = 'Malware'; $hitSeverity = 'High'; $hitConfidence = 0.88
+                    $hitEvidence = "Archive entry name matched malware pattern: $malwareHit. Remediate the parent archive file (not this inner entry)."
+                    $hitSummary = "$entryName (malware pattern: $malwareHit)"
+                } else {
+                    $pupHit = Test-CstPatternMatch -Value $entryNameLower -Patterns @($Rules.patterns.pup)
+                    if ($pupHit) {
+                        $hitType = 'PUP'; $hitSeverity = 'Medium'; $hitConfidence = 0.67
+                        $hitEvidence = "Archive entry name matched PUP pattern: $pupHit. Remediate the parent archive file (not this inner entry)."
+                        $hitSummary = "$entryName (PUP pattern: $pupHit)"
+                    } elseif ($entryNameLower -match '\.(txt|jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx|ppt|pptx)\.(exe|scr|pif|js|jse|vbs|wsf|bat|cmd)$') {
+                        $hitType = 'Suspicious'; $hitSeverity = 'Medium'; $hitConfidence = 0.62
+                        $hitEvidence = 'Archive entry has double-extension masquerading pattern. Remediate the parent archive file (not this inner entry).'
+                        $hitSummary = "$entryName (double-extension masquerade)"
+                    } else {
+                        $scriptExt = [System.IO.Path]::GetExtension($entryNameLower)
+                        if ($scriptExt -in @('.ps1','.vbs','.js','.jse','.wsf','.bat','.cmd')) {
+                            $entryText = Get-CstArchiveEntryText -ZipEntry $entry -MaxBytes 65536
+                            if (-not [string]::IsNullOrWhiteSpace($entryText) -and ($entryText.Contains('invoke-webrequest') -or $entryText.Contains('powershell -nop') -or $entryText.Contains(' -enc '))) {
+                                $hitType = 'Suspicious'; $hitSeverity = 'Medium'; $hitConfidence = 0.7
+                                $hitEvidence = 'Archive script entry contains high-risk execution markers. Remediate the parent archive file (not this inner entry).'
+                                $hitSummary = "$entryName (high-risk script markers)"
+                            }
+                        }
                     }
                 }
+
+                if ($null -eq $hitType) { continue }
+
+                $archiveFindings.Add((New-CstFinding -Type $hitType -Severity $hitSeverity -Name $entryName -Location $archiveLocation -Evidence $hitEvidence -Detector 'ArchiveInspector' -Confidence $hitConfidence -ObjectType 'ArchiveEntry' -SignerStatus 'NotEvaluated' -CanRemediate $false))
+                [void]$entryHitSummaries.Add($hitSummary)
+                $rank = & $getHitRank $hitType $hitSeverity $hitConfidence
+                if ($rank -gt $worstRank) {
+                    $worstRank = $rank
+                    $worstType = $hitType
+                    $worstSeverity = $hitSeverity
+                    $worstConfidence = $hitConfidence
+                }
+                $hits++
             }
         } finally {
             $zip.Dispose()
         }
     } catch {
         return @($archiveFindings.ToArray())
+    }
+
+    # Actionable parent-container finding: quarantine/remove the archive on disk.
+    if ($entryHitSummaries.Count -gt 0) {
+        $parentName = [string]$FileInfo.Name
+        $parentPath = [string]$FileInfo.FullName
+        $entryList = (@($entryHitSummaries.ToArray()) | Select-Object -First 8) -join '; '
+        if ($entryHitSummaries.Count -gt 8) {
+            $entryList = "$entryList; +$($entryHitSummaries.Count - 8) more"
+        }
+        $parentEvidence = "Archive contains flagged entry(ies): $entryList. Quarantine or remove this archive file."
+        $archiveFindings.Add((New-CstFinding -Type $worstType -Severity $worstSeverity -Name $parentName -Location $parentPath -Evidence $parentEvidence -Detector 'ArchiveInspector' -Confidence ([math]::Max(0.55, $worstConfidence)) -ObjectType 'File' -SignerStatus 'NotEvaluated' -CanRemediate $true))
     }
 
     return @($archiveFindings.ToArray())
@@ -3803,6 +3928,18 @@ function Find-CstFileFindings {
                         $knownGoodSkips++
                     } elseif ($trustedSignerEarlySkip) {
                         $trustedSignerSkips++
+                    }
+
+                    $cheapSpotEnabled = $true
+                    if ($Rules.knownGoodPolicy.PSObject.Properties['cheapSpotCheckEnabled']) {
+                        $cheapSpotEnabled = [bool]$Rules.knownGoodPolicy.cheapSpotCheckEnabled
+                    }
+                    if ($cheapSpotEnabled) {
+                        $spotFinding = Find-CstCheapContentSpotCheck -FileInfo $FileInfo -Rules $Rules -FullPath $full -Name $name -NameLower $nameLower -PathLower $pathLower
+                        if ($null -ne $spotFinding) {
+                            $findings.Add($spotFinding)
+                            Write-CstLiveFinding -Finding $spotFinding
+                        }
                     }
                     return
                 }
@@ -4630,7 +4767,7 @@ function Invoke-CstArtifactCorrelation {
         $requireExactPathForPromotion = [bool]$Rules.correlationRules.requireExactPathForPromotion
     }
 
-    $promoteMinDetectorWeight = 70
+    $promoteMinDetectorWeight = 55
     if ($Rules.correlationRules -and $Rules.correlationRules.PSObject.Properties['promoteMinDetectorWeight']) {
         $promoteMinDetectorWeight = [int]$Rules.correlationRules.promoteMinDetectorWeight
     }
@@ -5230,6 +5367,16 @@ function Find-CstBootChainFindings {
     $hashPolicyRequired = ($integrityMode -eq 'HashOnly') -or $enforceHashAllowlist
     $hashPolicyUnavailable = $false
 
+    if ($hashAllowlist.Count -eq 0 -and $integrityMode -in @('HashOnly', 'SignerPlusHash')) {
+        # Empty hash baselines: keep signer verification active and report that hash enforcement is unavailable.
+        $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name 'EFI hash baselines not configured' -Location 'BootHashPolicy' -Evidence 'BootFileIntegrity is running signer verification; hash allowlist/profiles are empty so hash enforcement is inactive until baselines are populated.' -Detector 'BootFileIntegrity' -Confidence 0.3 -ObjectType 'BootConfiguration' -CanRemediate $false))
+        $result.warnings++
+        if ($integrityMode -eq 'SignerPlusHash') {
+            # Avoid pretending hash checks ran when no baselines exist.
+            $integrityMode = 'SignerOnly'
+        }
+    }
+
     if ($hashPolicyRequired -and $hashAllowlist.Count -eq 0) {
         $hashPolicyUnavailable = $true
         $profileInfo = if (@($resolvedHashPolicy.matchedProfiles).Count -gt 0) { (@($resolvedHashPolicy.matchedProfiles) -join ', ') } else { 'none' }
@@ -5490,9 +5637,10 @@ function Get-CstDetectorWeight {
         'MbrVbrInspector' { 75 }
         'GptStructureInspector' { 75 }
         'PatternEngine' { 70 }
-        'HeuristicEngine' { 45 }
-        'SignerTrust' { 35 }
-        'PathHeuristic' { 20 }
+        'ArchiveInspector' { 65 }
+        'HeuristicEngine' { 50 }
+        'SignerTrust' { 40 }
+        'PathHeuristic' { 25 }
         default { 30 }
     }
 
@@ -5589,13 +5737,7 @@ function Test-CstShouldExportSuppressedAuditFinding {
 
     if ($null -eq $Finding) { return $false }
 
-    $detector = if ($Finding.PSObject.Properties['detector']) { [string]$Finding.detector } else { '' }
-    $confidence = if ($Finding.PSObject.Properties['confidence']) { [double]$Finding.confidence } else { 0.0 }
-
-    if ($detector -eq 'PathHeuristic' -and $confidence -lt 0.55) {
-        return $false
-    }
-
+    # Keep weak single-signal findings in the audit channel (noise policy ≠ detection policy).
     return $true
 }
 
@@ -5801,7 +5943,29 @@ function Invoke-CstScan {
     $malCount = @($findings | Where-Object { $_.type -eq 'Malware' }).Count
     $warnCount = @($findings | Where-Object { $_.type -in @('PUP','PUM','Suspicious') }).Count
 
-    $coverageReason = $scanData.coverageReason
+    $coverageReason = [string]$scanData.coverageReason
+    $coverageNotes = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($coverageReason)) {
+        [void]$coverageNotes.Add($coverageReason)
+    }
+    if ($Mode -eq 'ThreatScan') {
+        [void]$coverageNotes.Add('ThreatScan covers high-risk paths only (not a full-disk AV pass).')
+    } elseif ($Mode -eq 'FullScan') {
+        [void]$coverageNotes.Add('FullScan broad system coverage.')
+    } else {
+        [void]$coverageNotes.Add('CustomScan of selected target path(s).')
+    }
+    if ([string]$scanData.coverage -eq 'Partial') {
+        [void]$coverageNotes.Add('Coverage was Partial (file/time budget).')
+    }
+    $kgSkips = if ($scanData.PSObject.Properties['knownGoodSkips']) { [int]$scanData.knownGoodSkips } else { 0 }
+    $tsSkips = if ($scanData.PSObject.Properties['trustedSignerSkips']) { [int]$scanData.trustedSignerSkips } else { 0 }
+    if ($kgSkips -gt 0) { [void]$coverageNotes.Add("Known-good content skips: $kgSkips (cheap spot-check still ran).") }
+    if ($tsSkips -gt 0) { [void]$coverageNotes.Add("Trusted-signer early exits: $tsSkips (Microsoft-family only; cheap spot-check still ran).") }
+    if (@($confidenceFilteredFindings).Count -gt 0) {
+        [void]$coverageNotes.Add("Weak single-signal findings moved to audit channel: $(@($confidenceFilteredFindings).Count).")
+    }
+    $coverageReason = ($coverageNotes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ' '
 
     if ($scanData.timeBudgetExceeded -and $status -eq 'Pass') {
         $status = 'Warn'
@@ -5809,6 +5973,24 @@ function Invoke-CstScan {
 
     if ($scanData.noEligibleTargets -and $status -eq 'Pass') {
         $status = 'Warn'
+    }
+
+    $modeLabel = switch ($Mode) {
+        'ThreatScan' { 'ThreatScan (quick high-risk paths)' }
+        'FullScan' { 'FullScan (broad system coverage)' }
+        default { 'CustomScan (selected targets)' }
+    }
+    $scopeLabel = switch ($DetectionScope) {
+        'MalwareOnly' { 'Malware Only scope' }
+        'VirusOnly' { 'Virus Only scope' }
+        default { 'All detections scope' }
+    }
+    $actionSummaryText = if ($ActionMode -eq 'ScanOnly') {
+        "$modeLabel - $scopeLabel. Scan completed in detect-only mode."
+    } elseif ($null -ne $remediation) {
+        "$modeLabel - $scopeLabel. Remediation executed ($($remediation.action)): success=$($remediation.succeeded), failed=$($remediation.failed), skipped=$($remediation.skipped). Rollback manifest: $($remediation.rollbackManifestPath)"
+    } else {
+        "$modeLabel - $scopeLabel. Requested $ActionMode, but remediation did not run. Findings were collected without making changes."
     }
 
     $exitCode = switch ($status) {
@@ -5999,15 +6181,14 @@ function Invoke-CstScan {
         remediation = $remediation
         rulesVersion = [string]$rules.rulesVersion
         offlineOnly = [bool]$OfflineOnly
-        actionSummary = if ($ActionMode -eq 'ScanOnly') {
-            'Scan completed in detect-only mode.'
-        } elseif ($null -ne $remediation) {
-            "Remediation executed ($($remediation.action)): success=$($remediation.succeeded), failed=$($remediation.failed), skipped=$($remediation.skipped). Rollback manifest: $($remediation.rollbackManifestPath)"
-        } else {
-            "Requested $ActionMode, but remediation did not run. Findings were collected without making changes."
-        }
+        actionSummary = $actionSummaryText
         timestamp = (Get-Date).ToUniversalTime().ToString('o')
     }
 }
 
-Export-ModuleMember -Function Get-CstEnvironmentMode, Invoke-CstScan, Invoke-CstRemediation, Invoke-CstRollback
+$startupEntryScanHelper = Join-Path $PSScriptRoot 'Cst.StartupEntryScan.ps1'
+if (Test-Path -LiteralPath $startupEntryScanHelper -PathType Leaf) {
+    . $startupEntryScanHelper
+}
+
+Export-ModuleMember -Function Get-CstEnvironmentMode, Invoke-CstScan, Invoke-CstRemediation, Invoke-CstRollback, Invoke-CstStartupEntryScan
