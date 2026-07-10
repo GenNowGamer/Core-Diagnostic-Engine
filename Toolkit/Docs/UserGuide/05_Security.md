@@ -19,7 +19,7 @@
 4. Run the scan and watch progress in the workflow window
 5. Review structured results and the post-scan findings dialog
 
-**Structured results (default)** — Malware Cleanup and Diag & Repair CST rows show actionable findings only (Malware, Virus, PUP, PUM). Expand **Show all findings and scan metadata** in the workflow window for the full CST report, detector details, and **Open full report** on the JSON artifact. Process Analyzer CST keeps its dedicated results dialog.
+**Structured results (default)** — Malware Cleanup and Diag & Repair CST rows show actionable findings only (Malware, Virus, PUP, PUM). Expand **Show all findings and scan metadata** in the workflow window for detector details and scan metadata. Use **Open full CST report (PDF)** for the operator PDF under `Logs\` (not the raw JSON artifact). Process Analyzer CST keeps its dedicated results dialog.
 
 > **WinPE + offline OS:** Boot menu **option 2** so CST can scan the customer's Windows folder. Without offline load, CST may show "no Windows volume found."
 

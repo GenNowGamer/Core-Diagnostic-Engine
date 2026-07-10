@@ -1,6 +1,37 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-09
+**Last updated:** 2026-07-10
+
+## 2026-07-10 — Diag & Repair: stuck Running rows + CST PDF button
+
+- **Stuck Running** — Non-ASCII detail text (e.g. em-dash in Memory Coverage Warn) could corrupt live `[HW:TEST]` JSON under console capture so the GUI never saw completion. `Write-HwTestResult` in `HardwareCommon.ps1` now ASCII-sanitizes detail; end-of-run `FinalizeStuckHardwareTests` in `DiagAndRepairViewModel` reconciles any remaining Queued/Running rows from the workflow JSON.
+- **CST PDF** — Malware Cleanup / Diag & Repair expander button is **Open full CST report (PDF)** → `OpenPdfReportAsync()` (not the JSON artifact).
+- **Publish** — GUI + script changes need `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`.
+
+## 2026-07-10 — CST CIRCL online reputation (live Windows)
+
+- **Behavior** — CST CIRCL Hashlookup is on for **ThreatScan / FullScan / CustomScan** when not WinPE and not `OfflineOnly` (Malware Cleanup + Diag & Repair Quick/Extended on live Windows with network).
+- **WinPE** — `Invoke-CoreSecurityTool` still sets `OfflineOnly`; CIRCL stays inactive offline.
+- **FP reduction** — CIRCL known-good suppresses weak content findings only; Hash IOC matches are unchanged.
+- **Source** — Core Security Tool `CoreSecurityTool.psm1` + `rules/rules.json`; synced by canonical publish (no `goodware.db` on USB).
+
+## 2026-07-10 — Memory Coverage Check removed from Diag & Repair tree
+
+- **Tree** — `mem_coverage` removed from CHU/CDE hardware catalog (Memory now 10 pattern tests).
+- **Guidance** — `Set-HwMemoryCoverageGuidance` still sets `HwMemoryCoverageIncomplete` when Windows sample is below 15%/20%, so `[HW:GUIDANCE]` / CHU banner still fires.
+- **Catalog** — 29 tests total (CPU 13 / Memory 10 / Drive 6).
+
+## 2026-07-10 — Diag & Repair hardware detection hardening
+
+- **Warn plumbing** — `Invoke-SingleTest` now maps `Warn:` results to step/GUI **Warn** (previously stripped prefix and showed Pass). Live HW:TEST refresh includes Warn.
+- **SMART** — Attribute/overall Warn returns `Warn:` instead of soft-pass `Passed: … warning…` (`HardwareSmartEngine.ps1`).
+- **Storage elevation** — `HardwareDiagnostics.ps1` elevates for Storage/All (UAC cancel continues with Warn). Access-denied / missing physical path → **Warn**, not Skipped.
+- **CPU timed stress** — Catalog `cpu_stress` + `HardwareTestEngine.RunCpuStressTest()` using profile `cpuStressSeconds` (Quick 20s / Extended 120s).
+- **NVMe short DST** — `CdeSmartReader.RunNvmeShortSelfTest` via `IOCTL_STORAGE_PROTOCOL_COMMAND` + log page 0x06 poll (MS NVMe pass-through); unsupported → Skipped/Warn, not false Pass.
+- **Extended depth** — Higher Extended memory/storage knobs; mid-disk linear sample on Extended; low Windows memory coverage sets CHU guidance (`memory_coverage`) without a separate tree row.
+- **CHU guidance** — `[HW:GUIDANCE]` + Diag & Repair banner / Open CHU Results when coverage/stress/elevation incomplete.
+- **Catalog** — Source updated in CHU `Core_Hardware_Utility.json` (29 tests: CPU 13 / Memory 10 / Drive 6); synced to CDE. Memory coverage is CHU-guidance only (no tree row).
+- **Publish** — `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`.
 
 ## 2026-07-09 — Temp File Cleaner: locked/unavailable files no longer warn
 

@@ -75,7 +75,8 @@ function Test-CdeSmartThresholds {
     }
     $warns = @($d.Attributes | Where-Object { $_.Status -eq 'Warn' })
     if ($warns.Count -gt 0) {
-        return ('Passed: {0} warning attribute(s)' -f $warns.Count)
+        $names = ($warns | Select-Object -First 3 | ForEach-Object { $_.Name }) -join ', '
+        return ('Warn: {0} warning attribute(s) ({1})' -f $warns.Count, $names)
     }
     return 'Passed'
 }
@@ -87,7 +88,7 @@ function Test-CdeSmartStatus {
     if (-not $d.Supported -and $d.Note) { return "Skipped: $($d.Note)" }
     switch ($d.Overall) {
         'Fail' { return "Failed: SMART overall $($d.Overall)" }
-        'Warn' { return "Passed: SMART warnings present ($($d.Overall))" }
+        'Warn' { return "Warn: SMART overall Warn ($($d.Overall))" }
         'Pass' { return 'Passed' }
         default { return "Skipped: SMART status $($d.Overall)" }
     }

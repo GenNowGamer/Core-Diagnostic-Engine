@@ -12,6 +12,7 @@ public static class HardwareTestEngine
     public static int FpuLoops = 75000;
     public static int MemoryPatternPasses = 2;
     public static int MemoryBlockCount = 2;
+    public static int CpuStressSeconds = 20;
     private static byte[] MovingInversionPatterns = new byte[] { 0x00, 0xFF };
 
     public static void SetMovingInversionPatterns(byte[] patterns)
@@ -124,6 +125,59 @@ public static class HardwareTestEngine
             }
         });
         return ok;
+    }
+
+    /// <summary>
+    /// Timed multi-core soak using verify-able integer/FPU work for CpuStressSeconds.
+    /// </summary>
+    public static string RunCpuStressTest()
+    {
+        int seconds = Math.Max(1, CpuStressSeconds);
+        DateTime deadline = DateTime.UtcNow.AddSeconds(seconds);
+        bool ok = true;
+        long iterations = 0;
+        object sync = new object();
+
+        Parallel.For(0, Environment.ProcessorCount, _ =>
+        {
+            long localIters = 0;
+            while (DateTime.UtcNow < deadline && ok)
+            {
+                long accumulator = 0;
+                long verify = 0;
+                const int chunk = 50000;
+                for (int i = 0; i < chunk; i++)
+                {
+                    accumulator += i * 3 - (i >> 1);
+                    accumulator ^= (accumulator << 2);
+                }
+                for (int i = 0; i < chunk; i++)
+                {
+                    verify += i * 3 - (i >> 1);
+                    verify ^= (verify << 2);
+                }
+                if (accumulator != verify)
+                {
+                    ok = false;
+                    return;
+                }
+
+                double sinPi6 = Math.Sin(Math.PI / 6.0);
+                if (Math.Abs(sinPi6 - 0.5) > 1e-12)
+                {
+                    ok = false;
+                    return;
+                }
+
+                localIters++;
+            }
+
+            lock (sync) { iterations += localIters; }
+        });
+
+        if (!ok)
+            return "Failed: CPU timed stress verification mismatch";
+        return string.Format("Passed: {0}s multi-core soak ({1} worker chunks)", seconds, iterations);
     }
 
     public static string RunMemoryTest(string testName, int totalSizeMB)

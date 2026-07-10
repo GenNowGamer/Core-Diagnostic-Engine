@@ -42,6 +42,14 @@ namespace CdeSmart
         const uint IOCTL_STORAGE_QUERY_PROPERTY = 0x002D1400;
         const uint IOCTL_ATA_PASS_THROUGH = 0x0004D02C;
         const uint IOCTL_DISK_GET_LENGTH_INFO = 0x0007405C;
+        // CTL_CODE(IOCTL_STORAGE_BASE, 0x04F0, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+        const uint IOCTL_STORAGE_PROTOCOL_COMMAND = 0x002DD3C0;
+
+        const uint STORAGE_PROTOCOL_STRUCTURE_VERSION = 1;
+        const uint STORAGE_PROTOCOL_COMMAND_FLAG_ADAPTER_REQUEST = 0x80000000;
+        const uint STORAGE_PROTOCOL_COMMAND_LENGTH_NVME = 64;
+        const uint STORAGE_PROTOCOL_SPECIFIC_NVME_ADMIN_COMMAND = 1;
+        const uint ProtocolTypeNvme = 3;
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         static extern IntPtr CreateFileW(string lpFileName, uint dwDesiredAccess,
@@ -525,8 +533,8 @@ namespace CdeSmart
             if (h == INVALID_HANDLE)
             {
                 int err = Marshal.GetLastWin32Error();
-                if (err == 5) return "Skipped: Access denied - run elevated";
-                return "Skipped: Cannot open " + path;
+                if (err == 5) return "Warn: Access denied - run elevated";
+                return "Warn: Cannot open " + path;
             }
 
             try
@@ -581,7 +589,106 @@ namespace CdeSmart
 
         static string RunNvmeShortSelfTest(IntPtr h, int timeoutSeconds)
         {
-            return "Skipped: NVMe device self-test IOCTL not available in this build";
+            // Issue NVMe Device Self-Test (admin opcode 0x14, STC=1 short) via
+            // IOCTL_STORAGE_PROTOCOL_COMMAND, then poll Device Self-test log page 0x06.
+            // See: https://learn.microsoft.com/en-us/windows/win32/fileio/working-with-nvme-devices
+            const int cmdHdrSize = 84; // sizeof(STORAGE_PROTOCOL_COMMAND) excl. Command[] (common Win10 layout)
+            const int nvmeCmdSize = 64;
+            int total = cmdHdrSize + nvmeCmdSize;
+            byte[] buf = new byte[total];
+
+            WriteU32(buf, 0, STORAGE_PROTOCOL_STRUCTURE_VERSION); // Version
+            WriteU32(buf, 4, (uint)cmdHdrSize);                  // Length
+            WriteU32(buf, 8, ProtocolTypeNvme);                  // ProtocolType
+            WriteU32(buf, 12, STORAGE_PROTOCOL_COMMAND_FLAG_ADAPTER_REQUEST); // Flags
+            // ReturnStatus @16, ErrorCode @20
+            WriteU32(buf, 24, STORAGE_PROTOCOL_COMMAND_LENGTH_NVME); // CommandLength
+            WriteU32(buf, 40, (uint)Math.Max(30, timeoutSeconds));  // TimeOutValue
+            WriteU32(buf, 56, STORAGE_PROTOCOL_SPECIFIC_NVME_ADMIN_COMMAND); // CommandSpecific
+
+            int cmdOff = cmdHdrSize;
+            // NVMe admin command DWORDs
+            WriteU32(buf, cmdOff + 0, 0x14);                 // CDW0 OPC = Device Self-Test
+            WriteU32(buf, cmdOff + 4, 0xFFFFFFFF);           // CDW1 NSID = all namespaces
+            WriteU32(buf, cmdOff + 40, 0x1);                 // CDW10 STC = 1 (short)
+
+            uint ret;
+            if (!DeviceIoControl(h, IOCTL_STORAGE_PROTOCOL_COMMAND, buf, (uint)total, buf, (uint)total, out ret, IntPtr.Zero))
+            {
+                int err = Marshal.GetLastWin32Error();
+                return "Skipped: NVMe self-test command rejected (Win32 " + err + ")";
+            }
+
+            uint returnStatus = (uint)ReadLE(buf, 16, 4);
+            // STORAGE_PROTOCOL_STATUS_SUCCESS = 0; PENDING = 3 (varies by header)
+            if (returnStatus != 0 && returnStatus != 1 && returnStatus != 3)
+            {
+                return "Skipped: NVMe self-test protocol status " + returnStatus;
+            }
+
+            bool started = true;
+            DateTime deadline = DateTime.UtcNow.AddSeconds(Math.Max(30, timeoutSeconds));
+            while (DateTime.UtcNow < deadline)
+            {
+                System.Threading.Thread.Sleep(3000);
+                int dst = ReadNvmeSelfTestLogStatus(h);
+                if (dst == 0) return "Passed: NVMe short self-test completed";
+                if (dst == 1) return "Failed: NVMe short self-test reported failure";
+                if (dst == 2) return "Warn: NVMe self-test started but completion status unavailable";
+                // dst == -1 still in progress / unknown
+            }
+
+            if (started)
+                return "Warn: NVMe self-test started but completion status unavailable";
+            return "Failed: NVMe short self-test timed out after " + timeoutSeconds + "s";
+        }
+
+        /// <summary>
+        /// Reads NVMe Device Self-test log page (0x06).
+        /// Returns 0=pass/complete-ok, 1=fail, 2=log unavailable after start, -1=in progress/unknown.
+        /// </summary>
+        static int ReadNvmeSelfTestLogStatus(IntPtr h)
+        {
+            int spdSize = 40;
+            int hdr = 8;
+            int logSize = 564; // DST log is typically 564 bytes
+            int total = hdr + spdSize + logSize;
+            byte[] qbuf = new byte[total];
+
+            WriteU32(qbuf, 0, 50); // StorageDeviceProtocolSpecificProperty
+            WriteU32(qbuf, 4, 0);  // PropertyStandardQuery
+
+            int p = hdr;
+            WriteU32(qbuf, p + 0, 3);              // ProtocolType = NVMe
+            WriteU32(qbuf, p + 4, 2);              // DataType = NVMeDataTypeLogPage
+            WriteU32(qbuf, p + 8, 0x06);           // Log page = Device Self-test
+            WriteU32(qbuf, p + 12, 0);
+            WriteU32(qbuf, p + 16, (uint)spdSize);
+            WriteU32(qbuf, p + 20, (uint)logSize);
+
+            uint ret;
+            if (!DeviceIoControl(h, IOCTL_STORAGE_QUERY_PROPERTY, qbuf, (uint)total, qbuf, (uint)total, out ret, IntPtr.Zero))
+                return 2;
+
+            int dataOff = 8 + spdSize;
+            int retOff = (int)ReadLE(qbuf, 8 + 16, 4);
+            if (retOff > 0) dataOff = 8 + retOff;
+            if (dataOff + 8 > qbuf.Length) return 2;
+
+            int currentOp = qbuf[dataOff + 0] & 0x0F;
+            // 0 = no DST in progress
+            if (currentOp != 0) return -1;
+
+            // Newest result entry starts at offset 4 (NVMe DST log layout)
+            int newestResult = qbuf[dataOff + 4] & 0x0F;
+            // 0h = Entry unused / no result yet after idle can mean never run — treat as unavailable once
+            // 1h = Operation completed without error
+            // 2h = Operation aborted by DST command
+            // 3h..Fh = various failures / aborted
+            if (newestResult == 1) return 0;
+            if (newestResult == 0) return -1; // still waiting for result population
+            if (newestResult == 2) return 2;  // aborted — soft
+            return 1;
         }
 
         static void WriteU16(byte[] b, int o, ushort v)

@@ -4,13 +4,17 @@
 $script:HwCoreDir = Join-Path (Split-Path $MyInvocation.MyCommand.Path) '..\Core'
 Import-Module (Join-Path $script:HwCoreDir 'PhysicalDiskCatalog.psm1') -Force -DisableNameChecking
 
-$script:HwGlobalTotal = 28
+$script:HwGlobalTotal = 30
 $script:HwGlobalDone = 0
 $script:HwProfileName = 'Quick'
 $script:HwProfileParams = $null
 $script:HwStorageRandomReads = 64
 $script:HwStorageLinearReadMb = 32
 $script:HwStorageSkippedInRun = $false
+$script:HwMemoryCoverageIncomplete = $false
+$script:HwCpuStressIncomplete = $false
+$script:HwStorageElevationWarn = $false
+$script:HwGuidanceReasons = [System.Collections.Generic.List[string]]::new()
 
 function Initialize-HwTestProfile {
     param([string]$Profile)
@@ -24,6 +28,10 @@ function Initialize-HwTestProfile {
     $script:HwStorageRandomReads = [int]$p.storageRandomReads
     $script:HwStorageLinearReadMb = [int]$p.storageLinearReadMb
     $script:HwStorageSkippedInRun = $false
+    $script:HwMemoryCoverageIncomplete = $false
+    $script:HwCpuStressIncomplete = $false
+    $script:HwStorageElevationWarn = $false
+    $script:HwGuidanceReasons = [System.Collections.Generic.List[string]]::new()
 }
 
 function Get-HwPhysicalDisks {
@@ -166,6 +174,18 @@ function Write-HwTestEvent {
         [double]$DurationSec = -1,
         [int]$DriveIndex = -1
     )
+    # Keep live [HW:TEST] JSON ASCII-safe: non-ASCII in detail (e.g. em-dash) can corrupt
+    # under console capture and leave the GUI row stuck on Running.
+    if (-not [string]::IsNullOrEmpty($Detail)) {
+        $chars = $Detail.ToCharArray()
+        for ($i = 0; $i -lt $chars.Length; $i++) {
+            $code = [int]$chars[$i]
+            if ($code -lt 32 -or $code -gt 126) {
+                $chars[$i] = [char]'-'
+            }
+        }
+        $Detail = New-Object string (,$chars)
+    }
     $payload = @{ category = $Category; test = $Test; status = $Status }
     if ($Detail) { $payload.detail = $Detail }
     if ($DurationSec -ge 0) { $payload.durationSec = $DurationSec }
@@ -208,6 +228,7 @@ function Invoke-SingleTest {
         $passed = $false
         $detail = ''
 
+        $isWarn = $false
         if ($testResult -is [bool]) {
             $passed = $testResult
             $detail = if ($passed) { 'Verification OK' } else { 'Verification failed' }
@@ -220,10 +241,18 @@ function Invoke-SingleTest {
                 }
             } elseif ($testResult.StartsWith('Warn:')) {
                 $passed = $true
+                $isWarn = $true
                 $detail = $testResult.Substring(5).Trim()
+                if ($detail -match '(?i)administrator|access denied|no physical drive') {
+                    $script:HwStorageElevationWarn = $true
+                }
             } else {
                 $passed = $testResult -eq 'Passed' -or $testResult.StartsWith('Passed')
                 $detail = $testResult
+                # Legacy soft-pass strings that still contain "warning" (pre-Warn: SMART)
+                if ($passed -and $detail -match '(?i)warning') {
+                    $isWarn = $true
+                }
             }
         } else {
             $passed = $true
@@ -236,11 +265,15 @@ function Invoke-SingleTest {
             $detail = ('{0} ({1}s)' -f $detail, $durationSec)
         }
 
-        $status = if ($passed) {
-            if ($detail -match '^Skipped:') { 'Skipped' }
-            elseif ($detail -match 'SIMD intrinsics not verified') { 'Warn' }
-            else { 'Passed' }
-        } else { 'Failed' }
+        $status = if (-not $passed) {
+            'Failed'
+        } elseif ($detail -match '^Skipped:') {
+            'Skipped'
+        } elseif ($isWarn -or $detail -match 'SIMD intrinsics not verified') {
+            'Warn'
+        } else {
+            'Passed'
+        }
         $stepName = if ($DriveInfo) {
             ('Drive {0}: {1}' -f $DriveInfo.Index, $TestName)
         } else {

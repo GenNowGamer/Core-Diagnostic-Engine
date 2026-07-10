@@ -29,7 +29,7 @@ function Invoke-StorageTestsForDrive {
                     return (Test-CdeSmartStatus -DriveIndex $driveIndex)
                 }
                 'TargetedRead' {
-                    if (-not $driveDeviceId) { return 'Skipped: No physical drive path (run as Administrator)' }
+                    if (-not $driveDeviceId) { return 'Warn: No physical drive path - run CDE as Administrator for physical drive reads' }
                     try {
                         $rng = New-Object System.Random(42)
                         $bufSize = 65536
@@ -53,17 +53,18 @@ function Invoke-StorageTestsForDrive {
                             $stream.Close()
                         }
                     } catch [System.UnauthorizedAccessException] {
-                        return 'Skipped: Access denied - run CDE as Administrator for physical drive reads'
+                        return 'Warn: Access denied - run CDE as Administrator for physical drive reads'
                     }
                 }
                 'LinearRead' {
-                    if (-not $driveDeviceId) { return 'Skipped: No physical drive path (run as Administrator)' }
+                    if (-not $driveDeviceId) { return 'Warn: No physical drive path - run CDE as Administrator for physical drive reads' }
                     try {
                         $bufSize = 65536
                         $buf = New-Object byte[] $bufSize
-                        $readLimit = $script:HwStorageLinearReadMb * 1024 * 1024
+                        $readLimit = [int64]($script:HwStorageLinearReadMb * 1024 * 1024)
                         $stream = [System.IO.File]::Open($driveDeviceId, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
                         try {
+                            $diskLen = [int64](Get-HwDriveLengthBytes -DriveInfo $DriveInfo -Stream $stream)
                             $totalRead = 0
                             while ($totalRead -lt $readLimit) {
                                 $bytesRead = $stream.Read($buf, 0, $bufSize)
@@ -71,16 +72,39 @@ function Invoke-StorageTestsForDrive {
                                 $totalRead += $bytesRead
                             }
                             if ($totalRead -lt 1048576) { return ('Failed: Only read {0} bytes sequentially' -f $totalRead) }
-                            return ('Passed: {0} MB linear read' -f [math]::Round($totalRead / 1MB, 1))
+
+                            $midNote = ''
+                            if ($script:HwProfileName -eq 'Extended' -and $diskLen -gt ($readLimit * 2)) {
+                                $midLimit = [int64][math]::Max(1048576, [math]::Floor($readLimit / 2))
+                                $midStart = [int64]([math]::Floor($diskLen / 2))
+                                $midStart = $midStart - ($midStart % 512)
+                                if (($midStart + $midLimit) -gt $diskLen) {
+                                    $midStart = Get-HwInt64Max -Left 0 -Right ($diskLen - $midLimit)
+                                    $midStart = $midStart - ($midStart % 512)
+                                }
+                                $stream.Position = $midStart
+                                $midRead = 0
+                                while ($midRead -lt $midLimit) {
+                                    $bytesRead = $stream.Read($buf, 0, $bufSize)
+                                    if ($bytesRead -eq 0) { break }
+                                    $midRead += $bytesRead
+                                }
+                                if ($midRead -lt 1048576) {
+                                    return ('Failed: Only read {0} bytes at mid-disk' -f $midRead)
+                                }
+                                $midNote = ('; mid-disk {0} MB' -f [math]::Round($midRead / 1MB, 1))
+                            }
+
+                            return ('Passed: {0} MB linear read{1}' -f [math]::Round($totalRead / 1MB, 1), $midNote)
                         } finally {
                             $stream.Close()
                         }
                     } catch [System.UnauthorizedAccessException] {
-                        return 'Skipped: Access denied - run CDE as Administrator for physical drive reads'
+                        return 'Warn: Access denied - run CDE as Administrator for physical drive reads'
                     }
                 }
                 'LinearReadEnd' {
-                    if (-not $driveDeviceId) { return 'Skipped: No physical drive path (run as Administrator)' }
+                    if (-not $driveDeviceId) { return 'Warn: No physical drive path - run CDE as Administrator for physical drive reads' }
                     try {
                         $bufSize = 65536
                         $buf = New-Object byte[] $bufSize
@@ -104,7 +128,7 @@ function Invoke-StorageTestsForDrive {
                             $stream.Close()
                         }
                     } catch [System.UnauthorizedAccessException] {
-                        return 'Skipped: Access denied - run CDE as Administrator for physical drive reads'
+                        return 'Warn: Access denied - run CDE as Administrator for physical drive reads'
                     }
                 }
                 'SmartSelfTest' {

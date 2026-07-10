@@ -8,8 +8,14 @@ $outputLines = @(& $scriptPath -ToolName StorageTests -TestProfile Quick 2>&1 | 
 $jsonLine = $outputLines | Where-Object { $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
 
 if ([string]::IsNullOrWhiteSpace($jsonLine)) {
-    Write-Error 'No workflow JSON found in HardwareDiagnostics output.'
-    exit 1
+    $text = ($outputLines -join "`n").Trim()
+    $jsonStart = $text.LastIndexOf('{"WorkflowName"')
+    if ($jsonStart -lt 0) { $jsonStart = $text.LastIndexOf('{') }
+    if ($jsonStart -lt 0) {
+        Write-Error 'No workflow JSON found in HardwareDiagnostics output.'
+        exit 1
+    }
+    $jsonLine = $text.Substring($jsonStart)
 }
 
 try {
@@ -55,9 +61,13 @@ if ($linearPassed.Count -gt 0 -and $lengthUnavailable.Count -gt 0) {
 $failedTargeted = @($targetedSteps | Where-Object { ([string]$_.Status) -eq 'Fail' })
 $passedTargeted = @($targetedSteps | Where-Object { ([string]$_.Status) -eq 'Pass' })
 $skippedTargeted = @($targetedSteps | Where-Object {
-    ([string]$_.Output) -match 'Skipped: Access denied'
+    $out = [string]$_.Output
+    $st = [string]$_.Status
+    ($out -match 'Skipped: Access denied') -or
+    ($out -match 'Warn: Access denied') -or
+    ($st -eq 'Warn' -and $out -match '(?i)administrator|access denied')
 })
 
-Write-Host ("Test-HardwareStorageTargetedRead: PASS (targeted pass={0}, skip={1}, fail={2}, workflow health={3})" -f `
+Write-Host ("Test-HardwareStorageTargetedRead: PASS (targeted pass={0}, skipOrWarn={1}, fail={2}, workflow health={3})" -f `
     $passedTargeted.Count, $skippedTargeted.Count, $failedTargeted.Count, $json.OverallHealth)
 exit 0

@@ -13,8 +13,8 @@ if ([int]$catalog.version -lt 1) {
     exit 1
 }
 
-if ($counts.CPU -ne 12 -or $counts.Memory -ne 10 -or $counts.HardDrive -ne 6) {
-    Write-Error "Unexpected sub-test counts: CPU=$($counts.CPU) Memory=$($counts.Memory) HardDrive=$($counts.HardDrive) (expected 12/10/6)."
+if ($counts.CPU -ne 13 -or $counts.Memory -ne 10 -or $counts.HardDrive -ne 6) {
+    Write-Error "Unexpected sub-test counts: CPU=$($counts.CPU) Memory=$($counts.Memory) HardDrive=$($counts.HardDrive) (expected 13/10/6)."
     exit 1
 }
 

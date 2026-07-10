@@ -1,7 +1,15 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-09  
+**Last updated:** 2026-07-10  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-10 update — Diag & Repair / CST live-Windows polish
+
+- **CIRCL** — Live-Windows CST ThreatScan/FullScan/CustomScan use CIRCL Hashlookup when not WinPE/`OfflineOnly` (synced from Core Security Tool).
+- **Catalog** — `mem_coverage` removed from Diag & Repair tree; Memory stays 10 pattern tests; low coverage still drives `[HW:GUIDANCE]` / CHU banner. Totals: CPU 13 / Memory 10 / Drive 6 (29).
+- **Stuck Running** — ASCII-sanitize `[HW:TEST]` details + `FinalizeStuckHardwareTests` so Warn rows (e.g. memory coverage) do not leave the tree on Running.
+- **CST PDF** — Expander **Open full CST report (PDF)** opens the workflow PDF, not JSON.
+- **Full notes** — `Toolkit\session_handoff.md` (2026-07-10 sections); CST `CST\session_handoff.md`; CHU `session_handoff.md` catalog note.
 
 ## 2026-07-09 update — Temp File Cleaner skip locked/unavailable files
 

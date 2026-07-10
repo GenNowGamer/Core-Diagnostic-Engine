@@ -35,6 +35,17 @@
                 <TextBlock Text="{Binding SummaryBanner}" FontSize="11"
                            Foreground="{StaticResource AccentBlueBrush}" Margin="0,4,0,0"
                            TextWrapping="Wrap"/>
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
+                            Visibility="{Binding ShowChuGuidance, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{Binding ChuGuidanceBanner}" FontSize="11"
+                               Foreground="#926800" TextWrapping="Wrap"
+                               VerticalAlignment="Center" MaxWidth="720" Margin="0,0,12,0"/>
+                    <Button Content="Open CHU Results"
+                            Command="{Binding OpenChuResultsCommand}"
+                            Padding="12,6" FontSize="11"
+                            Style="{StaticResource ActionButtonStyle}"
+                            VerticalAlignment="Center"/>
+                </StackPanel>
             </StackPanel>
         </Border>
 

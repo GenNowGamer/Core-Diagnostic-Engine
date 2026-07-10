@@ -1,6 +1,8 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using ToolkitGUI.Services;
+using ToolkitGUI.ViewModels;
 
 namespace ToolkitGUI.Views
 {
@@ -45,18 +47,30 @@ namespace ToolkitGUI.Views
             }
         }
 
-        private void OpenReport_Click(object sender, RoutedEventArgs e)
+        private async void OpenReport_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(_artifactPath))
-                return;
-
             try
             {
-                ShellFileOpenHelper.OpenWithDefaultApplication(_artifactPath);
+                var host = Window.GetWindow(this);
+                if (host?.DataContext is WorkflowViewModelBase viewModel)
+                {
+                    await viewModel.OpenPdfReportAsync();
+                    return;
+                }
+
+                MessageBox.Show(
+                    "The PDF report is not available for this session.",
+                    "CST Report",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
             }
-            catch
+            catch (Exception ex)
             {
-                MessageBox.Show("Could not open CST report.", "CST Report", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(
+                    $"Could not open CST PDF report:\n{ex.Message}",
+                    "CST Report",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
             }
         }
     }

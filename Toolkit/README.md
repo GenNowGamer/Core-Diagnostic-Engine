@@ -14,6 +14,14 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-07-10)
+
+- **CST CIRCL (live Windows)** — ThreatScan/FullScan/CustomScan use CIRCL Hashlookup when not WinPE/`OfflineOnly`; content scans defer until batch known-good map is ready. Synced via `Publish-ToolkitGUI.ps1`.
+- **Diag & Repair catalog** — CPU 13 / Memory 10 / Storage 6 (29 total); `mem_coverage` removed from tree (CHU guidance banner only); `cpu_stress` added.
+- **Stuck Running fix** — ASCII-safe `[HW:TEST]` details + `FinalizeStuckHardwareTests` after Diag & Repair runs.
+- **CST PDF** — Findings expander **Open full CST report (PDF)** opens the workflow PDF.
+- **Details** — `session_handoff.md` (repo root + `Toolkit/`).
+
 ## Session Update (2026-07-09)
 
 - **Temp File Cleaner** — Locked, in-use, and access-denied deletes (sharing violation, `UnauthorizedAccessException`, Win32 `0x0005`) count as **skipped**, not **Warn**. Typical when `VBCSCompiler` / Roslyn holds analyzer DLLs during Cursor or `dotnet build`. Genuine I/O failures still warn. `Scripts/Workflows/TempFileCleaner.ps1`.
@@ -190,7 +198,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Toolkit\Scripts\Tests\Invoke
 
 ## Session Update (2026-06-02)
 
-- **Diag & Repair** — PC-Doctor-style workflow in ToolkitGUI (CPU 12 / Memory 10 / Storage 6 line tests, Quick and Extended profiles, CST ThreatScan/FullScan scan-only, inline results table, no workflow popup).
+- **Diag & Repair** — PC-Doctor-style workflow in ToolkitGUI (CPU 13 / Memory 10 / Storage 6 line tests — 29 total; no `mem_coverage` tree row, Quick and Extended profiles, CST ThreatScan/FullScan scan-only, inline results table, no workflow popup).
 - Script: `Scripts/Workflows/HardwareDiagnostics.ps1` (`-ToolName All|CpuTests|MemoryTests|StorageTests|CstScan`, `-TestProfile Quick|Extended`).
 - UEFI CHU: rEFInd loads `EFI\CDE\CHUPrep.efi` → `CoreDiag.efi`. Rebuild with `Core Hardware Utility\UEFI\BUILD_CHU_UEFI.ps1`, then `SyncUSB.bat`. Use rEFInd for pre-boot hardware; ToolkitGUI for WinPE/Windows line-item suite.
 - Publish after GUI changes: `App/Publish-ToolkitGUI.ps1` → `CDE.exe`. Administrator recommended for storage physical-read tests.

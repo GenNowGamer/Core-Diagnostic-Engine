@@ -8,8 +8,14 @@ $outputLines = @(& $scriptPath -ToolName StorageTests -TestProfile Quick 2>&1 | 
 $jsonLine = $outputLines | Where-Object { $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
 
 if ([string]::IsNullOrWhiteSpace($jsonLine)) {
-    Write-Error 'No workflow JSON found in HardwareDiagnostics output.'
-    exit 1
+    $text = ($outputLines -join "`n").Trim()
+    $jsonStart = $text.LastIndexOf('{"WorkflowName"')
+    if ($jsonStart -lt 0) { $jsonStart = $text.LastIndexOf('{') }
+    if ($jsonStart -lt 0) {
+        Write-Error 'No workflow JSON found in HardwareDiagnostics output.'
+        exit 1
+    }
+    $jsonLine = $text.Substring($jsonStart)
 }
 
 try {

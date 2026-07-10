@@ -126,3 +126,5 @@ The status bar shows a **rollup** (pass / warn / fail counts). When a test maps 
 | **Diag & Repair (WinPE/Windows)** | Inside CDE GUI | Technician workflow, combined with CST, live progress in CDE |
 
 Use both when a machine has intermittent hardware faults — CHU for pre-boot proof, Diag & Repair for documented in-session runs with PDF workflow output.
+
+When Diag & Repair reports **partial memory coverage**, **CPU stress warnings**, or **storage elevation warnings**, the view shows a CHU guidance banner with a link to **CHU Pre-Boot Results**. That means Windows-side coverage is incomplete for clearing intermittent hardware risk — run CHU from the USB pre-boot menu for physical validation.

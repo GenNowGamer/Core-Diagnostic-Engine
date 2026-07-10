@@ -2737,6 +2737,8 @@ namespace ToolkitGUI.ViewModels
         private string _phaseDisplay = "Ready";
         private string _summaryBanner = "Select a run to begin hardware and security diagnostics.";
         private string _testProfile = "Quick";
+        private string _chuGuidanceBanner = string.Empty;
+        private bool _showChuGuidance;
 
         public string TestProfile
         {
@@ -2819,6 +2821,20 @@ namespace ToolkitGUI.ViewModels
             set { _summaryBanner = value; OnPropertyChanged(); }
         }
 
+        public string ChuGuidanceBanner
+        {
+            get => _chuGuidanceBanner;
+            private set { _chuGuidanceBanner = value; OnPropertyChanged(); }
+        }
+
+        public bool ShowChuGuidance
+        {
+            get => _showChuGuidance;
+            private set { _showChuGuidance = value; OnPropertyChanged(); }
+        }
+
+        public RelayCommand OpenChuResultsCommand { get; }
+
         protected override bool ShowWorkflowExecutionWindow => false;
 
         public ObservableCollection<ToolItem> Tools { get; } = new();
@@ -2834,6 +2850,11 @@ namespace ToolkitGUI.ViewModels
         public DiagAndRepairViewModel()
         {
             var script = GetScriptPath("HardwareDiagnostics.ps1");
+            OpenChuResultsCommand = new RelayCommand(() =>
+            {
+                NavigationService.Request("ChuResults");
+                return Task.CompletedTask;
+            });
 
             Tools.Add(new ToolItem("Run All Tests",
                 "Run CPU, Memory, Storage, then CST security scan",
@@ -3321,6 +3342,19 @@ namespace ToolkitGUI.ViewModels
 
             try
             {
+                if (kind == "GUIDANCE")
+                {
+                    var guidance = JsonSerializer.Deserialize<HwGuidanceEvent>(json,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (guidance is null) return true;
+
+                    App.Current.Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        ApplyChuGuidance(guidance);
+                    }));
+                    return true;
+                }
+
                 if (kind == "TEST")
                 {
                     var evt = JsonSerializer.Deserialize<HwTestEvent>(json,
@@ -3367,7 +3401,8 @@ namespace ToolkitGUI.ViewModels
 
                             if (string.Equals(evt.Status, "Passed", StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(evt.Status, "Failed", StringComparison.OrdinalIgnoreCase)
-                                || string.Equals(evt.Status, "Skipped", StringComparison.OrdinalIgnoreCase))
+                                || string.Equals(evt.Status, "Skipped", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(evt.Status, "Warn", StringComparison.OrdinalIgnoreCase))
                             {
                                 RefreshTestsProgressDisplay();
                             }
@@ -3476,6 +3511,7 @@ namespace ToolkitGUI.ViewModels
             TestsProgressDisplay = $"0 / {scheduled}";
             SummaryBanner = $"Running {item.Name} ({TestProfile} profile)...";
             PhaseDisplay = "Initializing";
+            ClearChuGuidance();
             StartElapsedTimer();
 
             item.IsRunning = true;
@@ -3487,6 +3523,8 @@ namespace ToolkitGUI.ViewModels
                     $"-ToolName {toolKey} -TestProfile {TestProfile}",
                     item.Name,
                     $"{item.Description} Profile: {TestProfile}.");
+
+                FinalizeStuckHardwareTests(ReportJsonPath);
 
                 if (IncludesCstPhase(toolKey))
                 {
@@ -3502,13 +3540,20 @@ namespace ToolkitGUI.ViewModels
                 else
                 {
                     var failed = TestTree.Count(t => t.IsTest && t.Status == "Failed");
+                    var warned = TestTree.Count(t => t.IsTest && t.Status == "Warn");
                     SummaryBanner = failed > 0
                         ? IncludesCstPhase(toolKey)
                             ? $"Hardware completed with {failed} failed sub-test(s); CST phase finished."
                             : $"Completed with {failed} failed sub-test(s)."
-                        : IncludesCstPhase(toolKey)
-                            ? "Hardware and CST scan completed."
-                            : "All scheduled sub-tests completed.";
+                        : warned > 0
+                            ? IncludesCstPhase(toolKey)
+                                ? $"Hardware completed with {warned} warning(s); CST phase finished."
+                                : $"Completed with {warned} warning(s)."
+                            : IncludesCstPhase(toolKey)
+                                ? "Hardware and CST scan completed."
+                                : "All scheduled sub-tests completed.";
+                    if (ShowChuGuidance)
+                        SummaryBanner += " " + ChuGuidanceBanner;
                     item.StatusText = failed > 0 ? "Done with errors" : "Done \u2713";
                 }
             }
@@ -3538,6 +3583,94 @@ namespace ToolkitGUI.ViewModels
             }
         }
 
+        private void FinalizeStuckHardwareTests(string? reportJsonPath)
+        {
+            var stuck = TestTree
+                .Where(t => t.IsTest
+                    && _activeTestNames.Contains(t.LookupKey)
+                    && (string.Equals(t.Status, "Running", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(t.Status, "Queued", StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+            if (stuck.Count == 0)
+                return;
+
+            Dictionary<string, WorkflowExecutionStep>? stepsByName = null;
+            if (!string.IsNullOrWhiteSpace(reportJsonPath) && File.Exists(reportJsonPath))
+            {
+                try
+                {
+                    var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                    var report = JsonSerializer.Deserialize<WorkflowExecutionReport>(
+                        File.ReadAllText(reportJsonPath), opts);
+                    stepsByName = report?.Steps?
+                        .Where(s => !string.IsNullOrWhiteSpace(s.Name))
+                        .GroupBy(s => s.Name!, StringComparer.OrdinalIgnoreCase)
+                        .ToDictionary(g => g.Key, g => g.Last(), StringComparer.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    stepsByName = null;
+                }
+            }
+
+            foreach (var item in stuck)
+            {
+                if (stepsByName is not null
+                    && stepsByName.TryGetValue(item.LookupKey, out var step))
+                {
+                    var detail = step.Detail ?? step.Output ?? string.Empty;
+                    item.Status = step.Status?.ToUpperInvariant() switch
+                    {
+                        "FAIL" => "Failed",
+                        "SKIP" => "Skipped",
+                        "WARN" => "Warn",
+                        _ => "Passed"
+                    };
+                    if (!string.IsNullOrWhiteSpace(detail))
+                        item.Detail = detail;
+                    continue;
+                }
+
+                item.Status = "Warn";
+                if (string.IsNullOrWhiteSpace(item.Detail))
+                    item.Detail = "Live status update was missed; see the workflow report for details.";
+            }
+
+            RefreshTestsProgressDisplay();
+        }
+
+        private void ClearChuGuidance()
+        {
+            ShowChuGuidance = false;
+            ChuGuidanceBanner = string.Empty;
+        }
+
+        private void ApplyChuGuidance(HwGuidanceEvent guidance)
+        {
+            if (guidance.RecommendChu != true)
+            {
+                ClearChuGuidance();
+                return;
+            }
+
+            var reasons = guidance.Reasons ?? Array.Empty<string>();
+            var parts = new List<string>();
+            if (reasons.Any(r => string.Equals(r, "memory_coverage", StringComparison.OrdinalIgnoreCase)))
+                parts.Add("memory coverage is partial under Windows");
+            if (reasons.Any(r => string.Equals(r, "cpu_stress", StringComparison.OrdinalIgnoreCase)))
+                parts.Add("CPU timed stress reported a problem");
+            if (reasons.Any(r => string.Equals(r, "storage_elevation", StringComparison.OrdinalIgnoreCase)))
+                parts.Add("storage physical reads need Administrator");
+
+            var detail = parts.Count > 0
+                ? string.Join("; ", parts)
+                : "hardware coverage under Windows is incomplete";
+
+            ChuGuidanceBanner =
+                $"Windows Diag & Repair note: {detail}. For intermittent faults, run CHU from the USB pre-boot menu, then open CHU Pre-Boot Results.";
+            ShowChuGuidance = true;
+        }
+
         private sealed class DiagCstProgressEvent
         {
             public int Scanned { get; set; }
@@ -3547,6 +3680,12 @@ namespace ToolkitGUI.ViewModels
             public double? OverallPercent { get; set; }
             public string? Detail { get; set; }
             public string? CurrentPath { get; set; }
+        }
+
+        private sealed class HwGuidanceEvent
+        {
+            public bool? RecommendChu { get; set; }
+            public string[]? Reasons { get; set; }
         }
 
         private sealed class HwTestEvent

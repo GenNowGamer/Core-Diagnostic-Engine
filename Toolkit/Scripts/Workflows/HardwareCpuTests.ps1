@@ -43,6 +43,13 @@ function Invoke-CpuTests {
                 'RunMathRegisterTest'    { return [HardwareTestEngine]::RunMathRegisterTest() }
                 'RunPrimeGenerationTest' { return [HardwareTestEngine]::RunPrimeGenerationTest() }
                 'RunFpuTest'             { return [HardwareTestEngine]::RunFpuTest() }
+                'RunCpuStressTest' {
+                    $result = [HardwareTestEngine]::RunCpuStressTest()
+                    if ($result -is [string] -and ($result.StartsWith('Failed') -or $result.StartsWith('Warn:'))) {
+                        $script:HwCpuStressIncomplete = $true
+                    }
+                    return $result
+                }
                 default                  { return $false }
             }
         }

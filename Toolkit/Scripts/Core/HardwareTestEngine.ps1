@@ -161,6 +161,9 @@ function Initialize-HardwareTestEngineFromCatalog {
     [HardwareTestEngine]::FpuLoops = [int]$ProfileParams.fpuLoops
     [HardwareTestEngine]::MemoryPatternPasses = [int]$ProfileParams.memoryPatternPasses
     [HardwareTestEngine]::MemoryBlockCount = [int]$ProfileParams.memoryBlockCount
+    if ($null -ne $ProfileParams.cpuStressSeconds) {
+        [HardwareTestEngine]::CpuStressSeconds = [int]$ProfileParams.cpuStressSeconds
+    }
     if ($ProfileParams.movingInversionPatterns) {
         $patterns = @($ProfileParams.movingInversionPatterns | ForEach-Object { [byte]$_ })
         [HardwareTestEngine]::SetMovingInversionPatterns($patterns)

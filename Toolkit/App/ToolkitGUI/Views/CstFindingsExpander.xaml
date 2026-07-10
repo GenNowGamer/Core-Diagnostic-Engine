@@ -37,7 +37,7 @@
                         <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="*"/>
                     </DataGrid.Columns>
                 </DataGrid>
-                <Button Content="Open full CST report (JSON)"
+                <Button Content="Open full CST report (PDF)"
                         Margin="0,10,0,0"
                         Padding="12,6"
                         HorizontalAlignment="Left"

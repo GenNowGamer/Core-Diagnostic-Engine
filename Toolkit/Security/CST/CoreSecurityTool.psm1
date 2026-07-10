@@ -414,22 +414,24 @@ function Get-CstRuleSet {
             enabled = $false
             provider = 'circl'
             endpoint = 'https://hashlookup.circl.lu/bulk/sha1'
-            applyToModes = @('FullScan', 'CustomScan')
-            batchSize = 25
-            timeoutSeconds = 15
+            applyToModes = @('ThreatScan', 'FullScan', 'CustomScan')
+            batchSize = 40
+            timeoutSeconds = 5
             minTrustScore = 90
             skipInWinPE = $true
+            enabledForThreatScan = $true
+            maxLookupsPerScan = 5000
         }) -Force
     }
     if (-not $rules.onlineReputation.PSObject.Properties['enabled']) { $rules.onlineReputation | Add-Member -NotePropertyName enabled -NotePropertyValue $false -Force }
     if (-not $rules.onlineReputation.PSObject.Properties['provider']) { $rules.onlineReputation | Add-Member -NotePropertyName provider -NotePropertyValue 'circl' -Force }
     if (-not $rules.onlineReputation.PSObject.Properties['endpoint']) { $rules.onlineReputation | Add-Member -NotePropertyName endpoint -NotePropertyValue 'https://hashlookup.circl.lu/bulk/sha1' -Force }
-    if (-not $rules.onlineReputation.PSObject.Properties['applyToModes']) { $rules.onlineReputation | Add-Member -NotePropertyName applyToModes -NotePropertyValue @('FullScan', 'CustomScan') -Force }
-    if (-not $rules.onlineReputation.PSObject.Properties['batchSize']) { $rules.onlineReputation | Add-Member -NotePropertyName batchSize -NotePropertyValue 25 -Force }
-    if (-not $rules.onlineReputation.PSObject.Properties['timeoutSeconds']) { $rules.onlineReputation | Add-Member -NotePropertyName timeoutSeconds -NotePropertyValue 15 -Force }
+    if (-not $rules.onlineReputation.PSObject.Properties['applyToModes']) { $rules.onlineReputation | Add-Member -NotePropertyName applyToModes -NotePropertyValue @('ThreatScan', 'FullScan', 'CustomScan') -Force }
+    if (-not $rules.onlineReputation.PSObject.Properties['batchSize']) { $rules.onlineReputation | Add-Member -NotePropertyName batchSize -NotePropertyValue 40 -Force }
+    if (-not $rules.onlineReputation.PSObject.Properties['timeoutSeconds']) { $rules.onlineReputation | Add-Member -NotePropertyName timeoutSeconds -NotePropertyValue 5 -Force }
     if (-not $rules.onlineReputation.PSObject.Properties['minTrustScore']) { $rules.onlineReputation | Add-Member -NotePropertyName minTrustScore -NotePropertyValue 90 -Force }
     if (-not $rules.onlineReputation.PSObject.Properties['skipInWinPE']) { $rules.onlineReputation | Add-Member -NotePropertyName skipInWinPE -NotePropertyValue $true -Force }
-    if (-not $rules.onlineReputation.PSObject.Properties['enabledForThreatScan']) { $rules.onlineReputation | Add-Member -NotePropertyName enabledForThreatScan -NotePropertyValue $false -Force }
+    if (-not $rules.onlineReputation.PSObject.Properties['enabledForThreatScan']) { $rules.onlineReputation | Add-Member -NotePropertyName enabledForThreatScan -NotePropertyValue $true -Force }
     if (-not $rules.onlineReputation.PSObject.Properties['maxLookupsPerScan']) { $rules.onlineReputation | Add-Member -NotePropertyName maxLookupsPerScan -NotePropertyValue 5000 -Force }
     if (-not $rules.onlineReputation.PSObject.Properties['sha256ProviderNote']) {
         $rules.onlineReputation | Add-Member -NotePropertyName sha256ProviderNote -NotePropertyValue 'CIRCL bulk POST expects JSON {"hashes":["<sha1>",...]} at /bulk/sha1; SHA-256 reputation requires a future provider.' -Force
@@ -976,12 +978,12 @@ function Get-CstScanPolicy {
     $onlineEnabled = $false
     $onlineProvider = 'circl'
     $onlineEndpoint = 'https://hashlookup.circl.lu/bulk/sha1'
-    $onlineApplyToModes = @('FullScan', 'CustomScan')
-    $onlineBatchSize = 25
-    $onlineTimeoutSeconds = 15
+    $onlineApplyToModes = @('ThreatScan', 'FullScan', 'CustomScan')
+    $onlineBatchSize = 40
+    $onlineTimeoutSeconds = 5
     $onlineMinTrustScore = 90
     $onlineSkipInWinPE = $true
-    $onlineEnabledForThreatScan = $false
+    $onlineEnabledForThreatScan = $true
     $onlineMaxLookupsPerScan = 5000
     if ($Rules.PSObject.Properties['onlineReputation'] -and $null -ne $Rules.onlineReputation) {
         if ($Rules.onlineReputation.PSObject.Properties['enabled']) { $onlineEnabled = [bool]$Rules.onlineReputation.enabled }
@@ -1002,7 +1004,10 @@ function Get-CstScanPolicy {
     if ($onlineTimeoutSeconds -lt 1) { $onlineTimeoutSeconds = 1 }
     if ($onlineMinTrustScore -lt 1) { $onlineMinTrustScore = 1 }
     if ($onlineMinTrustScore -gt 100) { $onlineMinTrustScore = 100 }
-    $onlineModeEnabled = $Mode -in $onlineApplyToModes
+    $onlineModeEnabled = ($Mode -in $onlineApplyToModes)
+    if ($onlineModeEnabled -and $Mode -eq 'ThreatScan' -and -not $onlineEnabledForThreatScan) {
+        $onlineModeEnabled = $false
+    }
 
     return [PSCustomObject]@{
         maxFiles = $maxFiles
@@ -1275,7 +1280,39 @@ function Get-CstOnlineReputationStatus {
         suppressedFindings = 0
         parseErrors = 0
         lastError = ''
+        skippedReason = ''
     }
+}
+
+function Test-CstCirclEndpointAvailable {
+    param(
+        [Parameter(Mandatory)][string]$Endpoint,
+        [int]$TimeoutSeconds = 3
+    )
+
+    $result = [PSCustomObject]@{
+        ok = $false
+        errorMessage = ''
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Endpoint)) {
+        $result.errorMessage = 'CIRCL endpoint is empty.'
+        return $result
+    }
+
+    if ($TimeoutSeconds -lt 1) { $TimeoutSeconds = 1 }
+
+    # Known-good public sample (empty file SHA-1) used only as a connectivity probe.
+    $probeHash = 'DA39A3EE5E6B4B0D3255BFEF95601890AFD80709'
+    try {
+        $body = (@{ hashes = @($probeHash) } | ConvertTo-Json -Compress -Depth 3)
+        $null = Invoke-RestMethod -Method Post -Uri $Endpoint -Body $body -ContentType 'application/json' -TimeoutSec $TimeoutSeconds -ErrorAction Stop
+        $result.ok = $true
+    } catch {
+        $result.errorMessage = [string]$_.Exception.Message
+    }
+
+    return $result
 }
 
 function Invoke-CstCirclBulkSha1Lookup {
@@ -3275,14 +3312,18 @@ function Find-CstFileFindings {
     $onlinePolicy = $policy.onlineReputation
     $onlineSkippedInEnvironment = ([bool]$onlinePolicy.skipInWinPE -and $EnvironmentMode -eq 'WinPE')
     $onlineStatus = Get-CstOnlineReputationStatus -Enabled ([bool]$onlinePolicy.enabled) -Provider ([string]$onlinePolicy.provider) -Endpoint ([string]$onlinePolicy.endpoint) -BatchSize ([int]$onlinePolicy.batchSize) -TimeoutSeconds ([int]$onlinePolicy.timeoutSeconds) -MinTrustScore ([int]$onlinePolicy.minTrustScore) -ModeEnabled ([bool]$onlinePolicy.modeEnabled) -SkippedInEnvironment $onlineSkippedInEnvironment -OfflineOnly $OfflineOnly
-    $onlineActive = [bool]$onlinePolicy.enabled -and [bool]$onlinePolicy.modeEnabled -and -not $onlineSkippedInEnvironment -and -not $OfflineOnly
+    $onlineRuntime = @{
+        Active = ([bool]$onlinePolicy.enabled -and [bool]$onlinePolicy.modeEnabled -and -not $onlineSkippedInEnvironment -and -not $OfflineOnly)
+        ProbeDone = $false
+    }
     $onlineMaxLookupsPerScan = 0
     if ($onlinePolicy.PSObject.Properties['maxLookupsPerScan']) {
         $onlineMaxLookupsPerScan = [int]$onlinePolicy.maxLookupsPerScan
     }
     if ($onlineMaxLookupsPerScan -lt 0) { $onlineMaxLookupsPerScan = 0 }
-    $onlineStatus.active = $onlineActive
+    $onlineStatus.active = [bool]$onlineRuntime.Active
     $onlinePending = New-Object System.Collections.Generic.List[string]
+    $onlineDeferredContent = New-Object System.Collections.Generic.List[object]
     $onlineKnownGoodMap = @{}
     $skipLog = New-Object System.Collections.ArrayList
     $maxSkipLogEntries = 5000
@@ -3371,8 +3412,25 @@ function Find-CstFileFindings {
     $progressTotal = [math]::Max(1, $MaxFiles)
 
     $flushOnlineBatch = {
-        if (-not $onlineActive) { return }
+        if (-not [bool]$onlineRuntime.Active) {
+            $onlinePending.Clear()
+            return
+        }
         if ($onlinePending.Count -eq 0) { return }
+
+        if (-not [bool]$onlineRuntime.ProbeDone) {
+            $onlineRuntime.ProbeDone = $true
+            $probeTimeout = [math]::Min(3, [math]::Max(1, [int]$onlinePolicy.timeoutSeconds))
+            $probe = Test-CstCirclEndpointAvailable -Endpoint ([string]$onlinePolicy.endpoint) -TimeoutSeconds $probeTimeout
+            if (-not [bool]$probe.ok) {
+                $onlineRuntime.Active = $false
+                $onlineStatus.active = $false
+                $onlineStatus.skippedReason = 'NoNetwork'
+                $onlineStatus.lastError = ('NoNetwork: {0}' -f [string]$probe.errorMessage)
+                $onlinePending.Clear()
+                return
+            }
+        }
 
         $lookupResult = Invoke-CstCirclBulkSha1Lookup -Hashes @($onlinePending.ToArray()) -TimeoutSeconds ([int]$onlinePolicy.timeoutSeconds) -MinTrustScore ([int]$onlinePolicy.minTrustScore) -Endpoint ([string]$onlinePolicy.endpoint)
         $onlineStatus.requestsAttempted++
@@ -3391,6 +3449,253 @@ function Find-CstFileFindings {
         }
 
         $onlinePending.Clear()
+    }
+
+    $runContentDetectors = {
+        param(
+            [Parameter(Mandatory)]$FileInfo,
+            [Parameter(Mandatory)][datetime]$FileAnalysisStart,
+            [string]$Sha1Lookup = ''
+        )
+
+        $full = [string]$FileInfo.FullName
+        $name = $FileInfo.Name
+        $nameLower = $name.ToLowerInvariant()
+        $pathLower = $full.ToLowerInvariant()
+        $extLower = $FileInfo.Extension.ToLowerInvariant()
+
+        $contentScansPerformed++
+
+        $onlineKnownGood = $false
+        $fileSignerStatus = 'NotEvaluated'
+        $filePublisher = ''
+        $fileSigInfo = $null
+
+        if (Test-CstPerFileBudgetExceeded -StartedUtc $FileAnalysisStart -MaxMilliseconds $perFileBudgetMs) {
+            $perFileBudgetSkips++
+            & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Skipped before online reputation phase; maxPerFileAnalysisMs={0}." -f $perFileBudgetMs) -DetailPayload @{
+                phase = 'OnlineReputation'
+                maxPerFileAnalysisMs = $perFileBudgetMs
+            }
+            return
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($Sha1Lookup) -and $Sha1Lookup -match '^[A-F0-9]{40}$' -and $onlineKnownGoodMap.ContainsKey($Sha1Lookup)) {
+            $onlineState = $onlineKnownGoodMap[$Sha1Lookup]
+            $onlineKnownGood = [bool]$onlineState.knownGood
+            if ($onlineKnownGood) {
+                $onlineStatus.knownGoodHits++
+            }
+        }
+
+        if (($enableSignerTrust -or [bool]$onlineRuntime.Active) -and $extLower -in @('.exe', '.dll', '.sys')) {
+            $fileSigInfo = Get-CstAuthenticodeInfo -Path $full -EnvironmentMode $EnvironmentMode -Cache $signatureCache -TimeoutMs $signatureTimeoutMs
+            $fileSignerStatus = [string]$fileSigInfo.signerStatus
+            $filePublisher = [string]$fileSigInfo.publisher
+        }
+
+        $suppressWeakContent = Test-CstShouldSuppressWeakContentFinding -OnlineKnownGood $onlineKnownGood -SignerStatus $fileSignerStatus -Publisher $filePublisher -Rules $Rules
+        $dependencyTrustContext = Test-CstHasDependencyTrustContext -FileInfo $FileInfo -Rules $Rules -EnvironmentMode $EnvironmentMode -SignatureCache $signatureCache -TrustedSiblingDirCache $trustedSiblingDirCache -SignatureTimeoutMs $signatureTimeoutMs
+
+        if (Test-CstPerFileBudgetExceeded -StartedUtc $FileAnalysisStart -MaxMilliseconds $perFileBudgetMs) {
+            $perFileBudgetSkips++
+            & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Skipped before YARA/pattern phase; maxPerFileAnalysisMs={0}." -f $perFileBudgetMs) -DetailPayload @{
+                phase = 'YaraPattern'
+                maxPerFileAnalysisMs = $perFileBudgetMs
+            }
+            return
+        }
+
+        if ($FileInfo.Length -gt $maxYaraTextBytes) {
+            & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Capped text inspection for oversized file (> {0} MB)." -f [int]$policy.maxYaraTextFileSizeMb) -DetailPayload @{
+                phase = 'YaraTextReadCap'
+                maxYaraTextFileSizeMb = [int]$policy.maxYaraTextFileSizeMb
+            }
+        }
+        if ($FileInfo.Length -gt $maxYaraByteScanBytes) {
+            & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Capped byte inspection for oversized file (> {0} MB)." -f [int]$policy.maxYaraByteFileSizeMb) -DetailPayload @{
+                phase = 'YaraByteReadCap'
+                maxYaraByteFileSizeMb = [int]$policy.maxYaraByteFileSizeMb
+            }
+        }
+
+        $yaraMatch = Find-CstYaraLikeMatch -FileInfo $FileInfo -Rules $Rules -TextCache $textCache -ByteCache $byteCache -PeMetaCache $peMetaCache -MaxTextBytes $maxYaraTextBytes -MaxByteScanBytes $maxYaraByteScanBytes
+        if ($null -ne $yaraMatch) {
+            if (-not $suppressWeakContent) {
+                $fileHash = ''
+                if ($hashCache.ContainsKey($full)) {
+                    $fileHash = [string]$hashCache[$full]
+                } elseif ($hashEligibleExt -contains $extLower -and $FileInfo.Length -le $maxHashBytes) {
+                    $fileHash = Get-CstFileHashSafe -Path $full
+                    $hashCache[$full] = $fileHash
+                }
+
+                $adjusted = Get-CstAdjustedContentClassification -Severity $yaraMatch.severity -Type $yaraMatch.type -Confidence $yaraMatch.confidence -PathLower $pathLower
+                $finding = New-CstFinding -Type $adjusted.type -Severity $adjusted.severity -Name $name -Location $full -Evidence "YARA-like rule hit [$($yaraMatch.ruleName)] ($($yaraMatch.logic)): $($yaraMatch.matchSummary)" -Detector 'YaraLike' -Confidence $adjusted.confidence -ObjectType $yaraMatch.objectType -Hash $fileHash -SignerStatus $fileSignerStatus -Publisher $filePublisher
+                $findings.Add($finding)
+                Write-CstLiveFinding -Finding $finding
+            } elseif ($onlineKnownGood) {
+                $onlineStatus.suppressedFindings++
+            }
+            return
+        }
+
+        if (-not $suppressWeakContent) {
+            $malwareHit = Test-CstPatternMatch -Value $nameLower -Patterns @($Rules.patterns.malware)
+            if ($malwareHit) {
+                $fileHash = Get-CstFileHashSafe -Path $full
+                $adjusted = Get-CstAdjustedContentClassification -Severity 'Critical' -Type 'Malware' -Confidence 0.95 -PathLower $pathLower
+                $finding = New-CstFinding -Type $adjusted.type -Severity $adjusted.severity -Name $name -Location $full -Evidence "Matched malware pattern: $malwareHit" -Detector 'PatternEngine' -Confidence $adjusted.confidence -ObjectType 'File' -Hash $fileHash -SignerStatus $fileSignerStatus -Publisher $filePublisher
+                $findings.Add($finding)
+                Write-CstLiveFinding -Finding $finding
+                return
+            }
+
+            $pupHit = Test-CstPatternMatch -Value $nameLower -Patterns @($Rules.patterns.pup)
+            if ($pupHit) {
+                $fileHash = Get-CstFileHashSafe -Path $full
+                $finding = New-CstFinding -Type 'PUP' -Severity 'Medium' -Name $name -Location $full -Evidence "Matched PUP pattern: $pupHit" -Detector 'PatternEngine' -Confidence 0.72 -ObjectType 'File' -Hash $fileHash -SignerStatus $fileSignerStatus -Publisher $filePublisher
+                $findings.Add($finding)
+                Write-CstLiveFinding -Finding $finding
+                return
+            }
+        } elseif ($onlineKnownGood) {
+            $onlineStatus.suppressedFindings++
+        }
+
+        if ($enableSignerTrust) {
+            if (Test-CstPerFileBudgetExceeded -StartedUtc $FileAnalysisStart -MaxMilliseconds $perFileBudgetMs) {
+                $perFileBudgetSkips++
+                & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Skipped before signer-trust phase; maxPerFileAnalysisMs={0}." -f $perFileBudgetMs) -DetailPayload @{
+                    phase = 'SignerTrust'
+                    maxPerFileAnalysisMs = $perFileBudgetMs
+                }
+                return
+            }
+
+            $prefetchedSig = $fileSigInfo
+
+            $signerFinding = Find-CstSignerTrustFinding -FileInfo $FileInfo -Rules $Rules -EnvironmentMode $EnvironmentMode -SignatureCache $signatureCache -SignatureTimeoutMs $signatureTimeoutMs -SignatureInfo $prefetchedSig
+            if ($null -ne $signerFinding) {
+                if ($suppressWeakContent -or ($dependencyTrustContext -and [string]$signerFinding.severity -in @('Low') -and [double]$signerFinding.confidence -lt 0.7)) {
+                    if ($dependencyTrustContext) { $dependencyTrustSkips++ }
+                    $onlineStatus.suppressedFindings++
+                    return
+                }
+                $fileHash = ''
+                if ($hashCache.ContainsKey($full)) {
+                    $fileHash = [string]$hashCache[$full]
+                } elseif ($hashEligibleExt -contains $extLower -and $FileInfo.Length -le $maxHashBytes) {
+                    $fileHash = Get-CstFileHashSafe -Path $full
+                    $hashCache[$full] = $fileHash
+                }
+
+                $finding = New-CstFinding -Type $signerFinding.type -Severity $signerFinding.severity -Name $name -Location $full -Evidence $signerFinding.evidence -Detector 'SignerTrust' -Confidence $signerFinding.confidence -ObjectType 'File' -Hash $fileHash -Publisher $signerFinding.publisher -SignerStatus $signerFinding.signerStatus
+                $findings.Add($finding)
+                Write-CstLiveFinding -Finding $finding
+            }
+        }
+
+        if (Test-CstPerFileBudgetExceeded -StartedUtc $FileAnalysisStart -MaxMilliseconds $perFileBudgetMs) {
+            $perFileBudgetSkips++
+            & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Skipped before heuristic phase; maxPerFileAnalysisMs={0}." -f $perFileBudgetMs) -DetailPayload @{
+                phase = 'Heuristic'
+                maxPerFileAnalysisMs = $perFileBudgetMs
+            }
+            return
+        }
+
+        $heuristicFinding = Find-CstHeuristicFinding -FileInfo $FileInfo -Rules $Rules -ByteCache $byteCache -PeMetaCache $peMetaCache -MaxByteScanBytes $maxEntropyScanBytes -DependencyTrustContext $dependencyTrustContext
+        if ($null -ne $heuristicFinding) {
+            if ($suppressWeakContent) {
+                $onlineStatus.suppressedFindings++
+                return
+            }
+            $fileHash = ''
+            if ($hashCache.ContainsKey($full)) {
+                $fileHash = [string]$hashCache[$full]
+            } elseif ($hashEligibleExt -contains $extLower -and $FileInfo.Length -le $maxHashBytes) {
+                $fileHash = Get-CstFileHashSafe -Path $full
+                $hashCache[$full] = $fileHash
+            }
+
+            $finding = New-CstFinding -Type $heuristicFinding.type -Severity $heuristicFinding.severity -Name $name -Location $full -Evidence $heuristicFinding.evidence -Detector 'HeuristicEngine' -Confidence $heuristicFinding.confidence -ObjectType 'File' -Hash $fileHash -SignerStatus 'NotEvaluated' -Entropy $heuristicFinding.entropy
+            $findings.Add($finding)
+            Write-CstLiveFinding -Finding $finding
+            return
+        }
+
+        if (-not (Test-CstPerFileBudgetExceeded -StartedUtc $FileAnalysisStart -MaxMilliseconds $perFileBudgetMs)) {
+            $archiveFindings = Find-CstArchiveFindings -FileInfo $FileInfo -Rules $Rules -Policy $policy -SuppressWeakContent $suppressWeakContent
+            foreach ($archiveFinding in @($archiveFindings)) {
+                $findings.Add($archiveFinding)
+                Write-CstLiveFinding -Finding $archiveFinding
+            }
+        } else {
+            $perFileBudgetSkips++
+            & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Skipped before archive inspection phase; maxPerFileAnalysisMs={0}." -f $perFileBudgetMs) -DetailPayload @{
+                phase = 'ArchiveInspection'
+                maxPerFileAnalysisMs = $perFileBudgetMs
+            }
+            return
+        }
+
+        $isRiskScriptPath = (
+            $pathLower -like '*\appdata\local\temp\*' -or
+            $pathLower -like '*\appdata\roaming\microsoft\windows\start menu\programs\startup\*' -or
+            $pathLower -like '*\users\public\downloads\*' -or
+            $pathLower -like '*\windows\temp\*'
+        )
+        if ($isRiskScriptPath -and $nameLower -match '\.(ps1|vbs|js|jse|wsf|bat|cmd)$') {
+            if ($suppressWeakContent) {
+                $onlineStatus.suppressedFindings++
+                return
+            }
+            $finding = New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name $name -Location $full -Evidence 'Script file located in high-risk user path' -Detector 'PathHeuristic' -Confidence 0.45 -ObjectType 'File' -SignerStatus 'NotEvaluated'
+            $findings.Add($finding)
+            Write-CstLiveFinding -Finding $finding
+        }
+    }
+
+    $drainOnlineDeferredContent = {
+        if ($onlinePending.Count -gt 0 -and [bool]$onlineRuntime.Active) {
+            . $flushOnlineBatch
+        } elseif (-not [bool]$onlineRuntime.Active) {
+            $onlinePending.Clear()
+        }
+
+        if ($onlineDeferredContent.Count -eq 0) { return }
+
+        $toProcess = $onlineDeferredContent.ToArray()
+        $onlineDeferredContent.Clear()
+
+        foreach ($item in $toProcess) {
+            if ($timeLimitSec -gt 0 -and (((Get-Date) - $scanStart).TotalSeconds -ge $timeLimitSec)) {
+                $timeBudgetExceeded = $true
+                & $addSkipEntry -Reason 'MaxMinutesCap' -Path ([string]$item.FileInfo.FullName) -Detail ("Stopped at MaxMinutes cap before deferred content ({0})." -f $effectiveMaxMinutes) -DetailPayload @{
+                    phase = 'DeferredContent'
+                    maxMinutes = $effectiveMaxMinutes
+                    mode = $Mode
+                }
+                continue
+            }
+
+            try {
+                . $runContentDetectors $item.FileInfo (Get-Date) $item.Sha1Lookup
+            } catch {
+                $errors++
+                $errorType = if ($_.Exception -and $_.Exception.GetType()) { $_.Exception.GetType().FullName } else { 'UnknownException' }
+                $errorMessage = [string]$_.Exception.Message
+                if ($scanErrorDetails.Count -lt $maxScanErrorDetails) {
+                    [void]$scanErrorDetails.Add([PSCustomObject]@{
+                        stage = 'DeferredContent'
+                        target = ''
+                        path = [string]$item.FileInfo.FullName
+                        message = "[$errorType] $errorMessage"
+                    })
+                }
+            }
+        }
     }
 
     $analyzeCandidateFile = {
@@ -3503,22 +3808,8 @@ function Find-CstFileFindings {
                 }
             }
 
-            $contentScansPerformed++
-
-            $onlineKnownGood = $false
-            $fileSignerStatus = 'NotEvaluated'
-            $filePublisher = ''
-            $fileSigInfo = $null
-            if (Test-CstPerFileBudgetExceeded -StartedUtc $fileAnalysisStart -MaxMilliseconds $perFileBudgetMs) {
-                $perFileBudgetSkips++
-                & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Skipped before online reputation phase; maxPerFileAnalysisMs={0}." -f $perFileBudgetMs) -DetailPayload @{
-                    phase = 'OnlineReputation'
-                    maxPerFileAnalysisMs = $perFileBudgetMs
-                }
-                return
-            }
-
-            if ($onlineActive -and $hashEligibleExt -contains $extLower -and $FileInfo.Length -le $maxHashBytes) {
+            $sha1Lookup = ''
+            if ([bool]$onlineRuntime.Active -and $hashEligibleExt -contains $extLower -and $FileInfo.Length -le $maxHashBytes) {
                 $onlineStatus.eligibleFiles++
                 $sha1 = ''
                 if ($sha1Cache.ContainsKey($full)) {
@@ -3536,188 +3827,22 @@ function Find-CstFileFindings {
                             $onlinePending.Add($sha1Lookup)
                             $onlineLookupsPerformed++
                         }
-                        if ($onlinePending.Count -ge [int]$onlinePolicy.batchSize) {
-                            & $flushOnlineBatch
-                        }
                     }
 
-                    if ($onlineKnownGoodMap.ContainsKey($sha1Lookup)) {
-                        $onlineState = $onlineKnownGoodMap[$sha1Lookup]
-                        $onlineKnownGood = [bool]$onlineState.knownGood
-                        if ($onlineKnownGood) {
-                            $onlineStatus.knownGoodHits++
-                        }
-                    }
-                }
-            }
+                    [void]$onlineDeferredContent.Add([PSCustomObject]@{
+                        FileInfo = $FileInfo
+                        FileAnalysisStart = $fileAnalysisStart
+                        Sha1Lookup = $sha1Lookup
+                    })
 
-            if (($enableSignerTrust -or $onlineActive) -and $extLower -in @('.exe', '.dll', '.sys')) {
-                $fileSigInfo = Get-CstAuthenticodeInfo -Path $full -EnvironmentMode $EnvironmentMode -Cache $signatureCache -TimeoutMs $signatureTimeoutMs
-                $fileSignerStatus = [string]$fileSigInfo.signerStatus
-                $filePublisher = [string]$fileSigInfo.publisher
-            }
-
-            $suppressWeakContent = Test-CstShouldSuppressWeakContentFinding -OnlineKnownGood $onlineKnownGood -SignerStatus $fileSignerStatus -Publisher $filePublisher -Rules $Rules
-            $dependencyTrustContext = Test-CstHasDependencyTrustContext -FileInfo $FileInfo -Rules $Rules -EnvironmentMode $EnvironmentMode -SignatureCache $signatureCache -TrustedSiblingDirCache $trustedSiblingDirCache -SignatureTimeoutMs $signatureTimeoutMs
-
-            if (Test-CstPerFileBudgetExceeded -StartedUtc $fileAnalysisStart -MaxMilliseconds $perFileBudgetMs) {
-                $perFileBudgetSkips++
-                & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Skipped before YARA/pattern phase; maxPerFileAnalysisMs={0}." -f $perFileBudgetMs) -DetailPayload @{
-                    phase = 'YaraPattern'
-                    maxPerFileAnalysisMs = $perFileBudgetMs
-                }
-                return
-            }
-
-            if ($FileInfo.Length -gt $maxYaraTextBytes) {
-                & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Capped text inspection for oversized file (> {0} MB)." -f [int]$policy.maxYaraTextFileSizeMb) -DetailPayload @{
-                    phase = 'YaraTextReadCap'
-                    maxYaraTextFileSizeMb = [int]$policy.maxYaraTextFileSizeMb
-                }
-            }
-            if ($FileInfo.Length -gt $maxYaraByteScanBytes) {
-                & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Capped byte inspection for oversized file (> {0} MB)." -f [int]$policy.maxYaraByteFileSizeMb) -DetailPayload @{
-                    phase = 'YaraByteReadCap'
-                    maxYaraByteFileSizeMb = [int]$policy.maxYaraByteFileSizeMb
-                }
-            }
-
-            $yaraMatch = Find-CstYaraLikeMatch -FileInfo $FileInfo -Rules $Rules -TextCache $textCache -ByteCache $byteCache -PeMetaCache $peMetaCache -MaxTextBytes $maxYaraTextBytes -MaxByteScanBytes $maxYaraByteScanBytes
-            if ($null -ne $yaraMatch) {
-                if (-not $suppressWeakContent) {
-                    $fileHash = ''
-                    if ($hashCache.ContainsKey($full)) {
-                        $fileHash = [string]$hashCache[$full]
-                    } elseif ($hashEligibleExt -contains $extLower -and $FileInfo.Length -le $maxHashBytes) {
-                        $fileHash = Get-CstFileHashSafe -Path $full
-                        $hashCache[$full] = $fileHash
-                    }
-
-                    $adjusted = Get-CstAdjustedContentClassification -Severity $yaraMatch.severity -Type $yaraMatch.type -Confidence $yaraMatch.confidence -PathLower $pathLower
-                    $finding = New-CstFinding -Type $adjusted.type -Severity $adjusted.severity -Name $name -Location $full -Evidence "YARA-like rule hit [$($yaraMatch.ruleName)] ($($yaraMatch.logic)): $($yaraMatch.matchSummary)" -Detector 'YaraLike' -Confidence $adjusted.confidence -ObjectType $yaraMatch.objectType -Hash $fileHash -SignerStatus $fileSignerStatus -Publisher $filePublisher
-                    $findings.Add($finding)
-                    Write-CstLiveFinding -Finding $finding
-                } elseif ($onlineKnownGood) {
-                    $onlineStatus.suppressedFindings++
-                }
-                return
-            }
-
-            if (-not $suppressWeakContent) {
-                $malwareHit = Test-CstPatternMatch -Value $nameLower -Patterns @($Rules.patterns.malware)
-                if ($malwareHit) {
-                    $fileHash = Get-CstFileHashSafe -Path $full
-                    $adjusted = Get-CstAdjustedContentClassification -Severity 'Critical' -Type 'Malware' -Confidence 0.95 -PathLower $pathLower
-                    $finding = New-CstFinding -Type $adjusted.type -Severity $adjusted.severity -Name $name -Location $full -Evidence "Matched malware pattern: $malwareHit" -Detector 'PatternEngine' -Confidence $adjusted.confidence -ObjectType 'File' -Hash $fileHash -SignerStatus $fileSignerStatus -Publisher $filePublisher
-                    $findings.Add($finding)
-                    Write-CstLiveFinding -Finding $finding
-                    return
-                }
-
-                $pupHit = Test-CstPatternMatch -Value $nameLower -Patterns @($Rules.patterns.pup)
-                if ($pupHit) {
-                    $fileHash = Get-CstFileHashSafe -Path $full
-                    $finding = New-CstFinding -Type 'PUP' -Severity 'Medium' -Name $name -Location $full -Evidence "Matched PUP pattern: $pupHit" -Detector 'PatternEngine' -Confidence 0.72 -ObjectType 'File' -Hash $fileHash -SignerStatus $fileSignerStatus -Publisher $filePublisher
-                    $findings.Add($finding)
-                    Write-CstLiveFinding -Finding $finding
-                    return
-                }
-            } elseif ($onlineKnownGood) {
-                $onlineStatus.suppressedFindings++
-            }
-
-            if ($enableSignerTrust) {
-                if (Test-CstPerFileBudgetExceeded -StartedUtc $fileAnalysisStart -MaxMilliseconds $perFileBudgetMs) {
-                    $perFileBudgetSkips++
-                    & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Skipped before signer-trust phase; maxPerFileAnalysisMs={0}." -f $perFileBudgetMs) -DetailPayload @{
-                        phase = 'SignerTrust'
-                        maxPerFileAnalysisMs = $perFileBudgetMs
+                    if ($onlinePending.Count -ge [int]$onlinePolicy.batchSize) {
+                        . $drainOnlineDeferredContent
                     }
                     return
                 }
-
-                $prefetchedSig = $fileSigInfo
-
-                $signerFinding = Find-CstSignerTrustFinding -FileInfo $FileInfo -Rules $Rules -EnvironmentMode $EnvironmentMode -SignatureCache $signatureCache -SignatureTimeoutMs $signatureTimeoutMs -SignatureInfo $prefetchedSig
-                if ($null -ne $signerFinding) {
-                    if ($suppressWeakContent -or ($dependencyTrustContext -and [string]$signerFinding.severity -in @('Low') -and [double]$signerFinding.confidence -lt 0.7)) {
-                        if ($dependencyTrustContext) { $dependencyTrustSkips++ }
-                        $onlineStatus.suppressedFindings++
-                        return
-                    }
-                    $fileHash = ''
-                    if ($hashCache.ContainsKey($full)) {
-                        $fileHash = [string]$hashCache[$full]
-                    } elseif ($hashEligibleExt -contains $extLower -and $FileInfo.Length -le $maxHashBytes) {
-                        $fileHash = Get-CstFileHashSafe -Path $full
-                        $hashCache[$full] = $fileHash
-                    }
-
-                    $finding = New-CstFinding -Type $signerFinding.type -Severity $signerFinding.severity -Name $name -Location $full -Evidence $signerFinding.evidence -Detector 'SignerTrust' -Confidence $signerFinding.confidence -ObjectType 'File' -Hash $fileHash -Publisher $signerFinding.publisher -SignerStatus $signerFinding.signerStatus
-                    $findings.Add($finding)
-                    Write-CstLiveFinding -Finding $finding
-                }
             }
 
-            if (Test-CstPerFileBudgetExceeded -StartedUtc $fileAnalysisStart -MaxMilliseconds $perFileBudgetMs) {
-                $perFileBudgetSkips++
-                & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Skipped before heuristic phase; maxPerFileAnalysisMs={0}." -f $perFileBudgetMs) -DetailPayload @{
-                    phase = 'Heuristic'
-                    maxPerFileAnalysisMs = $perFileBudgetMs
-                }
-                return
-            }
-
-            $heuristicFinding = Find-CstHeuristicFinding -FileInfo $FileInfo -Rules $Rules -ByteCache $byteCache -PeMetaCache $peMetaCache -MaxByteScanBytes $maxEntropyScanBytes -DependencyTrustContext $dependencyTrustContext
-            if ($null -ne $heuristicFinding) {
-                if ($suppressWeakContent) {
-                    $onlineStatus.suppressedFindings++
-                    return
-                }
-                $fileHash = ''
-                if ($hashCache.ContainsKey($full)) {
-                    $fileHash = [string]$hashCache[$full]
-                } elseif ($hashEligibleExt -contains $extLower -and $FileInfo.Length -le $maxHashBytes) {
-                    $fileHash = Get-CstFileHashSafe -Path $full
-                    $hashCache[$full] = $fileHash
-                }
-
-                $finding = New-CstFinding -Type $heuristicFinding.type -Severity $heuristicFinding.severity -Name $name -Location $full -Evidence $heuristicFinding.evidence -Detector 'HeuristicEngine' -Confidence $heuristicFinding.confidence -ObjectType 'File' -Hash $fileHash -SignerStatus 'NotEvaluated' -Entropy $heuristicFinding.entropy
-                $findings.Add($finding)
-                Write-CstLiveFinding -Finding $finding
-                return
-            }
-
-            if (-not (Test-CstPerFileBudgetExceeded -StartedUtc $fileAnalysisStart -MaxMilliseconds $perFileBudgetMs)) {
-                $archiveFindings = Find-CstArchiveFindings -FileInfo $FileInfo -Rules $Rules -Policy $policy -SuppressWeakContent $suppressWeakContent
-                foreach ($archiveFinding in @($archiveFindings)) {
-                    $findings.Add($archiveFinding)
-                    Write-CstLiveFinding -Finding $archiveFinding
-                }
-            } else {
-                $perFileBudgetSkips++
-                & $addSkipEntry -Reason 'PerFileBudget' -Path $full -Detail ("Skipped before archive inspection phase; maxPerFileAnalysisMs={0}." -f $perFileBudgetMs) -DetailPayload @{
-                    phase = 'ArchiveInspection'
-                    maxPerFileAnalysisMs = $perFileBudgetMs
-                }
-                return
-            }
-
-            $isRiskScriptPath = (
-                $pathLower -like '*\appdata\local\temp\*' -or
-                $pathLower -like '*\appdata\roaming\microsoft\windows\start menu\programs\startup\*' -or
-                $pathLower -like '*\users\public\downloads\*' -or
-                $pathLower -like '*\windows\temp\*'
-            )
-            if ($isRiskScriptPath -and $nameLower -match '\.(ps1|vbs|js|jse|wsf|bat|cmd)$') {
-                if ($suppressWeakContent) {
-                    $onlineStatus.suppressedFindings++
-                    return
-                }
-                $finding = New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name $name -Location $full -Evidence 'Script file located in high-risk user path' -Detector 'PathHeuristic' -Confidence 0.45 -ObjectType 'File' -SignerStatus 'NotEvaluated'
-                $findings.Add($finding)
-                Write-CstLiveFinding -Finding $finding
-            }
+            . $runContentDetectors $FileInfo $fileAnalysisStart $sha1Lookup
         } catch {
             $errors++
             $errorType = if ($_.Exception -and $_.Exception.GetType()) { $_.Exception.GetType().FullName } else { 'UnknownException' }
@@ -3938,8 +4063,8 @@ function Find-CstFileFindings {
     }
 
 
-    if ($onlineActive -and $onlinePending.Count -gt 0) {
-        & $flushOnlineBatch
+    if ($onlineDeferredContent.Count -gt 0 -or $onlinePending.Count -gt 0) {
+        . $drainOnlineDeferredContent
     }
 
     $coverage = 'Complete'

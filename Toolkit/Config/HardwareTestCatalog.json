@@ -169,6 +169,20 @@
                                           }
                   },
                   {
+                      "id":  "cpu_stress",
+                      "displayName":  "CPU Timed Stress",
+                      "category":  "CPU",
+                      "order":  13,
+                      "profiles":  {
+                                       "quick":  true,
+                                       "extended":  true
+                                   },
+                      "implementations":  {
+                                              "windows":  "RunCpuStressTest",
+                                              "uefi":  "CpuRunStressTest"
+                                          }
+                  },
+                  {
                       "id":  "mem_address",
                       "displayName":  "Address Test",
                       "category":  "Memory",
@@ -426,12 +440,12 @@
                                       "fpuLoops":  500000,
                                       "memoryPatternPasses":  4,
                                       "memoryBlockCount":  6,
-                                      "memorySizeCapMb":  768,
-                                      "memorySizeFloorMb":  384,
-                                      "memoryFreePercent":  0.25,
-                                      "memoryWinPeMb":  384,
-                                      "storageRandomReads":  256,
-                                      "storageLinearReadMb":  512,
+                                      "memorySizeCapMb":  1536,
+                                      "memorySizeFloorMb":  512,
+                                      "memoryFreePercent":  0.35,
+                                      "memoryWinPeMb":  512,
+                                      "storageRandomReads":  512,
+                                      "storageLinearReadMb":  1024,
                                       "cpuStressSeconds":  120,
                                       "smartSelfTestTimeoutSec":  300,
                                       "failOnSkipInExtended":  true,
@@ -443,5 +457,5 @@
                  },
     "version":  1,
     "source":  "D:\\Robert\\Desktop\\App Project Builds\\Core Hardware Utility\\Core_Hardware_Utility.json",
-    "syncedAt":  "2026-07-09T02:32:20.8845735-05:00"
+    "syncedAt":  "2026-07-10T11:34:45.5363787-05:00"
 }

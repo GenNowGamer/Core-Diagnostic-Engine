@@ -43128,14 +43128,15 @@
                              "provider":  "circl",
                              "endpoint":  "https://hashlookup.circl.lu/bulk/sha1",
                              "applyToModes":  [
+                                                  "ThreatScan",
                                                   "FullScan",
                                                   "CustomScan"
                                               ],
                              "batchSize":  40,
-                             "timeoutSeconds":  8,
+                             "timeoutSeconds":  5,
                              "minTrustScore":  90,
                              "skipInWinPE":  true,
-                             "enabledForThreatScan":  false,
+                             "enabledForThreatScan":  true,
                              "maxLookupsPerScan":  5000,
                              "sha256ProviderNote":  "CIRCL bulk endpoint is SHA-1 only; SHA-256 reputation requires a future provider."
                          },
