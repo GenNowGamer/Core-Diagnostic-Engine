@@ -21,7 +21,7 @@
 6. Select **actionable** findings and use **Quarantine Selected**, **Remove Selected**, or **Restore from Manifest...** — no separate post-scan operator dialog
 7. **Archive hits:** inner `zip::entry` rows are review-only; select the **parent .zip/.jar** row to quarantine or remove the container
 
-> **ThreatScan** is a high-risk-path triage (not full-disk AV). Prefer **FullScan** or **CustomScan** on a suspect tree when hunting. Authenticode timeouts appear as low-confidence warnings (“signer not verified”), not confirmed malware.
+> **ThreatScan** is a high-risk-path triage (not full-disk AV). Prefer **FullScan** or **CustomScan** on a suspect tree when hunting. Authenticode timeouts appear as low-confidence warnings (“signer not verified”), not confirmed malware. Empty EFI hash baselines appear under **Coverage** (signer-only boot checks still run), not as a findings row.
 
 > **WinPE + offline OS:** Boot menu **option 2** so CST can scan the customer's Windows folder. Without offline load, CST may show "no Windows volume found."
 

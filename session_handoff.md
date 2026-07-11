@@ -1,7 +1,12 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-10  
+**Last updated:** 2026-07-11  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-11 update — EFI hash baseline gaps as coverage
+
+- **CST** — Empty EFI hash allowlist no longer creates a Suspicious finding/warning; message is in Coverage. See `Toolkit\session_handoff.md` and CST `CST\session_handoff.md`.
+- **Publish** — `Toolkit\App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (**7/11/2026 ~4:11 PM**).
 
 ## 2026-07-10 update — CST Scan Results + detection/archive remediation
 

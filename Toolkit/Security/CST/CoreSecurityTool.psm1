@@ -5341,6 +5341,7 @@ function Find-CstBootChainFindings {
         errors = 0
         targetsResolved = @()
         filesMonitored = @()
+        coverageNotes = @()
     }
 
     if (-not [bool]$Rules.bootPolicies.enabled) {
@@ -5348,6 +5349,7 @@ function Find-CstBootChainFindings {
     }
 
     $findings = New-Object System.Collections.Generic.List[object]
+    $coverageNotes = New-Object System.Collections.Generic.List[string]
     $signatureCache = @{}
     $targets = Find-CstBootTargetLocations -TargetResolution $TargetResolution -Rules $Rules
     $result.targetsResolved = @($targets.windowsRoots)
@@ -5368,21 +5370,25 @@ function Find-CstBootChainFindings {
     $hashPolicyUnavailable = $false
 
     if ($hashAllowlist.Count -eq 0 -and $integrityMode -in @('HashOnly', 'SignerPlusHash')) {
-        # Empty hash baselines: keep signer verification active and report that hash enforcement is unavailable.
-        $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name 'EFI hash baselines not configured' -Location 'BootHashPolicy' -Evidence 'BootFileIntegrity is running signer verification; hash allowlist/profiles are empty so hash enforcement is inactive until baselines are populated.' -Detector 'BootFileIntegrity' -Confidence 0.3 -ObjectType 'BootConfiguration' -CanRemediate $false))
-        $result.warnings++
+        # Empty hash baselines: keep signer verification active; report as coverage (not a Suspicious finding).
         if ($integrityMode -eq 'SignerPlusHash') {
             # Avoid pretending hash checks ran when no baselines exist.
             $integrityMode = 'SignerOnly'
         }
-    }
 
-    if ($hashPolicyRequired -and $hashAllowlist.Count -eq 0) {
+        if ($hashPolicyRequired) {
+            $hashPolicyUnavailable = $true
+            $profileInfo = if (@($resolvedHashPolicy.matchedProfiles).Count -gt 0) { (@($resolvedHashPolicy.matchedProfiles) -join ', ') } else { 'none' }
+            $ctx = $resolvedHashPolicy.context
+            [void]$coverageNotes.Add(("EFI hash baselines/profiles empty or unresolved; hash enforcement inactive (signer checks may still run). build={0}; product={1}; matchedProfiles={2}." -f $ctx.buildNumber, $ctx.productName, $profileInfo))
+        } else {
+            [void]$coverageNotes.Add('EFI hash baselines empty; BootFileIntegrity running signer-only (hash enforcement inactive until baselines are populated).')
+        }
+    } elseif ($hashPolicyRequired -and $hashAllowlist.Count -eq 0) {
         $hashPolicyUnavailable = $true
         $profileInfo = if (@($resolvedHashPolicy.matchedProfiles).Count -gt 0) { (@($resolvedHashPolicy.matchedProfiles) -join ', ') } else { 'none' }
         $ctx = $resolvedHashPolicy.context
-        $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name 'EFI hash allowlist profile unresolved' -Location 'BootHashPolicy' -Evidence "Hash enforcement is enabled but no allowlist hashes matched current OS context. build=$($ctx.buildNumber); product=$($ctx.productName); matchedProfiles=$profileInfo" -Detector 'BootFileIntegrity' -Confidence 0.42 -ObjectType 'BootConfiguration' -CanRemediate $false))
-        $result.warnings++
+        [void]$coverageNotes.Add(("EFI hash allowlist unavailable for this OS context; hash enforcement inactive. build={0}; product={1}; matchedProfiles={2}." -f $ctx.buildNumber, $ctx.productName, $profileInfo))
     }
 
     $bootIntegrityFailure = $false
@@ -5597,6 +5603,7 @@ function Find-CstBootChainFindings {
     }
 
     $result.findings = @($findings.ToArray())
+    $result.coverageNotes = @($coverageNotes.ToArray())
     return $result
 }
 
@@ -5866,6 +5873,7 @@ function Invoke-CstScan {
         errors = 0
         targetsResolved = @()
         filesMonitored = @()
+        coverageNotes = @()
     }
     if ($Mode -in @('FullScan', 'CustomScan')) {
         Write-CstLiveProgress -Scanned $postScanScanned -ProgressTotal $maxFiles -CurrentPath '' -ElapsedSec (((Get-Date) - $start).TotalSeconds) -Phase 'Scanning' -PhasePercent 96.0 -OverallPercent 96.0 -Detail 'Running boot chain checks...'
@@ -5964,6 +5972,11 @@ function Invoke-CstScan {
     if ($tsSkips -gt 0) { [void]$coverageNotes.Add("Trusted-signer early exits: $tsSkips (Microsoft-family only; cheap spot-check still ran).") }
     if (@($confidenceFilteredFindings).Count -gt 0) {
         [void]$coverageNotes.Add("Weak single-signal findings moved to audit channel: $(@($confidenceFilteredFindings).Count).")
+    }
+    foreach ($bootNote in @($bootData.coverageNotes)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$bootNote)) {
+            [void]$coverageNotes.Add([string]$bootNote)
+        }
     }
     $coverageReason = ($coverageNotes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ' '
 

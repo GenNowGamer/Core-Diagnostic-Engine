@@ -1,6 +1,12 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-10
+**Last updated:** 2026-07-11
+
+## 2026-07-11 — EFI hash baseline gaps as coverage (not findings)
+
+- **CST** — Empty/unresolved EFI hash allowlist no longer emits a Suspicious `BootHashPolicy` finding or warning count; message is in **Coverage** (`coverageReason`). Signer-only boot checks still run.
+- **Effect** — Clean FullScans should not show “Review — 1 warning” solely for unconfigured EFI hash baselines.
+- **Publish** — `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (CST runtime sync). Canonical publish **7/11/2026 ~4:11 PM** (`CDE.exe`).
 
 ## 2026-07-10 — CST Scan Results UX + detection hardening + archive remediation
 
@@ -8,8 +14,8 @@
 - **Horizontal scroll** — Findings grid uses an outer horizontal `ScrollViewer` with fixed column widths. App-wide `ScrollBar` style clears forced `Width=12` for **horizontal** bars (was collapsing to a tiny button).
 - **Verdict / coverage** — Mode labels in verdict/action text (ThreatScan vs FullScan vs CustomScan); coverage notes surface Partial / known-good skips / trusted-signer exits.
 - **Archive findings** — Inner `zip::entry` rows stay review-only; CST also emits an actionable **parent archive** `File` finding so techs can Quarantine/Remove the `.zip`/`.jar`. UI notes explain the path.
-- **CST engine (synced)** — ThreatScan includes DLLs + light archive peek; Authenticode timeouts emit Low/Unknown (not silence); trusted-signer early exit narrowed to Microsoft-family + cheap spot-check on known-good/trusted skips; stronger correlation promote; empty EFI hash baselines → signer-only + explicit note. See CST `CST\session_handoff.md`.
-- **Publish** — `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (GUI + CST runtime sync). Latest GUI payload this session ~**2:54 PM**.
+- **CST engine (synced)** — ThreatScan includes DLLs + light archive peek; Authenticode timeouts emit Low/Unknown (not silence); trusted-signer early exit narrowed to Microsoft-family + cheap spot-check on known-good/trusted skips; stronger correlation promote; empty EFI hash baselines → signer-only + coverage note (see 2026-07-11). See CST `CST\session_handoff.md`.
+- **Publish** — `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (GUI + CST runtime sync). Latest GUI payload this session ~**2:54 PM**; 2026-07-11 coverage-note publish ~**4:11 PM**.
 
 ## 2026-07-10 — Startup Manager CST StartupEntryScan
 
