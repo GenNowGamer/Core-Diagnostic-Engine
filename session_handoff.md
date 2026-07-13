@@ -358,9 +358,9 @@ Cross-repo work in **Core Hardware Utility** (`CoreDiag.efi`). Plan: `Core Hardw
 Check staged artifacts in the repo (optional):
 
 ```powershell
-Test-Path "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\EFI\boot\refind.conf"
-Test-Path "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\EFI\CDE\CHUPrep.efi"
-Test-Path "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\EFI\CDE\CoreDiag.efi"
+Test-Path ".\Toolkit\EFI\boot\refind.conf"
+Test-Path ".\Toolkit\EFI\CDE\CHUPrep.efi"
+Test-Path ".\Toolkit\EFI\CDE\CoreDiag.efi"
 ```
 
 Check the live USB (replace `H:` with your drive letter):

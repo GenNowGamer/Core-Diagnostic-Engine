@@ -21,13 +21,15 @@ This toolkit uses an allowlist for monetization-safe tool distribution.
 
 ## Not in Git (clone / fresh checkout)
 
-The GitHub repository tracks **source only** (~50 MB). These paths stay on your dev machine or USB but are **gitignored** — copy or rebuild them locally:
+The GitHub repository tracks **source only**. These paths stay on your build machine or USB but are **gitignored** — copy or rebuild them locally. Details: `THIRD_PARTY_NOTICES.md` (repo root).
 
 | Path | How to obtain |
 |------|----------------|
-| `sources/boot.wim` | `Scripts/Customize-WinPE.ps1` (Administrator) |
+| `sources/boot.wim` | Windows ADK + `Scripts/Customize-WinPE.ps1` (Administrator) |
 | `Deploy/*.iso`, `WinPE/*.iso`, `Mount/` | Local build outputs — do not commit |
-| `Diagnostics/Memory/MemTest86/memtest86-usb.img` | Official MemTest86 vendor download (~1 GB USB image) |
+| `EFI/microsoft/**`, `bootmgr.efi`, `boot/bootsect.exe`, `HALP/oscdimg.exe` | Windows ADK Deployment Tools / WinPE layout |
+| `EFI/CDE/memtest.efi`, `Diagnostics/Memory/WinMemoryDiag/memtest.efi` | `Ensure-BootArtifacts.ps1` (from Windows kits) |
+| `Diagnostics/Memory/MemTest86/*` vendor zip contents | Official MemTest86 download ([memtest86.com](https://www.memtest86.com)); keep `imageUSB.exe` / USB image local |
 | `Tools/Firefox/` | Portable browser payload — deploy via `SyncUSB.bat` / acquire flow |
 | `CDE.exe`, `CDE/ToolkitGUI/bin/...` | `App/Publish-ToolkitGUI.ps1` |
 | `Tools/Boot/PCDoctor/` | Legacy proprietary payload — not distributed in git |

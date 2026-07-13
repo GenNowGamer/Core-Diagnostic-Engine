@@ -7,7 +7,7 @@
     Run as Administrator. Requires Windows ADK (DISM).
 #>
 
-$CDE_ROOT  = "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit"
+$CDE_ROOT  = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $WIM_PATH  = "$CDE_ROOT\sources\boot.wim"
 $MOUNT_DIR = "$CDE_ROOT\Mount\WinPE"
 $STARTNET  = "$CDE_ROOT\Mount\WinPEWork\startnet.cmd"

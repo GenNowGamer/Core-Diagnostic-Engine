@@ -555,9 +555,9 @@ Initial PDF tables showed scrambled column alignment (header/body `Cell()` mix +
 
 ```powershell
 dotnet run --project Toolkit\App\UserGuideGenerator -c Release -- `
-  "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit" `
-  "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\Docs\UserGuide" `
-  "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\HALP\CDE_User_Guide.pdf"
+  ".\Toolkit" `
+  ".\Toolkit\Docs\UserGuide" `
+  ".\Toolkit\HALP\CDE_User_Guide.pdf"
 ```
 
 ---

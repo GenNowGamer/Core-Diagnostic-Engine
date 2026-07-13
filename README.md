@@ -41,7 +41,7 @@ Current field status:
 - **CPU SIMD on PowerShell 5.1** (2026-07-03): `CdeCpuSimdCli.exe` (published with ToolkitGUI) runs real MMX/SSE tests on Win10/11 inbox PS 5.1; Diag & Repair CPU rows show Pass/Fail instead of stub **Warn**. See `Toolkit\session_handoff.md`.
 - **CST remediation USB root** (2026-07-03): Malware Cleanup remediation works when the toolkit runs from a drive-letter USB root (`G:\`).
 - **Diag & Repair CST status** (2026-07-03): CST scans with warnings show **Warn** in the results table (not **N/A**).
-- **GitHub source** (2026-07-03): `https://github.com/GenNowGamer/Core-Diagnostic-Engine` — source-only clone (~50 MB). Rebuild with `Toolkit\App\Publish-ToolkitGUI.ps1`; large binaries not in git — see `Toolkit\Tools\PLACEHOLDER_ACQUISITION.md`.
+- **GitHub source** (2026-07-03): `https://github.com/GenNowGamer/Core-Diagnostic-Engine` — source-only clone. Rebuild with `Toolkit\App\Publish-ToolkitGUI.ps1`; Microsoft ADK/WinPE and PassMark MemTest86 binaries are **not** in git — see `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `Toolkit\Tools\PLACEHOLDER_ACQUISITION.md`.
 - **Temp File Cleaner skip policy** (2026-07-09): Locked, in-use, and access-denied temp files are skipped without workflow warnings; cleanup reports success when only expected skips remain. See `Toolkit\session_handoff.md`.
 
 ## Session status (2026-07-03)
@@ -391,14 +391,14 @@ For CHU onboarding in this repo:
 | `update_tools_manifest.ps1` | Regenerate `tools_manifest.json` after you add or change files under `Tools\` |
 | `Ensure-BootArtifacts.ps1` | Copy `%SystemRoot%\Boot\EFI\memtest.efi` into `Boot\WinMemoryDiag\` and refresh the manifest (Admin not required; DISM-free) |
 
-Quick CHU staging example:
+Quick CHU staging example (adjust EDK2 build output path for your machine):
 
 ```powershell
 Copy-Item -Force `
-  "D:\Robert\Desktop\App Project Builds\edk2\Build\CoreDiagPkg\RELEASE_VS2022\X64\CoreDiag.efi" `
-  "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\Tools\Boot\CoreHardwareUtility\CoreDiag.efi"
+  "<edk2>\Build\CoreDiagPkg\RELEASE_VS2022\X64\CoreDiag.efi" `
+  ".\Toolkit\Tools\Boot\CoreHardwareUtility\CoreDiag.efi"
 
-cd "D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\Tools"
+Set-Location .\Toolkit\Tools
 .\update_tools_manifest.ps1
 ```
 

@@ -3,8 +3,8 @@
     Delegates to the canonical publish script under Toolkit\App\.
 
 .NOTES
-    User-facing launcher is always:
-    D:\Robert\Desktop\App Project Builds\Core Diagnostic Engine\Toolkit\CDE.exe
+    User-facing launcher is always Toolkit\CDE.exe next to this tree
+    (canonical publish: Toolkit\App\Publish-ToolkitGUI.ps1).
 #>
 param(
     [switch]$Clean,
