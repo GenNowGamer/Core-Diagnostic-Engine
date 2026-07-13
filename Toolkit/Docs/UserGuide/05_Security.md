@@ -16,10 +16,11 @@
 1. Sidebar → **Malware Cleanup**
 2. Click **Open** on **Core Security Tool**
 3. In the config dialog, set scan type (**ThreatScan** / **FullScan** / **CustomScan**), detection scope (**All** recommended), and optional custom paths
-4. The **CST Scan Results** window opens immediately with live progress (same layout as File Manager / Startup Manager / Process Analyzer)
+4. The **CST Scan Results** window opens immediately with live progress (same layout as File Manager / Startup Manager / Process Analyzer). Pre-scan steps (targets, known-good baselines, path discovery) and file analysis both update the progress panel — the window should not sit idle with no status
 5. When finished, the same window shows the verdict (with scan-mode label), metrics, coverage notes, and findings
-6. Select **actionable** findings and use **Quarantine Selected**, **Remove Selected**, or **Restore from Manifest...** — no separate post-scan operator dialog
-7. **Archive hits:** inner `zip::entry` rows are review-only; select the **parent .zip/.jar** row to quarantine or remove the container
+6. Use **Open Report** to open the operator PDF (`Logs\CST_Scan_*.pdf`) generated when results appear
+7. Select **actionable** findings and use **Quarantine Selected**, **Remove Selected**, or **Restore from Manifest...** — no separate post-scan operator dialog
+8. **Archive hits:** inner `zip::entry` rows are review-only; select the **parent .zip/.jar** row to quarantine or remove the container
 
 > **ThreatScan** is a high-risk-path triage (not full-disk AV). Prefer **FullScan** or **CustomScan** on a suspect tree when hunting. Authenticode timeouts appear as low-confidence warnings (“signer not verified”), not confirmed malware. Empty EFI hash baselines appear under **Coverage** (signer-only boot checks still run), not as a findings row.
 
@@ -53,9 +54,9 @@ CDE separates **active scanning** from **configuration audits**:
 1. Sidebar → **Hijack & Scam Repair**
 2. Click **Scan** (becomes **Re-Scan** after the first completed scan)
 3. While scanning, the findings grid shows a centered **Scanning...** overlay (same pattern as Startup Manager loading)
-4. Review flagged rows in the grid; select a row for the **detail panel** below (location, current value, repair action, guidance)
+4. Review flagged rows in the grid; select a row for **Finding Details** below the grid (location, current value, repair action, guidance). Drag the splitter between Findings and Finding Details to resize
 5. Check **FIX** on repairable rows, or click **Select repairable** to check all flagged items that can be fixed here
-6. Click **Repair Selected** for bulk fixes, or **Repair this item** in the detail pane for one row
+6. Click **Repair Selected** for bulk fixes, or **Repair this item** in Finding Details for one row
 
 ### Grid columns
 
@@ -85,7 +86,7 @@ Use **Show scan log** in the detail toolbar if you need the raw workflow output.
 
 ### Quick Repairs drawer
 
-Expand **Quick Repairs** at the bottom of the view for bulk scripts (browser, network, security settings, repair-all). These run full repair workflows and may require elevation.
+Expand **Quick Repairs** at the bottom of the view for bulk scripts (browser, network, security settings, repair-all). These run full repair workflows and may require elevation. Quick Repairs sits in its own bottom row so it does **not** cover **Finding Details**.
 
 > **Tip:** Scan results stay in memory when you switch to another sidebar tool and return — you do not need to re-scan to review findings. Run **Re-Scan** after making system changes.
 

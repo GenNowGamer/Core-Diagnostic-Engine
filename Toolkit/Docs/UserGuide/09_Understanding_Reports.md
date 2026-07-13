@@ -27,6 +27,7 @@ After a workflow or scan finishes, use **Open Report** in the tool, workflow win
 | **Hijack & Scam Repair** | **Open Report** after a scan |
 | **Process Analyzer** | **Open Report** after processes are loaded |
 | **S.M.A.R.T. Analyzer** | **Open Report** after a scan |
+| **CST Scan Results** | **Open Report** when live CST results finish (Malware Cleanup / File Manager / Startup Manager / Process Analyzer / Core Security Tool) |
 | **Diag & Repair** | **Dashboard → Case timeline → Open Report** when a work order is active, or open the matching `.pdf` in `Logs\` (no in-view button; live progress stays on the Diag screen) |
 | **Disk & Boot Repair** | **Dashboard → Case timeline → Open Report**, or browse `Logs\` |
 

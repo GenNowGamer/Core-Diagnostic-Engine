@@ -83,10 +83,15 @@ try {
         }
     }
 
-    $overall = Set-WorkflowOverallHealth -WorkflowResult $workflow
+    $null = Set-WorkflowOverallHealth -WorkflowResult $workflow
 
-    $workflow | ConvertTo-Json -Depth 10
-    Generate-Report -WorkflowResult $workflow | Out-Null
+    # Emit markers on the success stream so the GUI (RedirectStandardOutput) can
+    # locate the JSON deliverable. Write-Host / Write-Log alone are not reliably captured.
+    $paths = Generate-Report -WorkflowResult $workflow
+    Write-Output "Report saved: $($paths.JsonPath)"
+    if (Test-Path -LiteralPath $paths.JsonPath) {
+        Get-Content -LiteralPath $paths.JsonPath -Raw
+    }
 }
 catch {
     Write-Error "SmartAnalyzer report failed: $($_.Exception.Message)"

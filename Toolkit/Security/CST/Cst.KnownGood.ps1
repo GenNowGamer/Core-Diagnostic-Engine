@@ -111,10 +111,17 @@ function Resolve-CstKnownGoodHashSet {
         }
 
         if ($profile.PSObject.Properties['files']) {
-            foreach ($relPath in @($profile.files)) {
+            $profileFiles = @($profile.files)
+            $fileIndex = 0
+            foreach ($relPath in $profileFiles) {
+                $fileIndex++
                 $rel = ([string]$relPath).Trim().TrimStart('\', '/')
                 if ([string]::IsNullOrWhiteSpace($rel)) { continue }
                 $fullPath = Join-Path $rulesDir $rel
+                if (Get-Command Write-CstLiveProgress -ErrorAction SilentlyContinue) {
+                    $phasePct = [math]::Min(95.0, [math]::Round(($fileIndex / [math]::Max(1, $profileFiles.Count)) * 100.0, 1))
+                    Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath $fullPath -ElapsedSec 0 -Phase 'TargetPrep' -PhasePercent $phasePct -OverallPercent ([math]::Round(10.5 + ($phasePct * 0.004), 1)) -Detail ("Loading known-good baseline {0}/{1}: {2}" -f $fileIndex, $profileFiles.Count, [System.IO.Path]::GetFileName($rel))
+                }
                 Import-CstKnownGoodBaselineFile -FilePath $fullPath -HashSet $set | Out-Null
             }
         }
@@ -185,6 +192,9 @@ function Initialize-CstKnownGoodStore {
     }
 
     $storageMode = if ($policy.PSObject.Properties['storageMode']) { [string]$policy.storageMode } else { 'Memory' }
+    if (Get-Command Write-CstLiveProgress -ErrorAction SilentlyContinue) {
+        Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath '' -ElapsedSec 0 -Phase 'TargetPrep' -PhasePercent 30.0 -OverallPercent 10.6 -Detail ("Resolving known-good hash allowlists ({0})..." -f $storageMode)
+    }
     $resolved = Resolve-CstKnownGoodHashSet -Rules $Rules -RulesPath $RulesPath -Context $Context
     $memorySet = $resolved.hashSet
 
@@ -192,6 +202,9 @@ function Initialize-CstKnownGoodStore {
     $sqlitePath = ''
     $sqliteWarning = ''
     if ($storageMode -eq 'Sqlite') {
+        if (Get-Command Write-CstLiveProgress -ErrorAction SilentlyContinue) {
+            Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath '' -ElapsedSec 0 -Phase 'TargetPrep' -PhasePercent 55.0 -OverallPercent 10.8 -Detail 'Opening known-good SQLite goodware database...'
+        }
         $rulesDir = Get-CstRulesDirectory -RulesPath $RulesPath
         $sqliteRel = if ($policy.PSObject.Properties['sqlitePath'] -and -not [string]::IsNullOrWhiteSpace([string]$policy.sqlitePath)) {
             [string]$policy.sqlitePath

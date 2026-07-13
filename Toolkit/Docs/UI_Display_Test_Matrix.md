@@ -31,9 +31,10 @@ Use this checklist when validating responsive layout changes across display size
 
 ### Hijack & Scam Repair
 - [ ] Toolbar buttons wrap on narrow widths (no horizontal clip)
-- [ ] Findings grid and detail pane resize via AvalonDock split
+- [ ] Findings grid and Finding Details resize via GridSplitter (both remain visible)
+- [ ] Expanding Quick Repairs does not cover Finding Details
 - [ ] Scan log and Quick Repairs footer remain reachable
-- [ ] Detail panel scrolls when content is long
+- [ ] Finding Details scrolls when content is long
 
 ### Uninstall Manager
 - [ ] All DataGrid columns visible or horizontally scrollable

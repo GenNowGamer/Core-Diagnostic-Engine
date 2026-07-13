@@ -45,7 +45,7 @@ This chapter covers the main **find problems** tools in the MAIN sidebar section
 2. Select a drive from the list
 3. Click **Scan** (or refresh)
 4. Review overall health badge and attribute table
-5. **Open Report** if you need a PDF record (`Logs\`)
+5. When the scan finishes, **Open Report** enables and opens the PDF under `Logs\` (built from the scan results — status should not stay on “Saving…” forever)
 
 ### Next steps
 

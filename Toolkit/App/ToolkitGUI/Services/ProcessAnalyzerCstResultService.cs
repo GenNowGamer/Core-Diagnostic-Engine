@@ -119,6 +119,130 @@ namespace ToolkitGUI.Services
             return true;
         }
 
+        /// <summary>
+        /// Writes structured scan JSON under Runtime/Data/scans and an operator PDF under Logs.
+        /// </summary>
+        public static bool TryEnsureOperatorPdf(
+            ProcessAnalyzerCstScanPresentation presentation,
+            out string pdfPath,
+            out string? error)
+        {
+            pdfPath = string.Empty;
+            error = null;
+            if (presentation is null)
+            {
+                error = "Presentation is null.";
+                return false;
+            }
+
+            try
+            {
+                var document = BuildTabularReportDocument(presentation);
+                var paths = TabularScanReportService.EnsureReports(document);
+                if (!TabularScanReportService.TryGeneratePdf(document, paths.PdfPath, out error))
+                    return false;
+
+                pdfPath = paths.PdfPath;
+                presentation.ReportPdfPath = pdfPath;
+                return File.Exists(pdfPath);
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static TabularScanReportDocument BuildTabularReportDocument(
+            ProcessAnalyzerCstScanPresentation presentation)
+        {
+            var headers = new[]
+            {
+                "Severity", "Type", "Name", "Detector", "Warning", "Confidence", "Location", "Evidence", "Note"
+            };
+
+            var rows = new List<IReadOnlyList<string>>();
+            foreach (var f in presentation.Findings)
+            {
+                rows.Add(new[]
+                {
+                    f.Severity,
+                    f.Type,
+                    f.Name,
+                    f.Detector,
+                    f.WarningBadge,
+                    f.ConfidenceDisplay,
+                    f.Location,
+                    f.Evidence,
+                    f.SelectionNote
+                });
+            }
+
+            foreach (var f in presentation.SuppressedFindings)
+            {
+                rows.Add(new[]
+                {
+                    f.Severity,
+                    f.Type,
+                    f.Name,
+                    f.Detector,
+                    string.IsNullOrWhiteSpace(f.WarningBadge) ? "Suppressed" : f.WarningBadge,
+                    f.ConfidenceDisplay,
+                    f.Location,
+                    f.Evidence,
+                    "Suppressed (outside strict scope)"
+                });
+            }
+
+            var overall = presentation.Verdict switch
+            {
+                "Threat" => "Critical",
+                "Incomplete" => "Warning",
+                "Review" => "Warning",
+                "Suspicious" => "Warning",
+                _ => "Healthy"
+            };
+
+            var title = presentation.IsStartupEntryScan
+                ? "CST Startup Entry Scan"
+                : string.IsNullOrWhiteSpace(presentation.ScanMode)
+                    ? "CST Scan Report"
+                    : $"CST {presentation.ScanMode} Report";
+
+            var summaryParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(presentation.ProcessName))
+                summaryParts.Add(presentation.ProcessName);
+            if (!string.IsNullOrWhiteSpace(presentation.TargetPath))
+                summaryParts.Add(presentation.TargetPath);
+            if (!string.IsNullOrWhiteSpace(presentation.VerdictDetail))
+                summaryParts.Add(presentation.VerdictDetail);
+            if (!string.IsNullOrWhiteSpace(presentation.ActionSummary))
+                summaryParts.Add(presentation.ActionSummary);
+            if (!string.IsNullOrWhiteSpace(presentation.CoverageReason))
+                summaryParts.Add($"Coverage: {presentation.CoverageReason}");
+
+            return new TabularScanReportDocument
+            {
+                WorkflowName = "CST_Scan",
+                Title = title,
+                Summary = string.Join(" — ", summaryParts),
+                OverallHealth = overall,
+                GeneratedAt = DateTime.Now,
+                ColumnHeaders = headers,
+                Rows = rows,
+                Metrics = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["FilesAnalyzed"] = presentation.ItemsScanned.ToString(),
+                    ["Threats"] = presentation.ThreatsFound.ToString(),
+                    ["Warnings"] = presentation.WarningsFound.ToString(),
+                    ["ScanErrors"] = presentation.ScanErrors.ToString(),
+                    ["Findings"] = presentation.Findings.Count.ToString(),
+                    ["Suppressed"] = presentation.SuppressedFindings.Count.ToString(),
+                    ["Verdict"] = presentation.Verdict
+                }
+            };
+        }
+
         private static bool TryParseProgressLine(string line, out CstScanProgressUpdate update)
         {
             update = null!;
@@ -136,24 +260,36 @@ namespace ToolkitGUI.Services
                     return false;
 
                 var percent = Math.Max(0.0, Math.Min(100.0, progress.OverallPercent ?? progress.Percent));
+                var phasePercent = progress.PhasePercent ?? -1;
                 var phase = (progress.Phase ?? string.Empty).Trim();
                 var phaseUpper = phase.ToUpperInvariant();
                 var detail = progress.Detail ?? string.Empty;
                 var currentPath = progress.CurrentPath ?? string.Empty;
+                var elapsedSec = progress.ElapsedSec;
 
                 string phaseText;
                 string caption;
                 if (phaseUpper == "TARGETPREP")
                 {
-                    phaseText = string.IsNullOrWhiteSpace(detail) ? "Preparing scan targets..." : detail;
-                    caption = "Preparing target roots and policy...";
+                    phaseText = string.IsNullOrWhiteSpace(detail) ? "Pre-scan checks..." : detail;
+                    caption = elapsedSec > 0
+                        ? $"Preparing targets, known-good baselines, and scan policy • {FormatElapsed(elapsedSec)}"
+                        : "Preparing targets, known-good baselines, and scan policy...";
+                    if (phasePercent >= 0)
+                        percent = Math.Max(percent, Math.Min(12.0, 1.0 + (phasePercent * 0.11)));
                 }
                 else if (phaseUpper == "ENUMERATING")
                 {
-                    phaseText = string.IsNullOrWhiteSpace(detail) ? "Enumerating scan candidates..." : detail;
+                    phaseText = string.IsNullOrWhiteSpace(detail)
+                        ? "Discovering scan locations..."
+                        : detail;
                     caption = progress.TargetCount > 0
-                        ? $"Enumerating: {progress.EnumeratedCandidates:N0} candidates • target {Math.Max(0, progress.TargetIndex):N0}/{progress.TargetCount:N0}"
-                        : $"Enumerating: {progress.EnumeratedCandidates:N0} candidates";
+                        ? $"Path discovery: {progress.EnumeratedCandidates:N0} candidates • target {Math.Max(0, progress.TargetIndex):N0}/{progress.TargetCount:N0}"
+                        : $"Path discovery: {progress.EnumeratedCandidates:N0} candidates";
+                    if (elapsedSec > 0)
+                        caption += $" • {FormatElapsed(elapsedSec)}";
+                    if (phasePercent >= 0)
+                        percent = Math.Max(percent, Math.Min(35.0, 10.0 + (phasePercent * 0.25)));
                 }
                 else if (phaseUpper == "COMPLETED")
                 {
@@ -162,10 +298,14 @@ namespace ToolkitGUI.Services
                 }
                 else if (progress.Scanned <= 0 && progress.EnumeratedCandidates > 0)
                 {
-                    phaseText = string.IsNullOrWhiteSpace(currentPath) ? "Scanning..." : $"Scanning: {Path.GetFileName(currentPath)}";
+                    phaseText = string.IsNullOrWhiteSpace(detail)
+                        ? (string.IsNullOrWhiteSpace(currentPath) ? "Discovering scan locations..." : $"Discovering: {Path.GetFileName(currentPath)}")
+                        : detail;
                     caption = string.IsNullOrWhiteSpace(detail)
                         ? $"Walking {progress.EnumeratedCandidates:N0} paths"
                         : detail;
+                    if (phasePercent >= 0)
+                        percent = Math.Max(percent, Math.Min(35.0, 10.0 + (phasePercent * 0.25)));
                 }
                 else
                 {
@@ -187,7 +327,9 @@ namespace ToolkitGUI.Services
                     PhaseText = phaseText,
                     Detail = caption,
                     CurrentPath = currentPath,
-                    VerdictDetail = string.IsNullOrWhiteSpace(detail) ? caption : detail
+                    VerdictDetail = string.IsNullOrWhiteSpace(detail) ? caption : detail,
+                    IsPreScanPhase = phaseUpper is "TARGETPREP" or "ENUMERATING"
+                        || (progress.Scanned <= 0 && progress.EnumeratedCandidates > 0)
                 };
                 return true;
             }
@@ -197,12 +339,21 @@ namespace ToolkitGUI.Services
             }
         }
 
+        private static string FormatElapsed(double elapsedSec)
+        {
+            var span = TimeSpan.FromSeconds(Math.Max(0, elapsedSec));
+            return span.TotalHours >= 1
+                ? span.ToString(@"h\:mm\:ss")
+                : span.ToString(@"m\:ss");
+        }
+
         private sealed class CstProgressEvent
         {
             public int Scanned { get; set; }
             public int ProgressTotal { get; set; }
             public double Percent { get; set; }
             public string? Phase { get; set; }
+            public double? PhasePercent { get; set; }
             public double? OverallPercent { get; set; }
             public int TargetIndex { get; set; }
             public int TargetCount { get; set; }
@@ -210,6 +361,7 @@ namespace ToolkitGUI.Services
             public string? Detail { get; set; }
             public string? CurrentPath { get; set; }
             public double EtaSec { get; set; }
+            public double ElapsedSec { get; set; }
         }
 
         public static bool TryBuildPresentation(
@@ -1454,6 +1606,8 @@ namespace ToolkitGUI.Services
         public string ActionSummary { get; init; } = string.Empty;
         public string CoverageReason { get; init; } = string.Empty;
         public string ArtifactPath { get; set; } = string.Empty;
+        /// <summary>Operator-facing PDF under Logs, generated when results are shown.</summary>
+        public string ReportPdfPath { get; set; } = string.Empty;
         public IReadOnlyList<ProcessAnalyzerCstFindingRow> Findings { get; init; } = Array.Empty<ProcessAnalyzerCstFindingRow>();
         public IReadOnlyList<ProcessAnalyzerCstFindingRow> SuppressedFindings { get; init; } = Array.Empty<ProcessAnalyzerCstFindingRow>();
         public IReadOnlyList<string> ErrorDetails { get; init; } = Array.Empty<string>();

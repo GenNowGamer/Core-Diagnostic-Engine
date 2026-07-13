@@ -818,7 +818,8 @@ namespace ToolkitGUI.ViewModels
             {
                 var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(result.Output)
                     ?? FindLatestCstArtifactPath();
-                WorkOrderService.TryRecordCstScanRun(artifactPath, path, presentation.Verdict);
+                WorkOrderService.TryRecordCstScanRun(
+                    artifactPath, path, presentation.Verdict, presentation.ReportPdfPath);
             }
 
             ProcessAnalyzerCstResultService.TryShowResults(result.Output, path, processName, owner);

@@ -879,7 +879,8 @@ namespace ToolkitGUI.Views
                     (presentation, rawOutput) =>
                     {
                         var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(rawOutput);
-                        WorkOrderService.TryRecordCstScanRun(artifactPath, primaryPath, presentation.Verdict);
+                        WorkOrderService.TryRecordCstScanRun(
+                            artifactPath, primaryPath, presentation.Verdict, presentation.ReportPdfPath);
                         SetStatus("CST scan completed.");
                     },
                     onFinished: () =>

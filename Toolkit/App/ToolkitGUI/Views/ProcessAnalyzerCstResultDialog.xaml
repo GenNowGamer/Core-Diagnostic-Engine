@@ -372,7 +372,7 @@
                            FontSize="13"
                            Foreground="{StaticResource TextSecondaryBrush}"
                            TextWrapping="Wrap"
-                           Text="Progress updates appear above. Results will replace this panel when the scan finishes."/>
+                           Text="Pre-scan checks (targets, known-good baselines, path discovery) and file analysis both report above. This panel is replaced when the scan finishes."/>
             </StackPanel>
         </Border>
 
@@ -423,6 +423,13 @@
                         Margin="0,0,10,0"
                         Style="{StaticResource SecondaryButtonStyle}"
                         Click="CopySummaryButton_Click"
+                        IsEnabled="False"/>
+                <Button x:Name="OpenReportButton"
+                        Content="Open Report"
+                        MinWidth="120"
+                        Margin="0,0,10,0"
+                        Style="{StaticResource ActionButtonStyle}"
+                        Click="OpenReportButton_Click"
                         IsEnabled="False"/>
                 <Button x:Name="QuarantineButton"
                         Content="Quarantine Selected"

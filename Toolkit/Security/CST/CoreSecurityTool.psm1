@@ -3409,18 +3409,24 @@ function Find-CstFileFindings {
     $peMetaCache = @{}
     $signatureCache = @{}
     $trustedSiblingDirCache = @{}
-    $hashIocIndex = ConvertTo-CstHashIocIndex -Rules $Rules
     $knownGoodSkips = 0
     $trustedSignerSkips = 0
     $dependencyTrustSkips = 0
     $contentScansPerformed = 0
     $onlineLookupsPerformed = 0
+    $prepStart = Get-Date
+    Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath '' -ElapsedSec 0 -Phase 'TargetPrep' -PhasePercent 5.0 -OverallPercent 10.2 -TargetCount @($Targets).Count -Detail 'Building malware hash IOC index...'
+    $hashIocIndex = ConvertTo-CstHashIocIndex -Rules $Rules
     $knownGoodContext = Get-CstBootHashProfileContext -EnvironmentMode $EnvironmentMode -TargetResolution ([PSCustomObject]@{})
     $knownGoodStore = $null
     try {
+        Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath '' -ElapsedSec (((Get-Date) - $prepStart).TotalSeconds) -Phase 'TargetPrep' -PhasePercent 25.0 -OverallPercent 10.5 -TargetCount @($Targets).Count -Detail 'Loading known-good baselines and goodware database...'
         $knownGoodStore = Initialize-CstKnownGoodStore -Rules $Rules -RulesPath $RulesPath -Context $knownGoodContext -MalwareIocIndex $hashIocIndex
+        $kgMode = if ($null -ne $knownGoodStore -and $knownGoodStore.PSObject.Properties['storageMode']) { [string]$knownGoodStore.storageMode } else { 'Off' }
+        Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath '' -ElapsedSec (((Get-Date) - $prepStart).TotalSeconds) -Phase 'TargetPrep' -PhasePercent 70.0 -OverallPercent 11.0 -TargetCount @($Targets).Count -Detail ("Known-good store ready ({0}). Building scan policy..." -f $kgMode)
     } catch {
         Write-Warning ("CST known-good store initialization failed: {0}" -f $_.Exception.Message)
+        Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath '' -ElapsedSec (((Get-Date) - $prepStart).TotalSeconds) -Phase 'TargetPrep' -PhasePercent 70.0 -OverallPercent 11.0 -TargetCount @($Targets).Count -Detail 'Known-good store unavailable; continuing with local detectors...'
     }
 
     try {
@@ -3431,6 +3437,7 @@ function Find-CstFileFindings {
     $policy = Get-CstScanPolicy -Mode $Mode -Rules $Rules -EnvironmentMode $EnvironmentMode
     $filePatterns = @($policy.filePatterns)
     $extensionSet = Get-CstFilePatternExtensionSet -FilePatterns $filePatterns
+    Write-CstLiveProgress -Scanned 0 -ProgressTotal 1 -CurrentPath '' -ElapsedSec (((Get-Date) - $prepStart).TotalSeconds) -Phase 'TargetPrep' -PhasePercent 90.0 -OverallPercent 11.5 -TargetCount @($Targets).Count -Detail ("Policy ready ({0} extension filter(s)). Starting path discovery..." -f @($extensionSet).Count)
     $visitedCandidatePaths = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     $hashEligibleExt = @($policy.hashEligibleExtensions)
     $threatScanRiskRegex = [string]$policy.threatScanRiskRegex
@@ -4030,17 +4037,24 @@ function Find-CstFileFindings {
             $lastEnumPhasePercent = $enumTargetFloor
         }
 
-        $targetStartDetail = if ($enablePipelineScan) {
+        $targetStartDetail = if ($enablePipelineScan -and $scanned -gt 0) {
             ("Starting target {0}/{1}: {2}" -f $enumTargetIndex, $enumTargetCount, $target)
         } else {
             ("Enumerating target {0}/{1}: {2}" -f $enumTargetIndex, $enumTargetCount, $target)
         }
-        $targetStartPhase = if ($enablePipelineScan) { 'Scanning' } else { 'Enumerating' }
-        $targetStartScanned = if ($enablePipelineScan) { $scanned } else { $enumeratedCandidates }
-        $targetStartOverall = Get-CstScanOverallPercent -Scanned $scanned -MaxFiles $MaxFiles
+        # While discovering paths (before any file content analysis), keep phase=Enumerating
+        # so overall % can advance instead of locking at the 10% scan floor.
+        $targetStartPhase = if ($enablePipelineScan -and $scanned -gt 0) { 'Scanning' } else { 'Enumerating' }
+        $targetStartScanned = if ($enablePipelineScan -and $scanned -gt 0) { $scanned } else { $enumeratedCandidates }
+        $targetStartOverall = if ($enablePipelineScan -and $scanned -gt 0) {
+            Get-CstScanOverallPercent -Scanned $scanned -MaxFiles $MaxFiles
+        } else {
+            [math]::Round(10.0 + ($lastEnumPhasePercent * 0.25), 1)
+        }
         Write-CstLiveProgress -Scanned $targetStartScanned -ProgressTotal $progressTotal -CurrentPath $target -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -Phase $targetStartPhase -PhasePercent $lastEnumPhasePercent -OverallPercent $targetStartOverall -TargetIndex $enumTargetIndex -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail $targetStartDetail
 
         $walkRoot = [string]$target.TrimEnd('\', '/')
+        Write-CstLiveProgress -Scanned $targetStartScanned -ProgressTotal $progressTotal -CurrentPath $walkRoot -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -Phase 'Enumerating' -PhasePercent $lastEnumPhasePercent -OverallPercent $targetStartOverall -TargetIndex $enumTargetIndex -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail ("Opening directory walk on {0}..." -f $walkRoot)
         try {
             foreach ($candidatePath in (Get-CstEnumerateCandidateFilePaths -RootPath $walkRoot -Extensions $extensionSet)) {
                 if (-not $visitedCandidatePaths.Add([string]$candidatePath)) { continue }
@@ -4057,11 +4071,12 @@ function Find-CstFileFindings {
                 if ($enumPhasePercent -lt $lastEnumPhasePercent) { $enumPhasePercent = $lastEnumPhasePercent }
                 $lastEnumPhasePercent = $enumPhasePercent
 
-                $walkProgressStep = if ($enablePipelineScan -and $scanned -eq 0) { 15 } else { 200 }
-                $walkProgressMs = if ($enablePipelineScan -and $scanned -eq 0) { 200 } else { 450 }
+                # Emit often while discovering paths so FullScan roots never look frozen.
+                $walkProgressStep = if ($scanned -eq 0) { 10 } elseif ($enablePipelineScan) { 50 } else { 200 }
+                $walkProgressMs = if ($scanned -eq 0) { 150 } elseif ($enablePipelineScan) { 300 } else { 450 }
                 $shouldEmitEnumProgress = ($enumeratedCandidates - $lastEnumProgressCandidates -ge $walkProgressStep) -or ((([DateTime]::UtcNow) - $lastEnumProgressUtc).TotalMilliseconds -ge $walkProgressMs)
                 if ($shouldEmitEnumProgress) {
-                    if ($enablePipelineScan) {
+                    if ($enablePipelineScan -and $scanned -gt 0) {
                         $walkScanPhasePercent = if ($progressTotal -gt 0) {
                             [math]::Min(100.0, [math]::Round(($scanned / [double]$progressTotal) * 100.0, 1))
                         } else {
@@ -4070,7 +4085,8 @@ function Find-CstFileFindings {
                         $walkScanOverall = Get-CstScanOverallPercent -Scanned $scanned -MaxFiles $MaxFiles
                         Write-CstLiveProgress -Scanned $scanned -ProgressTotal $progressTotal -CurrentPath $candidate.FullName -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -RecentAverageSec $recentAverageSec -MinEtaSampleSize 25 -MaxBudgetSec $timeLimitSec -Phase 'Scanning' -PhasePercent $walkScanPhasePercent -OverallPercent $walkScanOverall -TargetIndex $enumTargetIndex -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail ("Scanning {0:N0}/{1:N0} • walked {2:N0} paths (target {3}/{4})" -f $scanned, $progressTotal, $enumeratedCandidates, $enumTargetIndex, $enumTargetCount)
                     } else {
-                        Write-CstLiveProgress -Scanned $enumeratedCandidates -ProgressTotal ([math]::Max(1, $enumExpectedCandidates)) -CurrentPath $candidate.FullName -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -Phase 'Enumerating' -PhasePercent $enumPhasePercent -OverallPercent (10.0 + ($enumPhasePercent * 0.25)) -TargetIndex $enumTargetIndex -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail ("Enumerating target {0}/{1} ({2:N0} candidates found)" -f $enumTargetIndex, $enumTargetCount, $enumeratedCandidates)
+                        $enumOverall = [math]::Round(10.0 + ($enumPhasePercent * 0.25), 1)
+                        Write-CstLiveProgress -Scanned $enumeratedCandidates -ProgressTotal ([math]::Max(1, $enumExpectedCandidates)) -CurrentPath $candidate.FullName -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -Phase 'Enumerating' -PhasePercent $enumPhasePercent -OverallPercent $enumOverall -TargetIndex $enumTargetIndex -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail ("Discovering paths on target {0}/{1} ({2:N0} candidates found)" -f $enumTargetIndex, $enumTargetCount, $enumeratedCandidates)
                     }
                     $lastEnumProgressUtc = [DateTime]::UtcNow
                     $lastEnumProgressCandidates = $enumeratedCandidates
@@ -4162,6 +4178,7 @@ function Find-CstFileFindings {
     }
 
     if ($Mode -eq 'FullScan' -and $candidateFiles.Count -gt 0) {
+        Write-CstLiveProgress -Scanned $scanned -ProgressTotal $progressTotal -CurrentPath '' -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -Phase 'Enumerating' -PhasePercent 100.0 -OverallPercent ([math]::Round(10.0 + (100.0 * 0.25), 1)) -TargetIndex $enumTargetCount -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -Detail ("Prioritizing {0:N0} deferred FullScan candidates..." -f $candidateFiles.Count)
         $sequencedCandidates = New-Object System.Collections.Generic.List[object]
         $sequence = 0
         foreach ($candidate in $candidateFiles) {

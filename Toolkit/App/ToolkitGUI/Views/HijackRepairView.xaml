@@ -3,7 +3,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:ToolkitGUI.ViewModels"
              xmlns:views="clr-namespace:ToolkitGUI.Views"
-             xmlns:controls="clr-namespace:ToolkitGUI.Controls"
              Background="{StaticResource BackgroundDarkBrush}">
     <views:WorkflowViewBase.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
@@ -30,7 +29,7 @@
         <Grid Grid.Row="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
+                <RowDefinition Height="*" MinHeight="160"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
@@ -81,140 +80,186 @@
                 </Grid>
             </Border>
 
-            <controls:VerticalDockPaneHost Grid.Row="1"
-                                           PrimaryTitle="Findings"
-                                           SecondaryTitle="Finding Details">
-                <controls:VerticalDockPaneHost.PrimaryPane>
-                    <Grid MinHeight="120">
-                        <DataGrid ItemsSource="{Binding DisplayedFindings}"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                  SelectedItem="{Binding SelectedFinding, Mode=TwoWay}"
-                                  AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
-                                  HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                                  Background="White" BorderThickness="0"
-                                  RowHeaderWidth="0" SelectionMode="Single"
-                                  IsReadOnly="False" Margin="0">
-                            <DataGrid.ColumnHeaderStyle>
-                                <Style TargetType="DataGridColumnHeader">
-                                    <Setter Property="Background" Value="{StaticResource BackgroundMidBrush}"/>
-                                    <Setter Property="FontWeight" Value="SemiBold"/>
-                                    <Setter Property="Padding" Value="8,6"/>
-                                </Style>
-                            </DataGrid.ColumnHeaderStyle>
-                            <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="FIX" Width="44">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
-                                                      IsEnabled="{Binding Repairable}"
-                                                      HorizontalAlignment="Center"
-                                                      VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="ACTION" Binding="{Binding ActionLabel}" Width="110" IsReadOnly="True"/>
-                                <DataGridTextColumn Header="CATEGORY" Binding="{Binding Category}" Width="82" IsReadOnly="True"/>
-                                <DataGridTextColumn Header="RISK" Binding="{Binding Severity}" Width="82" IsReadOnly="True"/>
-                                <DataGridTextColumn Header="NAME" Binding="{Binding Name}" Width="*" IsReadOnly="True">
-                                    <DataGridTextColumn.ElementStyle>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="ToolTip" Value="{Binding ToolTipText}"/>
-                                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
-                                        </Style>
-                                    </DataGridTextColumn.ElementStyle>
-                                </DataGridTextColumn>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                        <Border Background="#80FFFFFF"
-                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
-                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock Text="Scanning..." FontSize="16" FontWeight="SemiBold"
-                                           Foreground="{StaticResource AccentBlueBrush}"
-                                           HorizontalAlignment="Center"/>
-                                <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,12,0,0"
-                                             Foreground="{StaticResource AccentBlueBrush}" BorderThickness="0"/>
-                            </StackPanel>
+            <!-- Findings + Finding Details share the middle band; Quick Repairs stays below and cannot cover Details. -->
+            <Grid Grid.Row="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="2*" MinHeight="120"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*" MinHeight="160"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Background="White"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="0,0,0,1">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0"
+                                Background="{StaticResource BackgroundMidBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="0,0,0,1"
+                                Padding="12,8">
+                            <TextBlock Text="Findings" FontSize="13" FontWeight="SemiBold"/>
+                        </Border>
+                        <Grid Grid.Row="1" MinHeight="100">
+                            <DataGrid ItemsSource="{Binding DisplayedFindings}"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                      SelectedItem="{Binding SelectedFinding, Mode=TwoWay}"
+                                      AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                                      HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                      Background="White" BorderThickness="0"
+                                      RowHeaderWidth="0" SelectionMode="Single"
+                                      IsReadOnly="False" Margin="0">
+                                <DataGrid.ColumnHeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="Background" Value="{StaticResource BackgroundMidBrush}"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                        <Setter Property="Padding" Value="8,6"/>
+                                    </Style>
+                                </DataGrid.ColumnHeaderStyle>
+                                <DataGrid.Columns>
+                                    <DataGridTemplateColumn Header="FIX" Width="44">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
+                                                          IsEnabled="{Binding Repairable}"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="ACTION" Binding="{Binding ActionLabel}" Width="110" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="CATEGORY" Binding="{Binding Category}" Width="82" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="RISK" Binding="{Binding Severity}" Width="82" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="NAME" Binding="{Binding Name}" Width="*" IsReadOnly="True">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="ToolTip" Value="{Binding ToolTipText}"/>
+                                                <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                            <Border Background="#80FFFFFF"
+                                    Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock Text="Scanning..." FontSize="16" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AccentBlueBrush}"
+                                               HorizontalAlignment="Center"/>
+                                    <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,12,0,0"
+                                                 Foreground="{StaticResource AccentBlueBrush}" BorderThickness="0"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <GridSplitter Grid.Row="1"
+                              Height="5"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Center"
+                              Background="{StaticResource BorderBrush}"
+                              ResizeDirection="Rows"
+                              ShowsPreview="True"/>
+
+                <Border Grid.Row="2"
+                        Background="{StaticResource BackgroundMidBrush}"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="0,1,0,0"
+                        MinHeight="160">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0"
+                                Background="{StaticResource BackgroundLightBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="0,0,0,1"
+                                Padding="12,8">
+                            <TextBlock Text="Finding Details" FontSize="13" FontWeight="SemiBold"/>
+                        </Border>
+                        <Border Grid.Row="1" Padding="16,12">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                                    <TextBlock Text="{Binding DetailStatusText}" FontWeight="SemiBold" DockPanel.Dock="Left"
+                                               VerticalAlignment="Center"/>
+                                    <WrapPanel HorizontalAlignment="Right">
+                                        <Button Content="Repair this item" Command="{Binding RepairThisItemCommand}"
+                                                Style="{StaticResource ActionButtonStyle}" Padding="10,6" Margin="4,0,0,0"/>
+                                        <Button Content="Manage" Command="{Binding ManageStartupCommand}"
+                                                CommandParameter="{Binding SelectedFinding}"
+                                                Style="{StaticResource ActionButtonStyle}" Padding="10,6" Margin="4,0,0,0"
+                                                Visibility="{Binding SelectedFinding.CanManageInStartup, Converter={StaticResource BoolToVis}}"/>
+                                        <CheckBox Content="Show scan log" IsChecked="{Binding ShowScanLog}"
+                                                  VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                    </WrapPanel>
+                                </DockPanel>
+                                <Grid Grid.Row="1">
+                                    <TextBlock Text="No finding selected." FontStyle="Italic"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               VerticalAlignment="Top">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SelectedFinding}" Value="{x:Null}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding SelectedFinding}">
+                                        <ScrollViewer.Style>
+                                            <Style TargetType="ScrollViewer">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ScrollViewer.Style>
+                                        <StackPanel>
+                                            <UniformGrid Columns="2" Margin="0,0,0,10">
+                                                <TextBlock Text="{Binding Category, StringFormat='Category: {0}'}" Margin="0,0,0,4"/>
+                                                <TextBlock Text="{Binding Severity, StringFormat='Risk: {0}'}" Margin="0,0,0,4"/>
+                                                <TextBlock Text="{Binding ActionLabel, StringFormat='Action: {0}'}" Margin="0,0,0,4"/>
+                                                <TextBlock Text="{Binding RepairableDisplay, StringFormat='Repairable: {0}'}" Margin="0,0,0,4"/>
+                                            </UniformGrid>
+                                            <TextBlock Text="Name" FontWeight="Bold" Margin="0,0,0,4"/>
+                                            <TextBlock Text="{Binding Name}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                            <TextBlock Text="Location" FontWeight="Bold" Margin="0,0,0,4"/>
+                                            <TextBlock Text="{Binding Location}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                                       Background="{StaticResource BackgroundLightBrush}" Padding="8,6"/>
+                                            <TextBlock Text="Current value" FontWeight="Bold" Margin="0,0,0,4"/>
+                                            <TextBlock Text="{Binding CurrentValue}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                                       Background="{StaticResource BackgroundLightBrush}" Padding="8,6"/>
+                                            <TextBlock Text="Repair action" FontWeight="Bold" Margin="0,0,0,4"
+                                                       Visibility="{Binding CanRepairThis, Converter={StaticResource BoolToVis}}"/>
+                                            <TextBlock Text="{Binding RepairActionDescription}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                                       Visibility="{Binding CanRepairThis, Converter={StaticResource BoolToVis}}"/>
+                                            <TextBlock Text="Guidance" FontWeight="Bold" Margin="0,0,0,4"/>
+                                            <TextBlock Text="{Binding GuidanceDisplay}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Grid>
                         </Border>
                     </Grid>
-                </controls:VerticalDockPaneHost.PrimaryPane>
-                <controls:VerticalDockPaneHost.SecondaryPane>
-                    <Border Background="{StaticResource BackgroundMidBrush}"
-                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,12">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <DockPanel Grid.Row="0" Margin="0,0,0,8">
-                                <TextBlock Text="{Binding DetailStatusText}" FontWeight="SemiBold" DockPanel.Dock="Left"
-                                           VerticalAlignment="Center"/>
-                                <WrapPanel HorizontalAlignment="Right">
-                                    <Button Content="Repair this item" Command="{Binding RepairThisItemCommand}"
-                                            Style="{StaticResource ActionButtonStyle}" Padding="10,6" Margin="4,0,0,0"/>
-                                    <Button Content="Manage" Command="{Binding ManageStartupCommand}"
-                                            CommandParameter="{Binding SelectedFinding}"
-                                            Style="{StaticResource ActionButtonStyle}" Padding="10,6" Margin="4,0,0,0"
-                                            Visibility="{Binding SelectedFinding.CanManageInStartup, Converter={StaticResource BoolToVis}}"/>
-                                    <CheckBox Content="Show scan log" IsChecked="{Binding ShowScanLog}"
-                                              VerticalAlignment="Center" Margin="12,0,0,0"/>
-                                </WrapPanel>
-                            </DockPanel>
-                            <Grid Grid.Row="1">
-                                <TextBlock Text="No finding selected." FontStyle="Italic"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                           VerticalAlignment="Top">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding SelectedFinding}" Value="{x:Null}">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                                <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding SelectedFinding}">
-                                    <ScrollViewer.Style>
-                                        <Style TargetType="ScrollViewer">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding}" Value="{x:Null}">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </ScrollViewer.Style>
-                                    <StackPanel>
-                                        <UniformGrid Columns="2" Margin="0,0,0,10">
-                                            <TextBlock Text="{Binding Category, StringFormat='Category: {0}'}" Margin="0,0,0,4"/>
-                                            <TextBlock Text="{Binding Severity, StringFormat='Risk: {0}'}" Margin="0,0,0,4"/>
-                                            <TextBlock Text="{Binding ActionLabel, StringFormat='Action: {0}'}" Margin="0,0,0,4"/>
-                                            <TextBlock Text="{Binding RepairableDisplay, StringFormat='Repairable: {0}'}" Margin="0,0,0,4"/>
-                                        </UniformGrid>
-                                        <TextBlock Text="Name" FontWeight="Bold" Margin="0,0,0,4"/>
-                                        <TextBlock Text="{Binding Name}" TextWrapping="Wrap" Margin="0,0,0,10"/>
-                                        <TextBlock Text="Location" FontWeight="Bold" Margin="0,0,0,4"/>
-                                        <TextBlock Text="{Binding Location}" TextWrapping="Wrap" Margin="0,0,0,10"
-                                                   Foreground="{StaticResource TextPrimaryBrush}"
-                                                   Background="{StaticResource BackgroundLightBrush}" Padding="8,6"/>
-                                        <TextBlock Text="Current value" FontWeight="Bold" Margin="0,0,0,4"/>
-                                        <TextBlock Text="{Binding CurrentValue}" TextWrapping="Wrap" Margin="0,0,0,10"
-                                                   Foreground="{StaticResource TextPrimaryBrush}"
-                                                   Background="{StaticResource BackgroundLightBrush}" Padding="8,6"/>
-                                        <TextBlock Text="Repair action" FontWeight="Bold" Margin="0,0,0,4"
-                                                   Visibility="{Binding CanRepairThis, Converter={StaticResource BoolToVis}}"/>
-                                        <TextBlock Text="{Binding RepairActionDescription}" TextWrapping="Wrap" Margin="0,0,0,10"
-                                                   Visibility="{Binding CanRepairThis, Converter={StaticResource BoolToVis}}"/>
-                                        <TextBlock Text="Guidance" FontWeight="Bold" Margin="0,0,0,4"/>
-                                        <TextBlock Text="{Binding GuidanceDisplay}" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </ScrollViewer>
-                            </Grid>
-                        </Grid>
-                    </Border>
-                </controls:VerticalDockPaneHost.SecondaryPane>
-            </controls:VerticalDockPaneHost>
+                </Border>
+            </Grid>
 
             <Grid Grid.Row="2" Background="{StaticResource LogBgBrush}"
                   Visibility="{Binding ShowScanLog, Converter={StaticResource BoolToVis}}">
@@ -236,17 +281,18 @@
                          VerticalScrollBarVisibility="Auto"/>
             </Grid>
 
-            <!-- Quick Repairs drawer (expands upward from bottom) -->
+            <!-- Quick Repairs stays in its own bottom row so it cannot cover Finding Details. -->
             <Expander Grid.Row="3"
                       ExpandDirection="Up"
                       IsExpanded="{Binding ShowQuickRepairs}"
                       Background="{StaticResource BackgroundMidBrush}"
                       BorderBrush="{StaticResource BorderBrush}"
                       BorderThickness="0,1,0,0"
-                      Padding="0">
+                      Padding="0"
+                      MaxHeight="320">
                 <Expander.Header>
                     <DockPanel Margin="8,6">
-                        <TextBlock Text="&#x25B2;" DockPanel.Dock="Right" FontSize="10"
+                        <TextBlock DockPanel.Dock="Right" FontSize="10"
                                    Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"
                                    Margin="8,0,0,0">
                             <TextBlock.Style>
@@ -269,7 +315,7 @@
                 </Expander.Header>
                 <Border Background="{StaticResource BackgroundDarkBrush}"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,12">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="260">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="220">
                         <ItemsControl ItemsSource="{Binding Tools}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>

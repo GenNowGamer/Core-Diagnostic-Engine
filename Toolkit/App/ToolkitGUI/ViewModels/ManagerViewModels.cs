@@ -852,7 +852,8 @@ namespace ToolkitGUI.ViewModels
                     {
                         var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(rawOutput)
                             ?? FindLatestCstArtifactPath();
-                        WorkOrderService.TryRecordCstScanRun(artifactPath, primaryPath, presentation.Verdict);
+                        WorkOrderService.TryRecordCstScanRun(
+                            artifactPath, primaryPath, presentation.Verdict, presentation.ReportPdfPath);
                         StatusText = "CST startup-entry scan completed.";
                     },
                     onFinished: () =>
@@ -998,7 +999,9 @@ namespace ToolkitGUI.ViewModels
                 {
                     var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(result.Output)
                         ?? FindLatestCstArtifactPath();
-                    WorkOrderService.TryRecordCstScanRun(artifactPath, path, presentation.Verdict);
+                    ProcessAnalyzerCstResultService.TryEnsureOperatorPdf(presentation, out _, out _);
+                    WorkOrderService.TryRecordCstScanRun(
+                        artifactPath, path, presentation.Verdict, presentation.ReportPdfPath);
                 }
 
                 ProcessAnalyzerCstResultService.TryShowResults(result.Output, path, displayName, owner);

@@ -1,7 +1,16 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-11  
+**Last updated:** 2026-07-13  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-13 update — SMART / CST reports + pre-scan progress + Hijack layout
+
+- **S.M.A.R.T. Analyzer** — After Scan, PDF is built from the on-screen drive grid (no stuck “Saving…” / greyed **Open Report** from a second Report-mode PS hang).
+- **CST Scan Results** — Live results dialog again generates `Logs\CST_Scan_*.pdf` and enables **Open Report** (Malware Cleanup / File Manager / Startup Manager / Process Analyzer / Core Security Tool paths).
+- **CST pre-scan UX** — TargetPrep / known-good / path discovery stream progress; GUI heartbeat when updates pause. Engine sync from Core Security Tool.
+- **Hijack & Scam Repair** — Findings + **Finding Details** + **Quick Repairs** stacked with splitter (AvalonDock bottom pane no longer covered by Quick Repairs).
+- **Publish** — `Toolkit\App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (GUI ~9:02 AM; CST runtime synced).
+- **Full notes** — `Toolkit\session_handoff.md`; CST `CST\session_handoff.md`; user guide `04_Diagnostics.md`, `05_Security.md`, `09_Understanding_Reports.md`.
 
 ## 2026-07-11 update — EFI hash baseline gaps as coverage
 

@@ -1,6 +1,37 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-13
+
+## 2026-07-13 — SMART Open Report fix + CST results PDF + pre-scan progress + Hijack layout
+
+### S.M.A.R.T. Analyzer — stuck “Saving…” / disabled Open Report
+
+- **Cause** — After Query, GUI awaited `SmartAnalyzer.ps1 -Mode Report` via `powershell.exe`; `Write-Host` “Report saved” often not on stdout, JSON deserialize could throw into an empty `catch`, leaving status on **Saving S.M.A.R.T. report…** and never setting `_reportPdfPath`.
+- **Fix** — `EnsureSmartReportAsync` builds operator PDF from the already-populated drive grid (`TabularScan`/`WorkflowReportPdfService` path via persisted workflow JSON + `ReportPathHelper`). Status always cleared in `finally`.
+- **Script** — Report mode emits `Write-Output "Report saved: …"` + cleaned JSON for CLI/workflow runners (`Scripts\Workflows\SmartAnalyzer.ps1`).
+- **Verify** — Scan → status returns to scan summary; **Open Report** enables and opens `Logs\SmartAnalyzer_*.pdf`.
+
+### CST Scan Results — restore Open Report + PDF
+
+- **Gap** — Unified live **CST Scan Results** dialog (`ProcessAnalyzerCstResultDialog`) lacked PDF generation / **Open Report** (old workflow expander still had PDF open).
+- **Fix** — On results: `ProcessAnalyzerCstResultService.TryEnsureOperatorPdf` → `Logs\CST_Scan_*.pdf`; **Open Report** in footer; work-order CST events can record PDF path.
+- **Verify** — Malware Cleanup / Core Security Tool ThreatScan → results window → **Open Report** enabled.
+
+### CST pre-scan progress (no frozen prep)
+
+- **Engine (synced)** — `TargetPrep` progress around hash IOC + known-good load; path discovery uses **Enumerating** with advancing overall % (not stuck at 10% “Scanning”); baseline file load emits prep progress (`CoreSecurityTool.psm1`, `Cst.KnownGood.ps1`).
+- **GUI** — Clearer TargetPrep/Enumerating captions; 1s heartbeat (“Still working…”) if progress pauses.
+- **Verify** — FullScan / large CustomScan: continuous prep/enumeration status before file analysis %.
+
+### Hijack & Scam Repair — Finding Details vs Quick Repairs
+
+- **Cause** — AvalonDock secondary pane at bottom of `VerticalDockPaneHost` competed with bottom **Quick Repairs** expander; Details collapsed to chrome only.
+- **Fix** — `HijackRepairView.xaml`: Findings (2*) → GridSplitter → Finding Details (min height) → Quick Repairs (own row, max height). No AvalonDock on this view.
+- **Verify** — Select a finding → Details content visible; expand Quick Repairs → Details still usable.
+
+### Publish
+
+- `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (GUI payload **2026-07-13 ~9:02 AM**; CST runtime synced from Core Security Tool).
 
 ## 2026-07-11 — EFI hash baseline gaps as coverage (not findings)
 

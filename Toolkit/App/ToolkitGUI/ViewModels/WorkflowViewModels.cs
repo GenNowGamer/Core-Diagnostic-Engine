@@ -1144,7 +1144,8 @@ namespace ToolkitGUI.ViewModels
                         var artifactPath = string.IsNullOrWhiteSpace(presentation.ArtifactPath)
                             ? CstStructuredResultsService.ResolveArtifactPathFromStepOutput(rawOutput)
                             : presentation.ArtifactPath;
-                        WorkOrderService.TryRecordCstScanRun(artifactPath, targetPath, presentation.Verdict);
+                        WorkOrderService.TryRecordCstScanRun(
+                            artifactPath, targetPath, presentation.Verdict, presentation.ReportPdfPath);
                         item.StatusText = $"Done — {presentation.Verdict}";
                     },
                     showMalwareCleanupButton: false);
@@ -2546,65 +2547,100 @@ namespace ToolkitGUI.ViewModels
 
         private async Task EnsureSmartReportAsync()
         {
+            var priorStatus = StatusText;
+            StatusText = "Saving S.M.A.R.T. report\u2026";
             try
             {
-                var priorStatus = StatusText;
-                StatusText = "Saving S.M.A.R.T. report\u2026";
-
-                var script = ToolkitPaths.GetWorkflowScriptPath("SmartAnalyzer.ps1");
-                var result = await PowerShellService.RunWorkflowAsync(
-                    script, "-Mode Report", System.Threading.CancellationToken.None, null);
-
-                var combined = $"{result.Stdout}\n{result.Stderr}";
-                string? jsonPath = null;
-                foreach (var line in combined.Split('\n'))
+                if (Drives.Count == 0)
                 {
-                    if (WorkflowReportExportHelper.TryExtractArtifactPath(line, "Report saved", ".json", out var path))
-                    {
-                        jsonPath = path;
-                        break;
-                    }
+                    StatusText = priorStatus;
+                    return;
                 }
 
-                WorkflowExecutionReport? report = null;
-                var workflowJson = WorkflowReportExportHelper.TryExtractWorkflowJson(result.Stdout);
-                if (!string.IsNullOrWhiteSpace(workflowJson))
-                {
-                    report = JsonSerializer.Deserialize<WorkflowExecutionReport>(workflowJson, JsonOpts);
-                }
-                else if (!string.IsNullOrWhiteSpace(jsonPath) && File.Exists(jsonPath))
-                {
-                    var json = await File.ReadAllTextAsync(jsonPath);
-                    report = JsonSerializer.Deserialize<WorkflowExecutionReport>(json, JsonOpts);
-                }
-
+                // Build the operator PDF from the scan grid. A second powershell.exe
+                // -Mode Report pass was leaving status stuck on "Saving..." and never
+                // enabling Open Report when Write-Host markers were not captured or the
+                // process hung on a SMART re-read.
+                var report = BuildSmartWorkflowReportFromDrives();
+                var jsonPath = await PersistSmartReportJsonAsync(report);
                 var pdfPath = ReportPathHelper.GetOperatorPdfPathForInternalJson(jsonPath);
-                if (report != null && !string.IsNullOrWhiteSpace(pdfPath))
+                if (string.IsNullOrWhiteSpace(pdfPath))
                 {
-                    if (!File.Exists(pdfPath))
-                    {
-                        string? exportError = null;
-                        await Task.Run(() =>
-                            WorkflowReportPdfService.TryGeneratePdf(report, pdfPath, out exportError));
-                    }
-
-                    if (File.Exists(pdfPath))
-                    {
-                        _reportPdfPath = pdfPath;
-                        OnPropertyChanged(nameof(CanOpenReport));
-                        StatusText = priorStatus;
-                        return;
-                    }
+                    StatusText = priorStatus;
+                    return;
                 }
 
-                StatusText = !string.IsNullOrWhiteSpace(result.Stderr)
-                    ? $"Report finished with warnings: {result.Stderr.Split('\n')[0]}"
-                    : priorStatus;
+                if (!File.Exists(pdfPath))
+                {
+                    string? exportError = null;
+                    await Task.Run(() =>
+                        WorkflowReportPdfService.TryGeneratePdf(report, pdfPath, out exportError));
+                }
+
+                if (File.Exists(pdfPath))
+                {
+                    _reportPdfPath = pdfPath;
+                    OnPropertyChanged(nameof(CanOpenReport));
+                }
+
+                StatusText = priorStatus;
             }
             catch
             {
-                /* PDF generation is best-effort at scan completion */
+                StatusText = priorStatus;
             }
+            finally
+            {
+                if (StatusText.StartsWith("Saving S.M.A.R.T. report", StringComparison.Ordinal))
+                    StatusText = priorStatus;
+            }
+        }
+
+        private WorkflowExecutionReport BuildSmartWorkflowReportFromDrives()
+        {
+            var now = DateTime.Now;
+            var steps = Drives.Select(d =>
+            {
+                var status = !d.Supported
+                    ? "Skip"
+                    : d.Overall.Equals("Fail", StringComparison.OrdinalIgnoreCase) ? "Fail"
+                    : d.Overall.Equals("Warn", StringComparison.OrdinalIgnoreCase) ? "Warn"
+                    : d.Overall.Equals("Pass", StringComparison.OrdinalIgnoreCase) ? "Pass"
+                    : "Warn";
+                var detail = d.Supported
+                    ? $"{d.Model} [{d.Bus}] {d.SizeGB}GB - Health: {d.Overall}, Temp: {d.TempDisplay}"
+                    : $"{d.Model} [{d.Bus}] - {d.Note}";
+                return new WorkflowExecutionStep
+                {
+                    Name = $"Drive {d.Index}: {d.Model}",
+                    Status = status,
+                    Detail = detail,
+                    Output = detail
+                };
+            }).ToList();
+
+            return new WorkflowExecutionReport
+            {
+                WorkflowName = "SmartAnalyzer",
+                StartTime = now,
+                EndTime = now,
+                Status = "Completed",
+                EnvironmentMode = Environment.GetEnvironmentVariable("SystemDrive")?.Equals("X:", StringComparison.OrdinalIgnoreCase) == true
+                    ? "WinPE"
+                    : "Windows",
+                OverallHealth = OverallHealth,
+                Steps = steps
+            };
+        }
+
+        private static async Task<string> PersistSmartReportJsonAsync(WorkflowExecutionReport report)
+        {
+            var jsonPath = Path.Combine(
+                ReportPathHelper.GetWorkflowDataRoot(),
+                $"{WorkflowReportExportHelper.BuildReportBaseName(report)}.json");
+            var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(jsonPath, json);
+            return jsonPath;
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

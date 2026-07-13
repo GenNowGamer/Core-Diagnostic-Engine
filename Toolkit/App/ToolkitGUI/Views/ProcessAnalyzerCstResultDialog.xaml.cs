@@ -20,6 +20,13 @@ namespace ToolkitGUI.Views
         private bool _isStartupEntryScan;
         private readonly bool _showMalwareCleanupButton;
         private bool _remediationBusy;
+        private bool _pendingResultsApply;
+        private string _reportPdfPath = string.Empty;
+        private DispatcherTimer? _progressHeartbeatTimer;
+        private DateTime _lastProgressUtc = DateTime.MinValue;
+        private string _lastProgressDetail = string.Empty;
+        private string _lastProgressPhaseText = string.Empty;
+        private bool _isPreScanPhase;
 
         public ProcessAnalyzerCstResultDialog(ProcessAnalyzerCstScanPresentation presentation)
         {
@@ -28,6 +35,7 @@ namespace ToolkitGUI.Views
             _presentation = presentation;
             _scanCompleted = true;
             _showMalwareCleanupButton = false;
+            Loaded += OnWindowLoaded;
             EnterResultsState(presentation);
         }
 
@@ -47,8 +55,18 @@ namespace ToolkitGUI.Views
             ScanKindSubtitle.Text = scanSubtitle;
             TitleText.Text = "CST Scan";
             Title = "CST Scan";
+            Loaded += OnWindowLoaded;
             EnterScanningState();
             ApplyMalwareCleanupButtonVisibility();
+        }
+
+        private void OnWindowLoaded(object sender, RoutedEventArgs e)
+        {
+            if (!_pendingResultsApply || _presentation is null)
+                return;
+
+            _pendingResultsApply = false;
+            EnterResultsState(_presentation);
         }
 
         private void ApplyMalwareCleanupButtonVisibility()
@@ -86,8 +104,9 @@ namespace ToolkitGUI.Views
                         out var presentation,
                         out var parseError))
                 {
-                    outcome.OnSuccess?.Invoke(presentation, outcome.RawOutput);
+                    // Populate UI + operator PDF before onSuccess so work-order hooks see ReportPdfPath.
                     EnterResultsState(presentation);
+                    outcome.OnSuccess?.Invoke(presentation, outcome.RawOutput);
                 }
                 else
                 {
@@ -117,6 +136,10 @@ namespace ToolkitGUI.Views
         private void EnterScanningState()
         {
             _scanCompleted = false;
+            _lastProgressUtc = DateTime.UtcNow;
+            _lastProgressDetail = string.Empty;
+            _lastProgressPhaseText = string.Empty;
+            _isPreScanPhase = true;
             ProgressPanel.Visibility = Visibility.Visible;
             ScanningPlaceholderPanel.Visibility = Visibility.Visible;
             MetricsPanel.Visibility = Visibility.Collapsed;
@@ -125,18 +148,82 @@ namespace ToolkitGUI.Views
             RemediationToolbar.Visibility = Visibility.Collapsed;
             SetRemediationButtonsVisible(false);
             CopySummaryButton.IsEnabled = false;
+            OpenReportButton.IsEnabled = false;
             MalwareCleanupButton.IsEnabled = false;
             PrimaryButton.Content = "Cancel";
             VerdictText.Text = "Scanning...";
             VerdictBadge.Background = new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD4));
-            VerdictDetailText.Text = "Core Security Tool is analyzing the selected target.";
+            VerdictDetailText.Text = "Core Security Tool is preparing targets and pre-scan checks.";
             FooterHintText.Text = "You can cancel the scan if needed. Results appear here when finished.";
             ProgressPhaseText.Text = "Preparing scan...";
-            ProgressDetailText.Text = "Starting Core Security Tool...";
+            ProgressDetailText.Text = "Starting Core Security Tool pre-checks (targets, known-good, path discovery)...";
             ProgressPathText.Text = string.Empty;
-            ProgressPercentText.Text = "0%";
+            ProgressPercentText.Text = "…";
             ScanProgressBar.Value = 0;
             ScanProgressBar.IsIndeterminate = true;
+            StartProgressHeartbeat();
+        }
+
+        private void StartProgressHeartbeat()
+        {
+            StopProgressHeartbeat();
+            _progressHeartbeatTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _progressHeartbeatTimer.Tick += ProgressHeartbeatTimer_Tick;
+            _progressHeartbeatTimer.Start();
+        }
+
+        private void StopProgressHeartbeat()
+        {
+            if (_progressHeartbeatTimer is null)
+                return;
+
+            _progressHeartbeatTimer.Tick -= ProgressHeartbeatTimer_Tick;
+            _progressHeartbeatTimer.Stop();
+            _progressHeartbeatTimer = null;
+        }
+
+        private void ProgressHeartbeatTimer_Tick(object? sender, EventArgs e)
+        {
+            if (_scanCompleted || !IsLoaded)
+            {
+                StopProgressHeartbeat();
+                return;
+            }
+
+            var silentFor = DateTime.UtcNow - _lastProgressUtc;
+            if (silentFor < TimeSpan.FromSeconds(2))
+                return;
+
+            // Keep the UI alive during long silent prep stretches (known-good load, huge roots).
+            if (ScanProgressBar.IsIndeterminate == false && _isPreScanPhase && ScanProgressBar.Value < 1)
+                ScanProgressBar.IsIndeterminate = true;
+
+            var waitText = silentFor.TotalMinutes >= 1
+                ? $"Still working… {silentFor:mm\\:ss} since last update"
+                : $"Still working… {silentFor.Seconds}s since last update";
+
+            if (!string.IsNullOrWhiteSpace(_lastProgressDetail)
+                && !_lastProgressDetail.Contains("Still working", StringComparison.OrdinalIgnoreCase))
+            {
+                ProgressDetailText.Text = $"{_lastProgressDetail} • {waitText}";
+            }
+            else if (!string.IsNullOrWhiteSpace(_lastProgressPhaseText))
+            {
+                ProgressDetailText.Text = $"{_lastProgressPhaseText} • {waitText}";
+            }
+            else
+            {
+                ProgressDetailText.Text = waitText;
+            }
+
+            if (_isPreScanPhase)
+            {
+                VerdictDetailText.Text =
+                    "Pre-scan checks are still running (path discovery / known-good). Progress resumes as soon as the next update arrives.";
+            }
         }
 
         private void EnterResultsState(ProcessAnalyzerCstScanPresentation presentation)
@@ -145,12 +232,15 @@ namespace ToolkitGUI.Views
             {
                 _presentation = presentation;
                 _scanCompleted = true;
+                _pendingResultsApply = true;
                 return;
             }
 
             _presentation = presentation;
             _scanCompleted = true;
             _isStartupEntryScan = presentation.IsStartupEntryScan;
+            _pendingResultsApply = false;
+            StopProgressHeartbeat();
 
             ProgressPanel.Visibility = Visibility.Collapsed;
             ScanningPlaceholderPanel.Visibility = Visibility.Collapsed;
@@ -269,6 +359,27 @@ namespace ToolkitGUI.Views
                 ErrorDetailsList.Visibility = Visibility.Collapsed;
                 ErrorDetailsList.ItemsSource = null;
             }
+
+            EnsureOperatorPdf(presentation);
+        }
+
+        private void EnsureOperatorPdf(ProcessAnalyzerCstScanPresentation presentation)
+        {
+            OpenReportButton.IsEnabled = false;
+            _reportPdfPath = string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(presentation.ReportPdfPath) && File.Exists(presentation.ReportPdfPath))
+            {
+                _reportPdfPath = presentation.ReportPdfPath;
+                OpenReportButton.IsEnabled = true;
+                return;
+            }
+
+            if (ProcessAnalyzerCstResultService.TryEnsureOperatorPdf(presentation, out var pdfPath, out _))
+            {
+                _reportPdfPath = pdfPath;
+                OpenReportButton.IsEnabled = true;
+            }
         }
 
         private void SetRemediationButtonsVisible(bool visible)
@@ -282,6 +393,7 @@ namespace ToolkitGUI.Views
         private void ShowFailure(string message, bool incomplete)
         {
             _scanCompleted = true;
+            StopProgressHeartbeat();
             if (!IsLoaded)
                 return;
 
@@ -293,6 +405,7 @@ namespace ToolkitGUI.Views
             RemediationToolbar.Visibility = Visibility.Collapsed;
             SetRemediationButtonsVisible(false);
             CopySummaryButton.IsEnabled = false;
+            OpenReportButton.IsEnabled = false;
             MalwareCleanupButton.IsEnabled = false;
             PrimaryButton.Content = "OK";
             TitleText.Text = "CST Scan";
@@ -314,12 +427,30 @@ namespace ToolkitGUI.Views
             if (_scanCompleted || !IsLoaded)
                 return;
 
-            ScanProgressBar.IsIndeterminate = progress.Percent <= 0 && string.IsNullOrWhiteSpace(progress.Phase);
-            if (progress.Percent > 0)
+            _lastProgressUtc = DateTime.UtcNow;
+            _isPreScanPhase = progress.IsPreScanPhase;
+            if (!string.IsNullOrWhiteSpace(progress.Detail))
+                _lastProgressDetail = progress.Detail;
+            if (!string.IsNullOrWhiteSpace(progress.PhaseText))
+                _lastProgressPhaseText = progress.PhaseText;
+
+            // Pre-scan: keep a determinate bar when we have percent, otherwise pulse indeterminate
+            // so technicians always see motion during known-good / path discovery.
+            if (progress.IsPreScanPhase && progress.Percent <= 0.5)
+            {
+                ScanProgressBar.IsIndeterminate = true;
+                ProgressPercentText.Text = "…";
+            }
+            else if (progress.Percent > 0)
             {
                 ScanProgressBar.IsIndeterminate = false;
                 ScanProgressBar.Value = Math.Max(0, Math.Min(100, progress.Percent));
                 ProgressPercentText.Text = $"{progress.Percent:0.#}%";
+            }
+            else if (!string.IsNullOrWhiteSpace(progress.Phase))
+            {
+                ScanProgressBar.IsIndeterminate = true;
+                ProgressPercentText.Text = "…";
             }
 
             if (!string.IsNullOrWhiteSpace(progress.PhaseText))
@@ -506,6 +637,38 @@ namespace ToolkitGUI.Views
             }
         }
 
+        private void OpenReportButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_presentation is null)
+                return;
+
+            if (string.IsNullOrWhiteSpace(_reportPdfPath) || !File.Exists(_reportPdfPath))
+                EnsureOperatorPdf(_presentation);
+
+            if (string.IsNullOrWhiteSpace(_reportPdfPath) || !File.Exists(_reportPdfPath))
+            {
+                MessageBox.Show(
+                    "The PDF report could not be generated for this scan.",
+                    "Open Report",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                ShellFileOpenHelper.OpenWithDefaultApplication(_reportPdfPath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Unable to open the report:\n{ex.Message}",
+                    "Open Report",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
         private void MalwareCleanupButton_Click(object sender, RoutedEventArgs e)
         {
             NavigationService.Request("MalwareCleanup");
@@ -541,6 +704,7 @@ namespace ToolkitGUI.Views
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
+            StopProgressHeartbeat();
             if (!_scanCompleted)
             {
                 try { _scanCts?.Cancel(); } catch { }
@@ -558,6 +722,7 @@ namespace ToolkitGUI.Views
         public string? Detail { get; init; }
         public string? CurrentPath { get; init; }
         public string? VerdictDetail { get; init; }
+        public bool IsPreScanPhase { get; init; }
     }
 
     public sealed class CstScanRunOutcome

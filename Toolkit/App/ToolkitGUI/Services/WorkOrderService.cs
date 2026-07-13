@@ -298,17 +298,26 @@ namespace ToolkitGUI.Services
             TryRecordCaseEvent("ChuPreBoot", "CHU pre-boot", jsonPath, health, summary, "CHU_PreBoot");
         }
 
-        public static void TryRecordCstScanRun(string? artifactPath, string targetPath, string verdict)
+        public static void TryRecordCstScanRun(
+            string? artifactPath,
+            string targetPath,
+            string verdict,
+            string? reportPdfPath = null)
         {
             var fileName = string.IsNullOrWhiteSpace(targetPath)
                 ? "selected file"
                 : Path.GetFileName(targetPath);
             var label = $"CST scan: {fileName}";
             var health = verdict.Equals("Threat", StringComparison.OrdinalIgnoreCase) ? "Critical"
-                : verdict.Equals("Review", StringComparison.OrdinalIgnoreCase) ? "Warning"
+                : verdict.Equals("Review", StringComparison.OrdinalIgnoreCase)
+                    || verdict.Equals("Suspicious", StringComparison.OrdinalIgnoreCase)
+                    || verdict.Equals("Incomplete", StringComparison.OrdinalIgnoreCase) ? "Warning"
                 : "Healthy";
             var summary = $"CST verdict: {verdict}";
-            TryRecordCaseEvent("CstScan", label, artifactPath, health, summary, "ProcessAnalyzer_CST");
+            var artifactOrPdf = !string.IsNullOrWhiteSpace(reportPdfPath) && File.Exists(reportPdfPath)
+                ? reportPdfPath
+                : artifactPath;
+            TryRecordCaseEvent("CstScan", label, artifactOrPdf, health, summary, "ProcessAnalyzer_CST");
         }
 
         private static WorkOrderGuidanceContext? MapGuidanceContext(JsonObject root)
