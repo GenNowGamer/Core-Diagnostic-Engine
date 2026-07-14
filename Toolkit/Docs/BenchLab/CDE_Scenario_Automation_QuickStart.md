@@ -10,6 +10,11 @@ No real malware execution is performed.
 
 The built-in pack validates workflow coverage, persistence/audit handling, remediation plumbing, reboot cleanliness, and boot/offline fixtures. It does not replace a separate approved positive-detection corpus if you need malware-conviction testing.
 
+For harder **multi-infection** campaigns (C01–C08), use:
+
+- Script: `Scripts\BenchLab\Invoke-CdeBenchComplexPack.ps1`
+- Docs: `Docs\BenchLab\CDE_Complex_MultiInfection_Pack.md`
+
 ## Safety Constraints
 
 - Run only in isolated VM labs.

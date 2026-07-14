@@ -552,6 +552,20 @@ function Expand-CstDriveScanRoots {
         [ValidateSet('ThreatScan', 'FullScan', 'CustomScan')][string]$Mode = 'CustomScan'
     )
 
+    return @(Get-CstHighRiskScanRoots -DriveRoot $DriveRoot -Mode $Mode)
+}
+
+function Get-CstHighRiskScanRoots {
+    <#
+    .SYNOPSIS
+      Curated high-risk directories for ThreatScan / FullScan / drive-letter CustomScan.
+      Includes Users\Public (previously skipped) and common drop locations (Desktop, Documents, Local Startup).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$DriveRoot,
+        [ValidateSet('ThreatScan', 'FullScan', 'CustomScan')][string]$Mode = 'ThreatScan'
+    )
+
     $scanRoot = Normalize-CstScanRootPath -Path $DriveRoot
     if ([string]::IsNullOrWhiteSpace($scanRoot)) { return @() }
 
@@ -570,18 +584,33 @@ function Expand-CstDriveScanRoots {
     & $addRoot (Join-Path $scanRoot 'ProgramData')
     & $addRoot (Join-Path $scanRoot 'Windows\Temp')
     & $addRoot (Join-Path $scanRoot 'Windows\System32\Tasks')
+    & $addRoot (Join-Path $scanRoot 'ProgramData\Microsoft\Windows\Start Menu\Programs\Startup')
+
+    # Public profile is a known drop zone (and YaraLike pathRegex already allows it) — do not skip it.
+    $usersPath = Join-Path $scanRoot 'Users'
+    $publicPath = Join-Path $usersPath 'Public'
+    & $addRoot $publicPath
+    & $addRoot (Join-Path $publicPath 'Downloads')
+    & $addRoot (Join-Path $publicPath 'Desktop')
+    & $addRoot (Join-Path $publicPath 'Documents')
 
     $skipUserProfiles = @('public', 'default', 'default user', 'all users')
-    $usersPath = Join-Path $scanRoot 'Users'
     if (Test-Path -LiteralPath $usersPath) {
         foreach ($userDir in @(Get-ChildItem -LiteralPath $usersPath -Directory -ErrorAction SilentlyContinue)) {
             if ($userDir.Name.ToLowerInvariant() -in $skipUserProfiles) { continue }
             $u = [string]$userDir.FullName
             & $addRoot (Join-Path $u 'AppData\Local\Temp')
             & $addRoot (Join-Path $u 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup')
+            & $addRoot (Join-Path $u 'AppData\Local\Microsoft\Windows\Start Menu\Programs\Startup')
             & $addRoot (Join-Path $u 'Downloads')
+            & $addRoot (Join-Path $u 'Desktop')
+            & $addRoot (Join-Path $u 'Documents')
             & $addRoot (Join-Path $u 'AppData\Roaming')
             & $addRoot (Join-Path $u 'AppData\Local\Microsoft\Windows\INetCache')
+            if ($Mode -in @('FullScan', 'CustomScan')) {
+                # User-writable install tree often abused for side-loaded malware.
+                & $addRoot (Join-Path $u 'AppData\Local\Programs')
+            }
         }
     }
 
@@ -589,9 +618,8 @@ function Expand-CstDriveScanRoots {
         & $addRoot (Join-Path $scanRoot 'Program Files')
         & $addRoot (Join-Path $scanRoot 'Program Files (x86)')
         & $addRoot (Join-Path $scanRoot 'Windows\System32')
+        & $addRoot (Join-Path $scanRoot 'Windows\SysWOW64')
     }
-
-    & $addRoot (Join-Path $scanRoot 'ProgramData\Microsoft\Windows\Start Menu\Programs\Startup')
 
     return @($roots)
 }
@@ -717,26 +745,8 @@ function Resolve-CstTargets {
             $rawTargets = @($preferredRoot)
         }
     } else {
-            $riskTargets = @(
-                (Join-Path $preferredRoot 'ProgramData'),
-                (Join-Path $preferredRoot 'Windows\Temp'),
-                (Join-Path $preferredRoot 'Windows\System32\Tasks')
-            )
-
-            $skipUserProfiles = @('public', 'default', 'default user', 'all users')
-            $usersPath = Join-Path $preferredRoot 'Users'
-            if (Test-Path $usersPath -ErrorAction SilentlyContinue) {
-                Get-ChildItem $usersPath -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name.ToLowerInvariant() -notin $skipUserProfiles } | ForEach-Object {
-                    $u = $_.FullName
-                    $riskTargets += @(
-                        (Join-Path $u 'AppData\Local\Temp'),
-                        (Join-Path $u 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup'),
-                        (Join-Path $u 'Downloads'),
-                        (Join-Path $u 'AppData\Roaming'),
-                        (Join-Path $u 'AppData\Local\Microsoft\Windows\INetCache')
-                    )
-                }
-            }
+            # ThreatScan: curated high-risk roots (includes Users\Public, Desktop, Documents, Startup).
+            $riskTargets = @(Get-CstHighRiskScanRoots -DriveRoot $preferredRoot -Mode 'ThreatScan')
 
         if ($Target -and $Target.Count -gt 0) {
             $riskTargets += $Target
@@ -2076,11 +2086,11 @@ function Test-CstPatternMatch {
 }
 
 function Get-CstRiskyPathRegex {
-    return '(appdata\\(local\\)?temp|\\windows\\temp|\\users\\public\\|\\downloads\\|startup|programdata\\microsoft\\windows\\start menu\\programs\\startup)'
+    return '(appdata\\(local\\)?temp|\\windows\\temp|\\users\\public\\|\\downloads\\|\\desktop\\|\\documents\\|startup|programdata\\microsoft\\windows\\start menu\\programs\\startup)'
 }
 
 function Get-CstThreatScanRiskPathRegex {
-    return 'appdata\\local\\temp\\|\\windows\\temp\\|\\users\\public\\|\\downloads\\|appdata\\roaming\\microsoft\\windows\\start menu\\programs\\startup\\|\\programdata\\coresecuritytool\\quarantine\\|\\programdata\\microsoft\\windows\\start menu\\programs\\startup\\|appdata\\roaming\\|\\windows\\system32\\tasks\\|appdata\\local\\microsoft\\windows\\inetcache\\'
+    return 'appdata\\local\\temp\\|\\windows\\temp\\|\\users\\public\\|\\downloads\\|\\desktop\\|\\documents\\|appdata\\roaming\\microsoft\\windows\\start menu\\programs\\startup\\|appdata\\local\\microsoft\\windows\\start menu\\programs\\startup\\|\\programdata\\coresecuritytool\\quarantine\\|\\programdata\\microsoft\\windows\\start menu\\programs\\startup\\|appdata\\roaming\\|\\windows\\system32\\tasks\\|appdata\\local\\microsoft\\windows\\inetcache\\'
 }
 
 function Test-CstThreatScanRiskPathIncluded {
@@ -2116,8 +2126,10 @@ function Get-CstFullScanPriorityBucket {
     if (
         $pathLower -like '*\appdata\local\temp\*' -or
         $pathLower -like '*\windows\temp\*' -or
-        $pathLower -like '*\users\public\downloads\*' -or
+        $pathLower -like '*\users\public\*' -or
+        $pathLower -like '*\desktop\*' -or
         $pathLower -like '*\appdata\roaming\microsoft\windows\start menu\programs\startup\*' -or
+        $pathLower -like '*\appdata\local\microsoft\windows\start menu\programs\startup\*' -or
         $pathLower -like '*\programdata\microsoft\windows\start menu\programs\startup\*' -or
         $pathLower -like '*\windows\system32\tasks\*'
     ) {
@@ -2127,8 +2139,10 @@ function Get-CstFullScanPriorityBucket {
     if (
         $pathLower -like '*\appdata\roaming\*' -or
         $pathLower -like '*\appdata\local\microsoft\windows\inetcache\*' -or
+        $pathLower -like '*\appdata\local\programs\*' -or
         $pathLower -like '*\programdata\*' -or
-        $pathLower -like '*\downloads\*'
+        $pathLower -like '*\downloads\*' -or
+        $pathLower -like '*\documents\*'
     ) {
         return 'medium'
     }
@@ -4609,6 +4623,7 @@ function Get-CstPersistenceArtifacts {
     )
     foreach ($userProfile in @(Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue)) {
         $startupPaths += (Join-Path $userProfile.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup')
+        $startupPaths += (Join-Path $userProfile.FullName 'AppData\Local\Microsoft\Windows\Start Menu\Programs\Startup')
     }
     foreach ($startup in ($startupPaths | Select-Object -Unique)) {
         try {

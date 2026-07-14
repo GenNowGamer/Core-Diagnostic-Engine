@@ -20,6 +20,26 @@ namespace ToolkitGUI.Services
             IEnumerable<string> selectedFindingIds,
             Window? owner = null)
         {
+            var ids = selectedFindingIds
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(id => new CstRemediationTarget
+                {
+                    Id = id.Trim(),
+                    DisplayName = id.Trim(),
+                    Location = string.Empty
+                })
+                .ToList();
+
+            return await ExecuteRemediationAsync(artifactPath, action, ids, owner);
+        }
+
+        public static async Task<bool> ExecuteRemediationAsync(
+            string artifactPath,
+            string action,
+            IReadOnlyList<CstRemediationTarget> targets,
+            Window? owner = null)
+        {
             try
             {
                 if (string.IsNullOrWhiteSpace(artifactPath) || !File.Exists(artifactPath))
@@ -32,11 +52,7 @@ namespace ToolkitGUI.Services
                     return false;
                 }
 
-                var selectedIds = selectedFindingIds
-                    .Where(id => !string.IsNullOrWhiteSpace(id))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-                if (selectedIds.Length == 0)
+                if (targets is null || targets.Count == 0)
                 {
                     MessageBox.Show(
                         "Select at least one finding before running a remediation action.",
@@ -57,57 +73,103 @@ namespace ToolkitGUI.Services
                     return false;
                 }
 
-                var remediationCommand = new StringBuilder();
-                remediationCommand.Append("$result = & ");
-                remediationCommand.Append(QuoteForPowerShell(cstScriptPath));
-                remediationCommand.Append(" -Operation Remediate -FindingsInputPath ");
-                remediationCommand.Append(QuoteForPowerShell(artifactPath));
-                remediationCommand.Append(" -RemediationAction ");
-                remediationCommand.Append(action);
-                remediationCommand.Append(" -SelectedFindingId ");
-                remediationCommand.Append(BuildPowerShellArray(selectedIds));
-                remediationCommand.Append(" -AutoElevate -RequireElevation -EmitJson; $result");
+                var actionVerb = string.Equals(action, "Quarantine", StringComparison.OrdinalIgnoreCase)
+                    ? "Quarantining"
+                    : "Removing";
+                var successLabel = string.Equals(action, "Quarantine", StringComparison.OrdinalIgnoreCase)
+                    ? "Quarantined"
+                    : "Removed";
 
-                var (output, error) = await PowerShellService.QueryAsync(remediationCommand.ToString());
-                if (!string.IsNullOrWhiteSpace(error))
+                var progressItems = targets.Select(t => new CstRemediationProgressItem
                 {
-                    MessageBox.Show(
-                        $"Remediation reported errors:\n{error}",
-                        "Core Security Tool",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                    return false;
+                    Id = t.Id,
+                    DisplayName = string.IsNullOrWhiteSpace(t.DisplayName) ? t.Id : t.DisplayName,
+                    Location = t.Location ?? string.Empty
+                }).ToList();
+
+                var progressWindow = new CstRemediationProgressWindow
+                {
+                    Owner = owner ?? Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                };
+                progressWindow.Initialize(actionVerb, progressItems);
+                progressWindow.Show();
+
+                var totalSucceeded = 0;
+                var totalFailed = 0;
+                var totalSkipped = 0;
+                var allErrors = new List<string>();
+                var rollbackPaths = new List<string>();
+
+                try
+                {
+                    for (var i = 0; i < targets.Count; i++)
+                    {
+                        var target = targets[i];
+                        var label = string.IsNullOrWhiteSpace(target.DisplayName) ? target.Id : target.DisplayName;
+                        progressWindow.SetCurrent(i, $"{actionVerb}: {label}");
+
+                        // Let the progress UI paint before the PowerShell call.
+                        await DispatcherYieldAsync();
+
+                        var (ok, result, errorMessage) = await RunSingleRemediationAsync(
+                            cstScriptPath!,
+                            artifactPath,
+                            action,
+                            target.Id);
+
+                        if (!ok || result is null)
+                        {
+                            totalFailed++;
+                            if (!string.IsNullOrWhiteSpace(errorMessage))
+                                allErrors.Add($"{label}: {errorMessage}");
+                            progressWindow.MarkResult(i, succeeded: false, skipped: false, successLabel: successLabel, note: errorMessage);
+                            continue;
+                        }
+
+                        totalSucceeded += result.Succeeded;
+                        totalFailed += result.Failed;
+                        totalSkipped += result.Skipped;
+                        if (!string.IsNullOrWhiteSpace(result.RollbackManifestPath))
+                            rollbackPaths.Add(result.RollbackManifestPath);
+                        if (result.Errors.Count > 0)
+                            allErrors.AddRange(result.Errors.Select(e => $"{label}: {e}"));
+
+                        var itemSucceeded = result.Failed == 0 && result.Succeeded > 0;
+                        var itemSkipped = result.Failed == 0 && result.Succeeded == 0;
+                        progressWindow.MarkResult(
+                            i,
+                            succeeded: itemSucceeded,
+                            skipped: itemSkipped,
+                            successLabel: successLabel,
+                            note: result.Errors.FirstOrDefault());
+
+                        await DispatcherYieldAsync();
+                    }
+
+                    progressWindow.SetFinished("Remediation finished. Review the summary next.");
+                    await Task.Delay(350);
+                }
+                finally
+                {
+                    progressWindow.Close();
                 }
 
-                var jsonText = ExtractJsonBlock(output);
-                if (string.IsNullOrWhiteSpace(jsonText))
+                var aggregated = new CstRemediationResult
                 {
-                    MessageBox.Show(
-                        "Remediation completed but returned no JSON payload.",
-                        "Core Security Tool",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                    return false;
-                }
-
-                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var remediation = JsonSerializer.Deserialize<CstRemediationResult>(jsonText, opts);
-                if (remediation is null)
-                {
-                    MessageBox.Show(
-                        "Remediation completed but the result payload could not be parsed.",
-                        "Core Security Tool",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                    return false;
-                }
+                    Action = action,
+                    Succeeded = totalSucceeded,
+                    Failed = totalFailed,
+                    Skipped = totalSkipped,
+                    RollbackManifestPath = rollbackPaths.LastOrDefault() ?? string.Empty,
+                    Errors = allErrors
+                };
 
                 MessageBox.Show(
-                    BuildRemediationSummary(remediation),
+                    BuildRemediationSummary(aggregated),
                     "Core Security Tool",
                     MessageBoxButton.OK,
-                    remediation.Failed > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
-                return remediation.Failed == 0;
+                    aggregated.Failed > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+                return aggregated.Failed == 0;
             }
             catch (Exception ex)
             {
@@ -118,6 +180,67 @@ namespace ToolkitGUI.Services
                     MessageBoxImage.Warning);
                 return false;
             }
+        }
+
+        private static async Task<(bool Ok, CstRemediationResult? Result, string? ErrorMessage)> RunSingleRemediationAsync(
+            string cstScriptPath,
+            string artifactPath,
+            string action,
+            string findingId)
+        {
+            try
+            {
+                var remediationCommand = new StringBuilder();
+                remediationCommand.Append("$result = & ");
+                remediationCommand.Append(QuoteForPowerShell(cstScriptPath));
+                remediationCommand.Append(" -Operation Remediate -FindingsInputPath ");
+                remediationCommand.Append(QuoteForPowerShell(artifactPath));
+                remediationCommand.Append(" -RemediationAction ");
+                remediationCommand.Append(action);
+                remediationCommand.Append(" -SelectedFindingId ");
+                remediationCommand.Append(BuildPowerShellArray(new[] { findingId }));
+                remediationCommand.Append(" -AutoElevate -RequireElevation -EmitJson; $result");
+
+                var (output, error) = await PowerShellService.QueryAsync(remediationCommand.ToString());
+                if (!string.IsNullOrWhiteSpace(error))
+                    return (false, null, error.Trim());
+
+                var jsonText = ExtractJsonBlock(output);
+                if (string.IsNullOrWhiteSpace(jsonText))
+                    return (false, null, "No JSON payload returned.");
+
+                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var remediation = JsonSerializer.Deserialize<CstRemediationResult>(jsonText, opts);
+                if (remediation is null)
+                    return (false, null, "Could not parse remediation result.");
+
+                return (true, remediation, null);
+            }
+            catch (Exception ex)
+            {
+                return (false, null, ex.Message);
+            }
+        }
+
+        private static Task DispatcherYieldAsync()
+        {
+            var tcs = new TaskCompletionSource();
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher is null)
+            {
+                tcs.SetResult();
+                return tcs.Task;
+            }
+
+            dispatcher.BeginInvoke(new Action(() => tcs.TrySetResult()), System.Windows.Threading.DispatcherPriority.Background);
+            return tcs.Task;
+        }
+
+        public sealed class CstRemediationTarget
+        {
+            public string Id { get; init; } = string.Empty;
+            public string DisplayName { get; init; } = string.Empty;
+            public string Location { get; init; } = string.Empty;
         }
 
         public static Task ExecuteRollbackFromManifestAsync(string rollbackManifestPath)
@@ -254,74 +377,24 @@ namespace ToolkitGUI.Services
                     return;
                 }
 
-                var selectedIds = dialog.Findings
+                var selectedTargets = dialog.Findings
                     .Where(f => f.IsSelected)
-                    .Select(f => f.Id)
-                    .Where(id => !string.IsNullOrWhiteSpace(id))
-                    .ToArray();
-                if (selectedIds.Length == 0)
+                    .Select(f => new CstRemediationTarget
+                    {
+                        Id = f.Id,
+                        DisplayName = string.IsNullOrWhiteSpace(f.Name) ? f.Id : f.Name,
+                        Location = f.Location ?? string.Empty
+                    })
+                    .Where(t => !string.IsNullOrWhiteSpace(t.Id))
+                    .ToList();
+                if (selectedTargets.Count == 0)
                     return;
 
-                var cstScriptPath = ResolveCoreSecurityToolPath();
-                if (string.IsNullOrWhiteSpace(cstScriptPath) || !File.Exists(cstScriptPath))
-                {
-                    MessageBox.Show(
-                        "Core Security Tool remediation script was not found.",
-                        "Core Security Tool",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                    return;
-                }
-
-                var remediationCommand = new StringBuilder();
-                remediationCommand.Append("$result = & ");
-                remediationCommand.Append(QuoteForPowerShell(cstScriptPath));
-                remediationCommand.Append(" -Operation Remediate -FindingsInputPath ");
-                remediationCommand.Append(QuoteForPowerShell(artifactPath));
-                remediationCommand.Append(" -RemediationAction ");
-                remediationCommand.Append(dialog.RequestedAction);
-                remediationCommand.Append(" -SelectedFindingId ");
-                remediationCommand.Append(BuildPowerShellArray(selectedIds));
-                remediationCommand.Append(" -AutoElevate -RequireElevation -EmitJson; $result");
-
-                var (output, error) = await PowerShellService.QueryAsync(remediationCommand.ToString());
-                if (!string.IsNullOrWhiteSpace(error))
-                {
-                    MessageBox.Show(
-                        $"Remediation reported errors:\n{error}",
-                        "Core Security Tool",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                    return;
-                }
-
-                var jsonText = ExtractJsonBlock(output);
-                if (string.IsNullOrWhiteSpace(jsonText))
-                {
-                    MessageBox.Show(
-                        "Remediation completed but returned no JSON payload.",
-                        "Core Security Tool",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                    return;
-                }
-
-                var remediation = JsonSerializer.Deserialize<CstRemediationResult>(jsonText, opts);
-                if (remediation is null)
-                {
-                    MessageBox.Show(
-                        "Remediation completed but the result payload could not be parsed.",
-                        "Core Security Tool",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                    return;
-                }
-
-                MessageBox.Show(
-                    BuildRemediationSummary(remediation),
-                    "Core Security Tool",
-                    MessageBoxButton.OK,
-                    remediation.Failed > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+                await ExecuteRemediationAsync(
+                    artifactPath,
+                    dialog.RequestedAction,
+                    selectedTargets,
+                    dialog.Owner);
             }
             catch (Exception ex)
             {

@@ -42690,7 +42690,7 @@
                                                    "invoke-webrequest",
                                                    "-enc"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "Script_HighRisk_Path_Execution_Chain",
@@ -42737,7 +42737,7 @@
                                                         "raccoon stealer",
                                                         "vidar stealer"
                                                     ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)",
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)",
                               "excludePathRegex":  "(vbcscompiler\\\\analyzerassemblyloader|\\\\.nuget\\\\|\\\\nuget\\\\packages\\\\)"
                           },
                           {
@@ -42756,7 +42756,7 @@
                                                    "certutil",
                                                    "-urlcache"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "LOLBin_Mshta_Remote",
@@ -42775,7 +42775,7 @@
                                                    "mshta",
                                                    "http"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "LOLBin_Regsvr32_Scrobj",
@@ -42793,7 +42793,7 @@
                                                    "regsvr32",
                                                    "scrobj"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "LOLBin_Bitsadmin_Transfer",
@@ -42811,7 +42811,7 @@
                                                    "bitsadmin",
                                                    "/transfer"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "PS_FromBase64_IEX",
@@ -42827,7 +42827,7 @@
                                                    "[convert]::frombase64string",
                                                    "iex"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "PS_DownloadString_IEX",
@@ -42843,7 +42843,7 @@
                                                    "downloadstring",
                                                    "iex"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "PS_WebClient_IEX",
@@ -42859,7 +42859,7 @@
                                                    "new-object net.webclient",
                                                    "iex"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "PS_HiddenWindow_Encoded",
@@ -42878,7 +42878,7 @@
                                                    "-windowstyle hidden",
                                                    "-enc"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "Script_CreateObject_Shell",
@@ -42893,7 +42893,7 @@
                                                  ".jse",
                                                  ".wsf"
                                              ],
-                              "pathRegex":  "appdata\\(local\\temp|roaming)|\\windows\\temp\\|\\users\\public\\|\\downloads\\|start menu\\programs\\startup",
+                              "pathRegex":  "appdata\\(local\\temp|roaming)|\\windows\\temp\\|\\users\\public\\|\\downloads\\|\\desktop\\|\\documents\\|start menu\\programs\\startup",
                               "containsText":  [
                                                    "createobject",
                                                    "wscript.shell"
@@ -42916,7 +42916,7 @@
                                                    "regwrite",
                                                    "currentversion\\\\run"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "Office_Macro_AutoOpen",
@@ -42935,7 +42935,7 @@
                                                    "document_open",
                                                    "workbook_open"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "Office_Macro_Shell_Exec",
@@ -42953,7 +42953,7 @@
                                                    "createobject",
                                                    "shell"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           },
                           {
                               "name":  "PS_LSASS_Dump",
@@ -42970,7 +42970,7 @@
                                                    "lsass",
                                                    "minidump"
                                                ],
-                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
+                              "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|\\\\desktop|\\\\documents|startup)"
                           }
                       ],
     "signerPolicies":  {

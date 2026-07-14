@@ -51,7 +51,7 @@ Setup:
 
 Validation:
 
-1. Run CST FullScan or CustomScan across all injected paths.
+1. Run CST ThreatScan or FullScan (both walk Users\Public, Desktop, and Documents as of 2026-07-13), or CustomScan those folders explicitly.
 2. Confirm all injected paths are included in operator review/reporting.
 3. Do not expect malware conviction from the built-in markers alone.
 

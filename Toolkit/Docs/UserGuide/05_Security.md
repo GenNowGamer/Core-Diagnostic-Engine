@@ -19,10 +19,10 @@
 4. The **CST Scan Results** window opens immediately with live progress (same layout as File Manager / Startup Manager / Process Analyzer). Pre-scan steps (targets, known-good baselines, path discovery) and file analysis both update the progress panel — the window should not sit idle with no status
 5. When finished, the same window shows the verdict (with scan-mode label), metrics, coverage notes, and findings
 6. Use **Open Report** to open the operator PDF (`Logs\CST_Scan_*.pdf`) generated when results appear
-7. Select **actionable** findings and use **Quarantine Selected**, **Remove Selected**, or **Restore from Manifest...** — no separate post-scan operator dialog
+7. Select **actionable** findings and use **Quarantine Selected**, **Remove Selected**, or **Restore from Manifest...** — remediation runs with a **per-item progress** window, then a summary. No separate post-scan operator dialog is required after Malware Cleanup CST
 8. **Archive hits:** inner `zip::entry` rows are review-only; select the **parent .zip/.jar** row to quarantine or remove the container
 
-> **ThreatScan** is a high-risk-path triage (not full-disk AV). Prefer **FullScan** or **CustomScan** on a suspect tree when hunting. Authenticode timeouts appear as low-confidence warnings (“signer not verified”), not confirmed malware. Empty EFI hash baselines appear under **Coverage** (signer-only boot checks still run), not as a findings row.
+> **ThreatScan** is a high-risk-path triage (not full-disk AV). It walks ProgramData, Temp, Tasks, Startup, Downloads, **Users\Public**, per-user **Desktop** / **Documents** / Roaming / INetCache (and more). Prefer **FullScan** or a folder **CustomScan** when hunting outside those roots. Authenticode timeouts appear as low-confidence warnings (“signer not verified”), not confirmed malware. Empty EFI hash baselines appear under **Coverage** (signer-only boot checks still run), not as a findings row. Long Location paths in **CST Scan Results** use the Findings grid horizontal scrollbar.
 
 > **WinPE + offline OS:** Boot menu **option 2** so CST can scan the customer's Windows folder. Without offline load, CST may show "no Windows volume found."
 

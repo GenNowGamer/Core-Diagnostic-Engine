@@ -317,14 +317,14 @@ namespace ToolkitGUI.Views
             if (presentation.HasSuppressedFindings)
             {
                 SuppressedHeader.Visibility = Visibility.Visible;
-                SuppressedScrollHost.Visibility = Visibility.Visible;
+                SuppressedGrid.Visibility = Visibility.Visible;
                 SuppressedGrid.ItemsSource = presentation.SuppressedFindings;
                 SuppressedGridRow.Height = new GridLength(160);
             }
             else
             {
                 SuppressedHeader.Visibility = Visibility.Collapsed;
-                SuppressedScrollHost.Visibility = Visibility.Collapsed;
+                SuppressedGrid.Visibility = Visibility.Collapsed;
                 SuppressedGrid.ItemsSource = null;
                 SuppressedGridRow.Height = new GridLength(0);
             }
@@ -592,10 +592,20 @@ namespace ToolkitGUI.Views
             SetRemediationEnabled(false);
             try
             {
+                var targets = selected
+                    .Select(f => new CstRemediationService.CstRemediationTarget
+                    {
+                        Id = f.Id,
+                        DisplayName = string.IsNullOrWhiteSpace(f.Name) ? f.Id : f.Name,
+                        Location = f.Location ?? string.Empty
+                    })
+                    .ToList();
+
                 await CstRemediationService.ExecuteRemediationAsync(
                     _presentation.ArtifactPath,
                     action,
-                    selected.Select(f => f.Id));
+                    targets,
+                    this);
             }
             finally
             {

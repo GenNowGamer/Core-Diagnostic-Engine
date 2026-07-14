@@ -2,6 +2,38 @@
 
 **Last updated:** 2026-07-13
 
+## 2026-07-13 — CST Public roots + remediation UX + complex BenchLab
+
+### CST high-risk roots include Users\Public
+
+- **Gap** — Drive Threat/Full/Custom expansion skipped the Public profile even though YaraLike already allowed `\users\public` (C02 Public script IOCs missed).
+- **CST (synced)** — `Get-CstHighRiskScanRoots`: Public (+ Downloads/Desktop/Documents), per-user Desktop/Documents/Local Startup; Full/Custom add Local\Programs + SysWOW64. Risk regex + YaraLike pathRegex updated. See CST `CST\session_handoff.md`.
+- **Verify** — ThreatScan/FullScan should flag inert Public markers (e.g. `C:\Users\Public\update_check.ps1`). Tasks / proxy / Edge policy remain Startup Manager / Hijack Repair (Custom still defaults persistence collectors off).
+
+### CST Scan Results — horizontal scroll restored
+
+- **Fix** — Findings (and suppressed) `DataGrid` use native `ScrollViewer.HorizontalScrollBarVisibility=Visible` with wide Location/Evidence columns (outer ScrollViewer + fixed grid width was unreliable).
+- **Verify** — Long paths show a horizontal scrollbar under Findings.
+
+### CST remediation progress
+
+- **UI** — `CstRemediationProgressWindow` lists per-finding status + progress bar during Quarantine/Remove from `ProcessAnalyzerCstResultDialog` (and operator-dialog path).
+- **Service** — `CstRemediationService` remediates per selected finding with progress callbacks, then summary MessageBox.
+
+### Complex BenchLab pack (C01–C08)
+
+- **Script** — `Scripts\BenchLab\Invoke-CdeBenchComplexPack.ps1` (safe-only multi-type campaigns).
+- **Docs** — `Docs\BenchLab\CDE_Complex_MultiInfection_Pack.md`; Quick Start links to complex pack.
+- **C02 expectations** — CST content: Public + Temp markers; task/proxy/Edge via Startup Manager / Hijack (not Custom file-only).
+
+### Lab VM toolkit sync
+
+- Full runtime packaged → Azure blob → extracted to lab `C:\CDE` (CST Public-root build included). Temporary HTTPS egress opened for download then re-locked.
+
+### Publish
+
+- `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; CST runtime synced (`CoreSecurityTool.psm1` / `rules.json` **2026-07-13 ~5:30 PM**). GUI payload earlier same day (~4:08 PM) includes scroll + remediation progress.
+
 ## 2026-07-13 — SMART Open Report fix + CST results PDF + pre-scan progress + Hijack layout
 
 ### S.M.A.R.T. Analyzer — stuck “Saving…” / disabled Open Report
@@ -42,7 +74,7 @@
 ## 2026-07-10 — CST Scan Results UX + detection hardening + archive remediation
 
 - **Results UI** — File Manager / Startup Manager / Malware Cleanup / Process Analyzer share **CST Scan Results** (live progress → findings). Remediation (**Quarantine / Remove / Restore**) is in that window; separate post-scan operator dialog is no longer auto-opened after Malware Cleanup CST.
-- **Horizontal scroll** — Findings grid uses an outer horizontal `ScrollViewer` with fixed column widths. App-wide `ScrollBar` style clears forced `Width=12` for **horizontal** bars (was collapsing to a tiny button).
+- **Horizontal scroll** — Findings grid uses DataGrid-native horizontal scrollbar (`Visible`) with wide Location/Evidence columns (2026-07-13 restore). App-wide `ScrollBar` style still clears forced `Width=12` for horizontal bars.
 - **Verdict / coverage** — Mode labels in verdict/action text (ThreatScan vs FullScan vs CustomScan); coverage notes surface Partial / known-good skips / trusted-signer exits.
 - **Archive findings** — Inner `zip::entry` rows stay review-only; CST also emits an actionable **parent archive** `File` finding so techs can Quarantine/Remove the `.zip`/`.jar`. UI notes explain the path.
 - **CST engine (synced)** — ThreatScan includes DLLs + light archive peek; Authenticode timeouts emit Low/Unknown (not silence); trusted-signer early exit narrowed to Microsoft-family + cheap spot-check on known-good/trusted skips; stronger correlation promote; empty EFI hash baselines → signer-only + coverage note (see 2026-07-11). See CST `CST\session_handoff.md`.
