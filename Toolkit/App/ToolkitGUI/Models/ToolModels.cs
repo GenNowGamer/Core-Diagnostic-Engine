@@ -116,6 +116,9 @@ namespace ToolkitGUI.Models
         public string UninstallKey { get; set; } = string.Empty;
         public string UninstallStr { get; set; } = string.Empty;
         public string Arch         { get; set; } = string.Empty;
+
+        /// <summary>True when the registry entry has a non-empty UninstallString (standard Uninstall can run).</summary>
+        public bool HasUninstaller => !string.IsNullOrWhiteSpace(UninstallStr);
     }
 
     public class FastFix

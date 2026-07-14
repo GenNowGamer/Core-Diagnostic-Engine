@@ -73,12 +73,15 @@ Right-click a row for technician jump tools (Enable / Disable / Delete stay on t
 
 | Action | Use for |
 |--------|---------|
-| **Open file location** | Explorer select on the resolved target (prefers `-File` scripts over `powershell.exe`) |
-| **Copy file path / command line** | Paste into notes or another tool |
+| **Open target folder** | Explorer select on the resolved target (prefers `-File` scripts over `powershell.exe`) |
+| **Copy target file path / command line** | Paste into notes or another tool |
+| **Delete target file...** | Remove a leftover dropper under ProgramData / AppData / Temp / Public (not OS install paths). Does not remove the autorun itself |
 | **Scan with CST** | Startup-entry scan: multi-target file CustomScan + command-line LOLBin analysis + persistence correlation; result dialog shows **File / Command line / Persistence** verdicts |
 | **Copy registry path / Open in Registry Editor** | When the entry has a registry location |
-| **Show entry details** | Full name, source, risk, analysis, path, related |
-| **Open Malware Cleanup / Process Analyzer** | Jump to related workflows |
+| **Show entry details** | Full name, source, risk, analysis, command line, **resolved target**, related |
+| **Open Malware Cleanup / Process Analyzer / File Manager** | Jump to related workflows |
+
+When you **Delete** a Run/Startup entry whose target still exists in a remediable path (e.g. `ProgramData\VendorCache\...`), CDE asks whether to **also delete that target file** (and empty parent folders). Prefer Yes for leftover malware droppers after clearing persistence.
 
 Services tab offers the same file/CST/copy/details jumps (plus **Copy service name**).
 

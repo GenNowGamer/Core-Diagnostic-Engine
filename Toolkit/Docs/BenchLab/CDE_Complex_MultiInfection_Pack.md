@@ -18,10 +18,10 @@ This pack does **not** ship or execute real malware.
 
 ## Safety
 
-- Isolated lab VM only
+- Isolated lab VM only (current host lab: local **Hyper-V** `w11-infect-lab` under `D:\Hyper-V\w11-infect-lab\` — Azure `rg-w11-infect-lab` retired 2026-07-14)
 - Inject requires `-SafeOnly`
 - Prefer admin PowerShell for hosts/service scenarios (C01, C05, C06, C08)
-- Revert snapshot after each campaign
+- Revert snapshot / Hyper-V **checkpoint** after each campaign
 
 ## Commands (from Toolkit / `C:\CDE` root)
 
@@ -47,6 +47,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Scripts\BenchLab\Invoke-Cd
 | C06 | Bits/mshta/regsvr/IWR markers + Run + optional service + hosts |
 | C07 | Same “family” agent dropped in 6 CST-visible paths + task + Run + uninstall mask |
 | C08 | Kitchen-sink: many content markers + noise + persistence + proxy + Edge + Chrome ext + hosts + optional service |
+
+**C03 remediation notes:** **Support Assist Pro (Remote)** is a registry **uninstall mask** (DisplayName/Publisher only — no `UninstallString`). Uninstall Manager **Uninstall** is disabled / will refuse it; use **Force Remove** to clear the key. Persistence: delete **SupportAssistUpdater** (broken Run) and **SupportAssistCore** (points at `ProgramData\VendorCache\Runtime\core_agent.cmd`) in Startup Manager — after Delete, accept **also remove target file** when offered so `core_agent.cmd` does not remain orphaned.
 
 ## Suggested operator flow
 

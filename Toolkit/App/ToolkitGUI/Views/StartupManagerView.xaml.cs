@@ -164,9 +164,13 @@ namespace ToolkitGUI.Views
             var hasCommand = !string.IsNullOrWhiteSpace(entry.FilePath);
 
             var menu = CreateStyledContextMenu();
-            menu.Items.Add(CreateMenuItem("Open file location", () => _vm.OpenEntryFileLocation(entry), hasFile));
-            menu.Items.Add(CreateMenuItem("Copy file path", () => _vm.CopyEntryFilePath(entry), hasFile || hasCommand));
+            menu.Items.Add(CreateMenuItem("Open target folder", () => _vm.OpenEntryFileLocation(entry), hasFile));
+            menu.Items.Add(CreateMenuItem("Copy target file path", () => _vm.CopyEntryFilePath(entry), hasFile || hasCommand));
             menu.Items.Add(CreateMenuItem("Copy command line", () => _vm.CopyEntryCommandLine(entry), hasCommand));
+            var canDeleteTarget = hasFile
+                && !string.IsNullOrWhiteSpace(resolved)
+                && StartupTargetFileCleanup.IsRemediableDropPath(resolved);
+            menu.Items.Add(CreateMenuItem("Delete target file...", () => _vm.DeleteEntryTargetFile(entry), canDeleteTarget));
             menu.Items.Add(CreateMenuItem("Scan with CST", () => _ = _vm.ScanEntryWithCstAsync(entry), hasFile));
             menu.Items.Add(new Separator());
             menu.Items.Add(CreateMenuItem("Copy registry path", () => _vm.CopyEntryRegistryPath(entry), hasRegistry));
@@ -175,6 +179,7 @@ namespace ToolkitGUI.Views
             menu.Items.Add(CreateMenuItem("Show entry details", () => _vm.ShowEntryDetails(entry)));
             menu.Items.Add(CreateMenuItem("Open Malware Cleanup", () => _vm.OpenMalwareCleanup()));
             menu.Items.Add(CreateMenuItem("Open Process Analyzer", () => _vm.OpenProcessAnalyzer()));
+            menu.Items.Add(CreateMenuItem("Open File Manager", () => NavigationService.Request("FileManager")));
 
             menu.PlacementTarget = StartupGrid;
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;

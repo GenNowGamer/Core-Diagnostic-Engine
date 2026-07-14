@@ -301,10 +301,25 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
+            var resolvedTarget = TryResolveEntryFilePath(e);
+            var offerTargetCleanup = !string.IsNullOrWhiteSpace(resolvedTarget)
+                && StartupTargetFileCleanup.IsRemediableDropPath(resolvedTarget);
+
+            var impact = "This permanently removes the startup entry. You may need to re-create it manually to restore autostart.";
+            if (offerTargetCleanup)
+            {
+                impact += "\n\nLinked file (still on disk):\n" + resolvedTarget
+                    + "\n\nAfter Delete you can also remove that target file if it looks like a leftover dropper.";
+            }
+            else if (!string.IsNullOrWhiteSpace(e.FilePath))
+            {
+                impact += "\n\nCommand / path:\n" + e.FilePath;
+            }
+
             if (!DestructiveActionDialog.Confirm(
                     "Startup Manager",
                     $"Delete startup entry \"{e.Name}\"?",
-                    "This permanently removes the startup entry. You may need to re-create it manually to restore autostart.",
+                    impact,
                     defaultNo: true))
             {
                 StatusText = $"Delete cancelled for {e.Name}";
@@ -343,6 +358,41 @@ namespace ToolkitGUI.ViewModels
                     StatusText = $"Delete verification failed for {e.Name}";
                     return;
                 }
+            }
+
+            if (offerTargetCleanup && File.Exists(resolvedTarget!))
+            {
+                var removeTarget = MessageBox.Show(
+                    "Startup entry deleted.\n\nAlso delete the linked target file?\n\n"
+                    + resolvedTarget
+                    + "\n\nUse Yes for leftover droppers under ProgramData/AppData/Temp/Public. "
+                    + "Choose No if you only wanted the autorun removed.",
+                    "Startup Manager — remove target file?",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question,
+                    MessageBoxResult.Yes);
+
+                if (removeTarget == MessageBoxResult.Yes)
+                {
+                    if (StartupTargetFileCleanup.TryDeleteFileAndEmptyParents(resolvedTarget!, out var detail))
+                    {
+                        StatusText = $"Deleted: {e.Name}. {detail}";
+                    }
+                    else
+                    {
+                        StatusText = $"Deleted: {e.Name}. Target file cleanup failed: {detail}";
+                        MessageBox.Show(
+                            $"Could not remove:\n{resolvedTarget}\n\n{detail}",
+                            "Startup Manager",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                    }
+
+                    return;
+                }
+
+                StatusText = $"Deleted: {e.Name}. Target file left on disk: {resolvedTarget}";
+                return;
             }
 
             StatusText = $"Deleted: {e.Name}";
@@ -684,6 +734,53 @@ namespace ToolkitGUI.ViewModels
         public void OpenEntryFileLocation(StartupEntry entry)
             => OpenResolvedFileLocation(TryResolveEntryFilePath(entry), entry.FilePath);
 
+        /// <summary>
+        /// Removes a remediable dropper file linked to a startup entry (without deleting the autorun).
+        /// </summary>
+        public void DeleteEntryTargetFile(StartupEntry entry)
+        {
+            var path = TryResolveEntryFilePath(entry);
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                MessageBox.Show(
+                    "No existing target file could be resolved for this entry.",
+                    "Startup Manager",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            if (!StartupTargetFileCleanup.IsRemediableDropPath(path))
+            {
+                MessageBox.Show(
+                    "This target path is under an OS or product install tree and will not be deleted automatically.\n\n"
+                    + path
+                    + "\n\nUse File Manager if you still need to remove it.",
+                    "Startup Manager",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            if (!DestructiveActionDialog.Confirm(
+                    "Startup Manager",
+                    $"Delete target file for \"{entry.Name}\"?",
+                    "This removes the linked file on disk. The startup entry itself is left alone.\n\n" + path,
+                    defaultNo: true))
+            {
+                StatusText = "Target file delete cancelled";
+                return;
+            }
+
+            if (StartupTargetFileCleanup.TryDeleteFileAndEmptyParents(path, out var detail))
+                StatusText = $"{entry.Name}: {detail}";
+            else
+            {
+                StatusText = $"{entry.Name}: target delete failed — {detail}";
+                MessageBox.Show(detail, "Startup Manager", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
         public void OpenServiceFileLocation(ServiceEntry service)
             => OpenResolvedFileLocation(TryResolveServiceFilePath(service), service.FilePath);
 
@@ -898,14 +995,21 @@ namespace ToolkitGUI.ViewModels
                 sb.AppendLine($"Deviation: {entry.DeviationReason}");
             sb.AppendLine();
             sb.AppendLine("Command / path:");
-            sb.AppendLine(entry.FilePath);
+            sb.AppendLine(string.IsNullOrWhiteSpace(entry.FilePath) ? "(empty)" : entry.FilePath);
             var resolved = TryResolveEntryFilePath(entry);
-            if (!string.IsNullOrWhiteSpace(resolved) &&
-                !string.Equals(resolved, entry.FilePath, StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(resolved))
             {
                 sb.AppendLine();
-                sb.AppendLine("Resolved file:");
+                sb.AppendLine("Resolved target file:");
                 sb.AppendLine(resolved);
+                sb.AppendLine(File.Exists(resolved) ? "Target exists: Yes" : "Target exists: No");
+                if (StartupTargetFileCleanup.IsRemediableDropPath(resolved))
+                    sb.AppendLine("Remediation tip: After Delete, CDE can offer to remove this file if it is a leftover dropper.");
+            }
+            else if (!string.IsNullOrWhiteSpace(entry.FilePath))
+            {
+                sb.AppendLine();
+                sb.AppendLine("Resolved target file: (not found on disk)");
             }
 
             var reg = GetBestRegistryPath(entry);
@@ -1514,6 +1618,13 @@ namespace ToolkitGUI.ViewModels
         private async Task UninstallAsync(InstalledProgram? p)
         {
             if (p == null) return;
+
+            if (string.IsNullOrWhiteSpace(p.UninstallStr))
+            {
+                StatusText = $"No uninstaller registered for {p.Name}. Use Force Remove for orphaned/mask entries.";
+                return;
+            }
+
             StatusText = $"Launching uninstaller for {p.Name}...";
             var escaped = p.UninstallStr.Replace("'", "''");
             var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' -Action Uninstall -UninstallStr '{escaped}'");

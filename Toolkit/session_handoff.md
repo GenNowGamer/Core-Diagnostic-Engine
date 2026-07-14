@@ -1,6 +1,21 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-13
+**Last updated:** 2026-07-14
+
+## 2026-07-14 — Lab infra: Azure tear-down → local Hyper-V
+
+- **Azure infect lab removed** — Resource group `rg-w11-infect-lab` deleted (VM, disks, snapshots, NSG, storage `cdelab410242`). No further Azure lab bill for that RG.
+- **Before tear-down** — C03 artifacts verified **CLEAN** on the Azure guest; full toolkit runtime had been re-pushed to `C:\CDE` (GUI ~9:30 AM payload with Startup Manager target-file cleanup).
+- **Local lab direction** — Prefer **Hyper-V** Gen2 + vTPM + Autounattend over hand-built VMware `.vmx` (Win11 needs encrypt/vTPM; VMware Easy Install wizard is interactive). Provisioned host path: `D:\Hyper-V\w11-infect-lab\` (README + `LAB_CREDENTIALS.txt`). Connect with elevated Hyper-V Manager / `vmconnect` (Hyper-V Administrators). Enhanced Session login is **not** guest setup — Cancel until Windows is installed.
+- **Status** — Hyper-V VM created (TPM/Secure Boot/Default Switch); Win11 Autounattend install **not yet confirmed at desktop**. Do not assume BenchLab-ready until checkpoint `baseline-clean` exists.
+- **VMware** — Experimental `w11-infect-lab` under Documents\Virtual Machines can be deleted later to reclaim space; personal `Windows 11 x64` left alone.
+
+## 2026-07-14 — Startup Manager: delete linked target file
+
+- **Delete Run/Startup** — After removing the autorun, if a remediable target still exists (ProgramData non-Microsoft, AppData, Temp, Public, Downloads/Desktop/Documents), prompt to also delete the file and empty parent folders.
+- **Context menu** — **Open target folder**, **Delete target file...**, **Open File Manager**; entry details show resolved target + exists tip.
+- **Why** — Closes the C03-style gap where inert droppers (e.g. `ProgramData\VendorCache\Runtime\core_agent.cmd`) remain after Run-key delete and are not CST content hits.
+- **Publish** — `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`.
 
 ## 2026-07-13 — CST Public roots + remediation UX + complex BenchLab
 
@@ -26,9 +41,9 @@
 - **Docs** — `Docs\BenchLab\CDE_Complex_MultiInfection_Pack.md`; Quick Start links to complex pack.
 - **C02 expectations** — CST content: Public + Temp markers; task/proxy/Edge via Startup Manager / Hijack (not Custom file-only).
 
-### Lab VM toolkit sync
+### Lab VM toolkit sync (historical — Azure)
 
-- Full runtime packaged → Azure blob → extracted to lab `C:\CDE` (CST Public-root build included). Temporary HTTPS egress opened for download then re-locked.
+- Full runtime packaged → Azure blob → extracted to lab `C:\CDE` (CST Public-root build included). Temporary HTTPS egress opened for download then re-locked. **Superseded 2026-07-14:** Azure RG deleted; use local Hyper-V lab (see top-of-file).
 
 ### Publish
 

@@ -96,26 +96,43 @@ function Get-InstalledPrograms {
 switch ($Action) {
     'List' { Get-InstalledPrograms }
     'Uninstall' {
-        if ($UninstallStr) {
-            $cmd = $UninstallStr.Trim()
-            $exe = $null
-            $args = ''
+        if ([string]::IsNullOrWhiteSpace($UninstallStr)) {
+            Write-Error 'No UninstallString on this entry. Use Force Remove to delete the registry key (orphaned or spoofed entries).'
+            exit 1
+        }
 
-            if ($cmd -match '^\s*"(?<exe>[^"]+)"\s*(?<args>.*)$') {
-                $exe = $matches['exe']
-                $args = $matches['args']
-            } elseif ($cmd -match '^\s*(?<exe>\S+)\s*(?<args>.*)$') {
-                $exe = $matches['exe']
-                $args = $matches['args']
+        $cmd = $UninstallStr.Trim()
+        $exe = $null
+        $args = ''
+
+        if ($cmd -match '^\s*"(?<exe>[^"]+)"\s*(?<args>.*)$') {
+            $exe = $matches['exe']
+            $args = $matches['args']
+        } elseif ($cmd -match '^\s*(?<exe>\S+)\s*(?<args>.*)$') {
+            $exe = $matches['exe']
+            $args = $matches['args']
+        }
+
+        if ([string]::IsNullOrWhiteSpace($exe)) {
+            Write-Error "Unable to parse uninstall command: $UninstallStr"
+            exit 1
+        }
+
+        if (-not (Test-Path -LiteralPath $exe)) {
+            Write-Error "Uninstaller not found: $exe. Use Force Remove if this is a broken or orphaned entry."
+            exit 1
+        }
+
+        try {
+            if ([string]::IsNullOrWhiteSpace($args)) {
+                Start-Process -FilePath $exe -Wait -ErrorAction Stop | Out-Null
+            } else {
+                Start-Process -FilePath $exe -ArgumentList $args -Wait -ErrorAction Stop | Out-Null
             }
-
-            if (-not $exe) {
-                Write-Error "Unable to parse uninstall command: $UninstallStr"
-                break
-            }
-
-            Start-Process -FilePath $exe -ArgumentList $args -Wait -ErrorAction SilentlyContinue
             Write-Output "Uninstaller launched"
+        } catch {
+            Write-Error ("Failed to launch uninstaller: " + $_.Exception.Message)
+            exit 1
         }
     }
     'ForceRemove' {

@@ -1,14 +1,21 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-13  
+**Last updated:** 2026-07-14  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-14 update — Infect lab: Azure off → local Hyper-V
+
+- **Azure** — `rg-w11-infect-lab` deleted (stop lab compute/disk/snapshot/storage charges).
+- **Local** — Hyper-V Gen2 lab under `D:\Hyper-V\w11-infect-lab\` (vTPM + Autounattend); install-to-desktop still in progress as of doc update.
+- **Also this day** — Startup Manager “delete linked target file” + C03 Azure cleanup verified before tear-down; toolkit publish/push preceded Azure delete.
+- **Full notes** — `Toolkit\session_handoff.md`.
 
 ## 2026-07-13 update — CST Public roots + remediation UX + complex BenchLab
 
 - **CST scan roots** — Threat/Full/drive Custom now include **Users\Public** (+ Desktop/Documents/Local Startup; Full/Custom also Local\Programs + SysWOW64). Sync from Core Security Tool via publish.
 - **CST UI** — Findings horizontal scrollbar restored (DataGrid-native); Quarantine/Remove show **per-item remediation progress**.
 - **BenchLab** — Complex pack C01–C08 (`Invoke-CdeBenchComplexPack.ps1` / `CDE_Complex_MultiInfection_Pack.md`).
-- **Lab VM** — Full runtime pushed to `C:\CDE` after Public-root CST change.
+- **Lab VM** — Full runtime pushed to Azure lab `C:\CDE` (Azure lab later removed 2026-07-14).
 - **Full notes** — `Toolkit\session_handoff.md`; CST `CST\session_handoff.md`; user guide `05_Security.md`.
 
 ## 2026-07-13 update — SMART / CST reports + pre-scan progress + Hijack layout
