@@ -23,6 +23,16 @@ $Script:FastFixesRequiringElevation = @(
     'SetHighPerf'
 )
 
+function Get-FastFixesRelayArgumentString {
+    param([Parameter(Mandatory)][string]$Key)
+
+    $parts = [System.Collections.Generic.List[string]]::new()
+    Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'Action' -Value 'Apply'
+    Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'FixKey' -Value $Key
+    Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'ElevatedRelay' -IsSwitch
+    return Join-ToolkitRelayArgumentString -Parts $parts
+}
+
 function Invoke-FastFixElevationRelay {
     param([Parameter(Mandatory)][string]$Key)
 
@@ -30,7 +40,8 @@ function Invoke-FastFixElevationRelay {
     if (Test-ToolkitIsElevated) { return $false }
     if ($Script:FastFixesRequiringElevation -notcontains $Key) { return $false }
 
-    $relay = Invoke-ToolkitElevatedRelay -ScriptPath $Script:FastFixesScriptPath -ArgumentString "-Action Apply -FixKey $Key -ElevatedRelay"
+    $relay = Invoke-ToolkitElevatedRelay -ScriptPath $Script:FastFixesScriptPath `
+        -ArgumentString (Get-FastFixesRelayArgumentString -Key $Key)
     if ($null -eq $relay) { return $false }
     if ($relay.ExitCode -ne 0) {
         throw "Elevated fast fix failed (exit code $($relay.ExitCode))."
@@ -242,6 +253,17 @@ function Invoke-Fix {
             $renew   = Invoke-FixCommand -FilePath "$env:SystemRoot\System32\ipconfig.exe" -ArgumentList @('/renew')
             $adapters = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
                 Where-Object { $_.IPAddress -notlike '127.*' -and $_.PrefixOrigin -ne 'WellKnown' })
+            # Lease evidence: DHCP Preferred address, or renew text that confirms a lease — not merely leftover IPv4.
+            $leaseAdapters = @($adapters | Where-Object {
+                $_.PrefixOrigin -eq 'Dhcp' -and (
+                    -not $_.PSObject.Properties['AddressState'] -or
+                    $_.AddressState -eq 'Preferred' -or
+                    [string]::IsNullOrWhiteSpace([string]$_.AddressState)
+                )
+            })
+            $leaseFromText = $renew.Text -match '(?i)lease|renewed|successfully'
+            $renewExitOk = ($renew.ExitCode -eq 0)
+            $hasLeaseEvidence = ($leaseAdapters.Count -gt 0) -or $leaseFromText
             $primaryRoute = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
                 Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' } |
                 Sort-Object RouteMetric |
@@ -255,17 +277,29 @@ function Invoke-Fix {
                     $primaryDetail = "Primary adapter: $nicName — $($primaryIp.IPAddress) (gateway $($primaryRoute.NextHop))"
                 }
             }
-            $renewed = ($renew.Text -match 'renew|success|lease') -or ($adapters.Count -gt 0)
-            if ($renewed) {
-                $details = @("Active IPv4 adapters after renew: $($adapters.Count)")
+            if ($renewExitOk -and $hasLeaseEvidence) {
+                $details = @(
+                    "ipconfig /renew exit code: $($renew.ExitCode)",
+                    "DHCP lease adapters after renew: $($leaseAdapters.Count)"
+                )
                 if ($primaryDetail) {
                     $details += $primaryDetail
-                } elseif ($adapters.Count -gt 0) {
-                    $details += "IPv4 addresses: $($adapters.IPAddress -join ', ')"
+                } elseif ($leaseAdapters.Count -gt 0) {
+                    $details += "DHCP IPv4 addresses: $($leaseAdapters.IPAddress -join ', ')"
+                }
+                if ($release.ExitCode -ne 0) {
+                    $details += "Note: ipconfig /release exited $($release.ExitCode); renew still obtained a lease."
                 }
                 return New-FixResult -Status Pass -Summary 'IP release and renew completed' -Details $details
             }
-            return New-FixResult -Status Fail -Summary 'IP renew did not complete successfully' -Details $renew.Output
+            $failDetails = @($renew.Output)
+            if (-not $renewExitOk) {
+                $failDetails = @("ipconfig /renew exit code: $($renew.ExitCode)") + $failDetails
+            }
+            if (-not $hasLeaseEvidence) {
+                $failDetails += "No DHCP lease evidence after renew (leftover non-DHCP IPv4 is not sufficient)."
+            }
+            return New-FixResult -Status Fail -Summary 'IP renew did not complete successfully' -Details $failDetails
         }
 
         'DisableIPv6' {

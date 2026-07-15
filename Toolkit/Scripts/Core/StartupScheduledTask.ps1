@@ -147,7 +147,7 @@ function Get-StartupScheduledTaskRows {
             IsCritical         = $isWindowsPlumbing
             SupportsEnable     = -not $isWindowsPlumbing
             SupportsDisable    = -not $isWindowsPlumbing
-            SupportsDelete     = $false
+            SupportsDelete     = -not $isWindowsPlumbing
             SupportsReset      = $false
             SupportsUndo       = $false
             IsDeviated         = $false
@@ -182,11 +182,7 @@ function Set-StartupScheduledTaskEntryState {
         throw 'PROTECTED_OR_UNSUPPORTED: Windows scheduled tasks cannot be modified from Startup Manager.'
     }
 
-    $normalizedPath = if ([string]::IsNullOrWhiteSpace($TaskPath)) { '\' } else { $TaskPath }
-    if (-not $normalizedPath.EndsWith('\')) {
-        $normalizedPath += '\'
-    }
-
+    $normalizedPath = Resolve-StartupScheduledTaskPath -TaskPath $TaskPath
     $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $normalizedPath -ErrorAction Stop
     $current = [string]$task.State
 
@@ -210,5 +206,49 @@ function Set-StartupScheduledTaskEntryState {
     }
     if (-not $Enable -and [string]$verify -ne 'Disabled') {
         throw "Scheduled task disable verification failed for '$TaskName'."
+    }
+}
+
+function Resolve-StartupScheduledTaskPath {
+    param([string]$TaskPath)
+
+    $normalizedPath = if ([string]::IsNullOrWhiteSpace($TaskPath)) { '\' } else { $TaskPath }
+    if (-not $normalizedPath.EndsWith('\')) {
+        $normalizedPath += '\'
+    }
+    return $normalizedPath
+}
+
+function Remove-StartupScheduledTaskEntry {
+    param(
+        [string]$TaskName,
+        [string]$TaskPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($TaskName)) {
+        throw 'TaskName is required for scheduled task delete.'
+    }
+
+    if ($env:OFFLINE_WINDOWS_ROOT) {
+        throw 'PROTECTED_OR_UNSUPPORTED: Scheduled tasks are not supported in offline registry mode.'
+    }
+
+    if (Test-IsWindowsPlumbingScheduledTaskPath -TaskPath $TaskPath) {
+        throw 'PROTECTED_OR_UNSUPPORTED: Windows scheduled tasks cannot be deleted from Startup Manager.'
+    }
+
+    $normalizedPath = Resolve-StartupScheduledTaskPath -TaskPath $TaskPath
+    $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $normalizedPath -ErrorAction Stop
+    Unregister-ScheduledTask -InputObject $task -Confirm:$false -ErrorAction Stop
+
+    $stillThere = $null
+    try {
+        $stillThere = Get-ScheduledTask -TaskName $TaskName -TaskPath $normalizedPath -ErrorAction Stop
+    } catch {
+        $stillThere = $null
+    }
+
+    if ($null -ne $stillThere) {
+        throw "Scheduled task delete verification failed for '$TaskName'."
     }
 }

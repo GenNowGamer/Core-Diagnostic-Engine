@@ -229,15 +229,21 @@ function Invoke-SingleTest {
         $detail = ''
 
         $isWarn = $false
+        $isSkip = $false
+        $failOnSkip = $script:HwProfileName -eq 'Extended' -and $script:HwProfileParams.failOnSkipInExtended
         if ($testResult -is [bool]) {
             $passed = $testResult
             $detail = if ($passed) { 'Verification OK' } else { 'Verification failed' }
         } elseif ($testResult -is [string]) {
             if ($testResult.StartsWith('Skipped:')) {
-                $passed = $true
                 $detail = $testResult
-                if ($script:HwProfileName -eq 'Extended' -and $script:HwProfileParams.failOnSkipInExtended) {
+                if ($failOnSkip) {
+                    # Extended + failOnSkipInExtended: soft skips (incl. memory OOM) are Fail.
+                    $passed = $false
                     $script:HwStorageSkippedInRun = $true
+                } else {
+                    $passed = $true
+                    $isSkip = $true
                 }
             } elseif ($testResult.StartsWith('Warn:')) {
                 $passed = $true
@@ -267,7 +273,7 @@ function Invoke-SingleTest {
 
         $status = if (-not $passed) {
             'Failed'
-        } elseif ($detail -match '^Skipped:') {
+        } elseif ($isSkip -or $detail -match '^Skipped:') {
             'Skipped'
         } elseif ($isWarn -or $detail -match 'SIMD intrinsics not verified') {
             'Warn'
@@ -290,6 +296,7 @@ function Invoke-SingleTest {
         $stepStatus = switch ($status) {
             'Failed' { 'Fail' }
             'Warn' { 'Warn' }
+            'Skipped' { 'Skip' }
             default { 'Pass' }
         }
         $Result.Steps.Add([PSCustomObject]@{

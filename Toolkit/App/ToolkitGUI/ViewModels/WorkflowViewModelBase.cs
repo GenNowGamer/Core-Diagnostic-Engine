@@ -28,6 +28,12 @@ namespace ToolkitGUI.ViewModels
         private static readonly Regex AuditEventPayloadRegex = new(
             @"\[AUDIT:EVENT\]\s*(?<json>\{.*\})\s*$",
             RegexOptions.Compiled);
+        private static readonly Regex DefenderProgressPayloadRegex = new(
+            @"\[DEFENDER:PROGRESS\]\s*(?<json>\{.*\})\s*$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex SecretAssignmentRegex = new(
+            @"\b(password|pwd|token|apikey|api_key|secret)\s*=\s*[^\s,;""']+",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private bool _isRunning;
         private int _progress;
@@ -237,7 +243,8 @@ namespace ToolkitGUI.ViewModels
 
         protected void AppendLog(string line)
         {
-            var entry = $"[{DateTime.Now:HH:mm:ss}] {line}";
+            var redacted = RedactLogSecrets(line);
+            var entry = $"[{DateTime.Now:HH:mm:ss}] {redacted}";
             App.Current.Dispatcher.BeginInvoke(new Action(() =>
             {
                 LogLines.Add(entry);
@@ -248,6 +255,20 @@ namespace ToolkitGUI.ViewModels
                 }
                 RebuildLogTextFromLines();
             }));
+        }
+
+        private static string RedactLogSecrets(string line)
+        {
+            if (string.IsNullOrEmpty(line))
+                return line;
+
+            return SecretAssignmentRegex.Replace(line, match =>
+            {
+                var eq = match.Value.IndexOf('=');
+                if (eq < 0)
+                    return match.Value;
+                return match.Value[..(eq + 1)] + "***";
+            });
         }
 
         protected virtual void OnLogLinesTrimmed(int removedCount)
@@ -292,7 +313,11 @@ namespace ToolkitGUI.ViewModels
             _runCancellationTokenSource?.Cancel();
         }
 
-        protected async Task RunWorkflowAsync(
+        /// <summary>
+        /// Runs a toolkit workflow script.
+        /// </summary>
+        /// <returns><c>true</c> when the user cancelled; otherwise <c>false</c>.</returns>
+        protected async Task<bool> RunWorkflowAsync(
             string scriptPath,
             string? parameters = null,
             string? operationTitle = null,
@@ -367,6 +392,7 @@ namespace ToolkitGUI.ViewModels
                     : _hasWarnings
                         ? "Workflow completed with warnings."
                         : "Workflow completed successfully.");
+                return false;
             }
             catch (OperationCanceledException)
             {
@@ -378,6 +404,7 @@ namespace ToolkitGUI.ViewModels
                 FooterText = "You can start a new scan when ready.";
                 ProgressCaption = "Execution stopped by user.";
                 AppendLog("Execution stopped by user.");
+                return true;
             }
             catch (Exception ex)
             {
@@ -389,6 +416,7 @@ namespace ToolkitGUI.ViewModels
                 ResultDetails = ex.Message;
                 FooterText = "Review the live execution stream for the exact failure point.";
                 AppendLog($"ERROR: {ex.Message}");
+                return false;
             }
             finally
             {
@@ -1151,7 +1179,105 @@ namespace ToolkitGUI.ViewModels
 
         protected virtual bool HandleLiveWorkflowOutput(string line)
         {
-            return false;
+            return TryApplyDefenderProgress(line);
+        }
+
+        /// <summary>
+        /// Windows Defender does not stream files-scanned or true %. Scripts emit estimated
+        /// progress markers; applying them here also prevents the +2%-per-log-line heuristic
+        /// from freezing the bar near ~32% while Start-MpScan is silent.
+        /// </summary>
+        protected bool TryApplyDefenderProgress(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                return false;
+
+            var match = DefenderProgressPayloadRegex.Match(line.Trim());
+            if (!match.Success)
+                return false;
+
+            try
+            {
+                var progress = JsonSerializer.Deserialize<DefenderLiveProgressEvent>(
+                    match.Groups["json"].Value,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (progress is null)
+                    return true;
+
+                var percent = Math.Max(0.0, Math.Min(100.0, progress.Percent));
+                Progress = (int)Math.Round(percent);
+                ProgressPercentText = progress.Estimated
+                    ? $"~{percent:0.#}%"
+                    : $"{percent:0.#}%";
+
+                var phase = (progress.Phase ?? string.Empty).Trim();
+                var phaseUpper = phase.ToUpperInvariant();
+                PhaseText = phaseUpper switch
+                {
+                    "STATUS" => "Checking Windows Defender status...",
+                    "STARTING" => "Starting Windows Defender quick scan...",
+                    "SCANNING" => "Windows Defender quick scan in progress",
+                    "COMPLETING" => "Collecting Defender results...",
+                    "COMPLETED" => "Windows Defender scan complete",
+                    "BLOCKED" => "Defender scan unavailable",
+                    "FAILED" => "Defender scan failed",
+                    _ => string.IsNullOrWhiteSpace(phase) ? "Windows Defender scan" : phase
+                };
+
+                if (!string.IsNullOrWhiteSpace(progress.Detail))
+                {
+                    ProgressCaption = progress.Detail!;
+                }
+                else if (progress.ElapsedSec > 0)
+                {
+                    var elapsed = TimeSpan.FromSeconds(progress.ElapsedSec);
+                    var elapsedText = progress.ElapsedSec >= 3600
+                        ? elapsed.ToString(@"h\:mm\:ss")
+                        : elapsed.ToString(@"m\:ss");
+                    var etaPart = progress.EtaSec > 0
+                        ? $" • ETA ~{(progress.EtaSec >= 3600 ? TimeSpan.FromSeconds(progress.EtaSec).ToString(@"h\:mm\:ss") : TimeSpan.FromSeconds(progress.EtaSec).ToString(@"m\:ss"))} (estimated)"
+                        : string.Empty;
+                    ProgressCaption = $"Elapsed {elapsedText}{etaPart}";
+                }
+                else
+                {
+                    ProgressCaption = "Windows Defender scan";
+                }
+
+                StatusText = progress.Estimated
+                    ? $"~{percent:0.#}% estimated"
+                    : ProgressPercentText;
+
+                if (!string.IsNullOrWhiteSpace(progress.EngineVersion) &&
+                    (phaseUpper == "STATUS" || phaseUpper == "STARTING" || phaseUpper == "SCANNING"))
+                {
+                    if (string.IsNullOrWhiteSpace(ProgressCaption) ||
+                        !ProgressCaption.Contains("Engine", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ProgressCaption = string.IsNullOrWhiteSpace(ProgressCaption)
+                            ? $"Engine {progress.EngineVersion}"
+                            : $"{ProgressCaption} • Engine {progress.EngineVersion}";
+                    }
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private sealed class DefenderLiveProgressEvent
+        {
+            public string? Phase { get; set; }
+            public double Percent { get; set; }
+            public string? Detail { get; set; }
+            public int ElapsedSec { get; set; }
+            public int EtaSec { get; set; }
+            public int ThreatCount { get; set; } = -1;
+            public string? EngineVersion { get; set; }
+            public bool Estimated { get; set; } = true;
         }
 
         internal static bool TryGetPostOpStartupFields(

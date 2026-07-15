@@ -425,19 +425,27 @@ function Get-PeLinkerTimestamp {
     }
 
     try {
-        $bytes = [System.IO.File]::ReadAllBytes($Path)
-        if ($bytes.Length -lt 0x40) { return $null }
+        $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+            if ($stream.Length -lt 0x40) { return $null }
 
-        $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
-        if ($peOffset -le 0 -or ($peOffset + 12) -ge $bytes.Length) { return $null }
+            $reader = New-Object System.IO.BinaryReader($stream)
+            $null = $reader.ReadBytes(0x3C)
+            $peOffset = $reader.ReadInt32()
+            if ($peOffset -le 0 -or ($peOffset + 12) -ge $stream.Length) { return $null }
 
-        $signature = [System.Text.Encoding]::ASCII.GetString($bytes, $peOffset, 4)
-        if ($signature -ne "PE`0`0") { return $null }
+            $null = $stream.Seek($peOffset, [System.IO.SeekOrigin]::Begin)
+            $signatureBytes = $reader.ReadBytes(4)
+            $signature = [System.Text.Encoding]::ASCII.GetString($signatureBytes)
+            if ($signature -ne "PE`0`0") { return $null }
 
-        $timestamp = [BitConverter]::ToUInt32($bytes, $peOffset + 8)
-        if ($timestamp -eq 0) { return $null }
+            $timestamp = $reader.ReadUInt32()
+            if ($timestamp -eq 0) { return $null }
 
-        return [DateTimeOffset]::FromUnixTimeSeconds($timestamp).LocalDateTime
+            return [DateTimeOffset]::FromUnixTimeSeconds($timestamp).LocalDateTime
+        } finally {
+            $stream.Dispose()
+        }
     } catch {
         return $null
     }
@@ -685,7 +693,7 @@ function Test-PostOpStartupSuspicious {
     elseif (-not $TargetExists) {
         $reasons.Add('unresolved target') | Out-Null
     }
-    if ($RiskBand -in @('Warning', 'Caution')) {
+    if ($RiskBand -eq 'Warning') {
         $reasons.Add("risk:$RiskBand") | Out-Null
     }
     if ($ResolvedPath -match '\\Temp\\|\\Downloads\\|AppData\\Local\\Temp') {

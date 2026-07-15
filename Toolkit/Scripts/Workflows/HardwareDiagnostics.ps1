@@ -171,13 +171,17 @@ try {
         }
     }
 
+    # Derive overall health from step statuses (Fail/Warn). When Extended failOnSkip
+    # mapped soft skips to Fail, this yields Critical/Warning instead of Healthy.
+    $null = Set-WorkflowOverallHealth -WorkflowResult $workflow
+
+    # Safety net: if any fail-on-skip was recorded but steps somehow lacked Fail,
+    # do not leave OverallHealth as Healthy (previous code set Warning then overwrite).
     if ($script:HwStorageSkippedInRun -and $script:HwProfileName -eq 'Extended') {
         if ($workflow.OverallHealth -eq 'Healthy' -or [string]::IsNullOrWhiteSpace($workflow.OverallHealth)) {
             $workflow.OverallHealth = 'Warning'
         }
     }
-
-    $null = Set-WorkflowOverallHealth -WorkflowResult $workflow
 
     $workflow | ConvertTo-Json -Depth 10 -Compress
     Generate-Report -WorkflowResult $workflow | Out-Null

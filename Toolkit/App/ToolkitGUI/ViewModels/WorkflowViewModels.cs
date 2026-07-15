@@ -206,7 +206,6 @@ namespace ToolkitGUI.ViewModels
         private static readonly Regex SfcVerificationRegex = new(@"Verification\s*(?<percent>\d{1,3})\s*%\s*complete", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex SfcVerificationCompactRegex = new(@"verification(?<percent>\d{1,3})%complete", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex DismProgressRegex = new(@"\[\s*=+\s*(?<percent>\d{1,3}(?:\.\d+)?)\s*%\s*=*\s*\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        private static readonly Regex DismPercentRegex = new(@"(?<percent>\d{1,3}(?:\.\d+)?)\s*%", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private int _sfcProgressLogIndex = -1;
         private int _dismProgressLogIndex = -1;
         private System.Windows.Threading.DispatcherTimer? _progressSmoothTimer;
@@ -333,16 +332,21 @@ namespace ToolkitGUI.ViewModels
                         item.StatusText = string.IsNullOrEmpty(failureStatus) ? "Cancelled" : failureStatus;
                         return;
                     }
-                    parameters += $" -WindowsDir \"{windowsDir}\"";
+                    parameters += $" -WindowsDir {PowerShellArgumentHelper.QuotePathParameterForProcess(windowsDir)}";
                 }
 
                 if (!string.IsNullOrWhiteSpace(dismSource))
                 {
-                    parameters += $" -DismSource \"{dismSource}\" -DismSourceIndex {dismSourceIndex}";
+                    parameters += $" -DismSource {PowerShellArgumentHelper.QuotePathParameterForProcess(dismSource)} -DismSourceIndex {dismSourceIndex}";
                 }
 
-                await RunWorkflowAsync(scriptPath, parameters, item.Name, item.Description);
-                item.StatusText = "Done \u2713";
+                var cancelled = await RunWorkflowAsync(scriptPath, parameters, item.Name, item.Description);
+                if (cancelled)
+                    item.StatusText = "Cancelled";
+                else if (HasResultErrors)
+                    item.StatusText = "Done with errors";
+                else
+                    item.StatusText = "Done \u2713";
             }
             catch (Exception ex) { item.StatusText = $"Error: {ex.Message}"; }
             finally { item.IsRunning = false; StopProgressSmoothTimer(); }
@@ -480,11 +484,6 @@ namespace ToolkitGUI.ViewModels
             }
 
             var dismMatch = DismProgressRegex.Match(normalized);
-            if (!dismMatch.Success && normalized.IndexOf("dism", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                dismMatch = DismPercentRegex.Match(normalized);
-            }
-
             if (dismMatch.Success)
             {
                 var progressLine = $"[{DateTime.Now:HH:mm:ss}] DISM {dismMatch.Groups["percent"].Value}% complete.";
@@ -657,12 +656,30 @@ namespace ToolkitGUI.ViewModels
                     return;
                 }
 
-                var parameters = $"-ToolName OfflineUpdateUninstall -WindowsDir \"{windowsDir}\"";
-                if (!string.IsNullOrEmpty(selected.PackageName))
-                    parameters += $" -PackageName \"{selected.PackageName}\"";
+                var packageLabel = string.IsNullOrEmpty(selected.PackageName)
+                    ? "Revert pending servicing actions only (no package removal)."
+                    : $"Revert pending actions, then remove package:\n{selected.PackageName}";
+                if (!DestructiveActionDialog.Confirm(
+                        "Offline Update Uninstall",
+                        $"Offline image:\n{windowsDir}\n\n{packageLabel}",
+                        "This modifies the offline Windows image. Requires Confirmed continue; prefer a backup before removing updates.",
+                        defaultNo: true))
+                {
+                    item.StatusText = "Cancelled";
+                    return;
+                }
 
-                await RunWorkflowAsync(scriptPath, parameters, item.Name, item.Description);
-                item.StatusText = "Done \u2713";
+                var parameters = $"-ToolName OfflineUpdateUninstall -WindowsDir {PowerShellArgumentHelper.QuotePathParameterForProcess(windowsDir)} -Confirmed";
+                if (!string.IsNullOrEmpty(selected.PackageName))
+                    parameters += $" -PackageName {PowerShellArgumentHelper.QuotePathParameterForProcess(selected.PackageName)}";
+
+                var cancelled = await RunWorkflowAsync(scriptPath, parameters, item.Name, item.Description);
+                if (cancelled)
+                    item.StatusText = "Cancelled";
+                else if (HasResultErrors)
+                    item.StatusText = "Done with errors";
+                else
+                    item.StatusText = "Done \u2713";
             }
             catch (Exception ex) { item.StatusText = $"Error: {ex.Message}"; }
             finally { item.IsRunning = false; }
@@ -748,7 +765,7 @@ namespace ToolkitGUI.ViewModels
             var isWinPe = IsWinPeMode();
             var script = GetScriptPath("MalwareSweep.ps1");
             Tools.Add(new ToolItem("Windows Defender Scan",
-                "Trigger a Windows Defender quick scan",
+                "Run a Windows Defender quick scan with live elapsed time and estimated progress",
                 "DefenderScan", item => RunToolAsync(item, script)));
             var cstTool = new ToolItem("Core Security Tool",
                 "Run scan first, then choose selected findings to quarantine or remove",
@@ -773,6 +790,9 @@ namespace ToolkitGUI.ViewModels
         {
             if (string.IsNullOrWhiteSpace(line))
                 return false;
+
+            if (TryApplyDefenderProgress(line))
+                return true;
 
             var match = CstTaggedPayloadRegex.Match(line);
             if (!match.Success)
@@ -1333,15 +1353,10 @@ namespace ToolkitGUI.ViewModels
                 sb.Append(' ');
                 sb.Append(parameterName);
                 sb.Append(' ');
-                sb.Append(QuoteForProcessArgument(value));
+                sb.Append(PowerShellArgumentHelper.QuotePathParameterForProcess(value));
             }
 
             return sb.ToString();
-        }
-
-        private static string QuoteForProcessArgument(string value)
-        {
-            return "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
         }
     }
 
@@ -1397,6 +1412,18 @@ namespace ToolkitGUI.ViewModels
             var dialog = new RobocopyConfigDialog();
             if (dialog.ShowDialog() != true)
                 return null;
+
+            if (dialog.MirrorMode && !dialog.DryRun)
+            {
+                if (!DestructiveActionDialog.Confirm(
+                        "Robocopy Mirror",
+                        $"Mirror (purge) from:\n{dialog.SourcePath}\n\nto:\n{dialog.DestinationPath}",
+                        "Mirror deletes files and folders in the destination that are not present in the source. Destination should be a dedicated backup folder, not a system or Offline OS root.",
+                        defaultNo: true))
+                {
+                    return null;
+                }
+            }
 
             var args = $"-ToolName RobocopyBackup -BackupSource {PowerShellArgumentHelper.QuotePathParameterForProcess(dialog.SourcePath)} -BackupDestination {PowerShellArgumentHelper.QuotePathParameterForProcess(dialog.DestinationPath)}";
             if (dialog.DryRun) args += " -DryRun";
@@ -2006,12 +2033,28 @@ namespace ToolkitGUI.ViewModels
             if (confirm != MessageBoxResult.Yes)
                 return;
 
+            var confirmHosts = checkedRows.Any(f =>
+                f.Repairable &&
+                string.Equals(f.RepairAction, "network.hosts.restore", StringComparison.OrdinalIgnoreCase));
+            if (confirmHosts)
+            {
+                var hostsConfirm = MessageBox.Show(
+                    "One or more selected findings restore the hosts file to Windows defaults.\n\n" +
+                    "A backup is created first. Continue with hosts restore?",
+                    "Confirm hosts file restore",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning,
+                    MessageBoxResult.No);
+                if (hostsConfirm != MessageBoxResult.Yes)
+                    return;
+            }
+
             _allFindings.Clear();
             RefreshDisplayedFindings();
             var idArg = string.Join(",", selected);
             await RunWorkflowAsync(
                 _hijackScript,
-                BuildHijackRepairParameters(idArg),
+                BuildHijackRepairParameters(idArg, confirmHostsRestore: confirmHosts),
                 "Repair Selected Hijacks",
                 "Apply repairs for the checked findings only.");
             RefreshDisplayedFindings();
@@ -2213,11 +2256,26 @@ namespace ToolkitGUI.ViewModels
             if (confirm != MessageBoxResult.Yes)
                 return;
 
+            var confirmHosts = string.Equals(
+                finding.RepairAction, "network.hosts.restore", StringComparison.OrdinalIgnoreCase);
+            if (confirmHosts)
+            {
+                var hostsConfirm = MessageBox.Show(
+                    "This restores the hosts file to Windows defaults.\n\n" +
+                    "A backup is created first. Continue?",
+                    "Confirm hosts file restore",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning,
+                    MessageBoxResult.No);
+                if (hostsConfirm != MessageBoxResult.Yes)
+                    return;
+            }
+
             _allFindings.Clear();
             RefreshDisplayedFindings();
             await RunWorkflowAsync(
                 _hijackScript,
-                BuildHijackRepairParameters(finding.Id),
+                BuildHijackRepairParameters(finding.Id, confirmHostsRestore: confirmHosts),
                 "Repair Hijack Item",
                 "Apply repair for the selected finding.");
             RefreshDisplayedFindings();
@@ -2248,11 +2306,13 @@ namespace ToolkitGUI.ViewModels
             RefreshDisplayedFindings();
         }
 
-        private string BuildHijackRepairParameters(string findingIds)
+        private string BuildHijackRepairParameters(string findingIds, bool confirmHostsRestore = false)
         {
             var args = $"-ToolName RepairSelected -FindingIds \"{findingIds}\"";
             if (!string.IsNullOrWhiteSpace(_hijackSnapshotPath))
                 args += $" -SnapshotPath \"{_hijackSnapshotPath}\"";
+            if (confirmHostsRestore)
+                args += " -ConfirmHostsRestore";
             return args;
         }
 
@@ -2726,6 +2786,7 @@ namespace ToolkitGUI.ViewModels
             "QUEUED" => "Queued",
             "WARN" => "Warn",
             "SKIPPED" => "N/A",
+            "CANCELLED" => "Cancelled",
             _ => string.Empty
         };
 
@@ -2769,6 +2830,7 @@ namespace ToolkitGUI.ViewModels
             "QUEUED" => new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
             "WARN" => new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00)),
             "SKIPPED" => new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00)),
+            "CANCELLED" => new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00)),
             _ => Brushes.Transparent
         };
 
@@ -3388,7 +3450,7 @@ namespace ToolkitGUI.ViewModels
         private void RefreshTestsProgressDisplay()
         {
             var inScope = TestTree.Where(t => t.IsTest && _activeTestNames.Contains(t.LookupKey));
-            var completed = inScope.Count(t => t.Status is "Passed" or "Failed" or "Skipped" or "Warn");
+            var completed = inScope.Count(t => t.Status is "Passed" or "Failed" or "Skipped" or "Warn" or "Cancelled");
             _testsCompleted = completed;
             TestsProgressDisplay = $"{completed} / {_activeScheduledCount}";
         }
@@ -3629,13 +3691,23 @@ namespace ToolkitGUI.ViewModels
 
             item.IsRunning = true;
             item.StatusText = "Running...";
+            var cancelled = false;
             try
             {
-                await RunWorkflowAsync(
+                cancelled = await RunWorkflowAsync(
                     scriptPath,
                     $"-ToolName {toolKey} -TestProfile {TestProfile}",
                     item.Name,
                     $"{item.Description} Profile: {TestProfile}.");
+
+                if (cancelled)
+                {
+                    MarkRemainingHardwareTestsCancelled();
+                    SummaryBanner = "Stopped by user.";
+                    PhaseDisplay = "Stopped";
+                    item.StatusText = "Cancelled";
+                    return;
+                }
 
                 FinalizeStuckHardwareTests(ReportJsonPath);
 
@@ -3690,10 +3762,27 @@ namespace ToolkitGUI.ViewModels
             {
                 item.IsRunning = false;
                 StopElapsedTimer();
-                PhaseDisplay = "Complete";
+                if (!cancelled && PhaseDisplay != "Error")
+                    PhaseDisplay = "Complete";
                 if (IncludesCstPhase(toolKey))
                     RefreshTestsProgressDisplay();
             }
+        }
+
+        private void MarkRemainingHardwareTestsCancelled()
+        {
+            foreach (var test in TestTree.Where(t => t.IsTest
+                && (string.Equals(t.Status, "Running", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(t.Status, "Queued", StringComparison.OrdinalIgnoreCase))))
+            {
+                test.Status = string.Equals(test.Status, "Running", StringComparison.OrdinalIgnoreCase)
+                    ? "Cancelled"
+                    : "Skipped";
+                if (string.IsNullOrWhiteSpace(test.Detail))
+                    test.Detail = "Cancelled by user.";
+            }
+
+            RefreshTestsProgressDisplay();
         }
 
         private void FinalizeStuckHardwareTests(string? reportJsonPath)

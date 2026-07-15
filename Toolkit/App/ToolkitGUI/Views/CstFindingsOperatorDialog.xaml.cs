@@ -110,6 +110,16 @@ namespace ToolkitGUI.Views
         private void QuarantineButton_Click(object sender, RoutedEventArgs e)
         {
             if (!EnsureValidSelection()) return;
+
+            var result = MessageBox.Show(
+                "Quarantine moves the selected files aside so they can be restored later. Continue?",
+                "Confirm Quarantine",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
+                return;
+
             RequestedAction = "Quarantine";
             DialogResult = true;
             Close();
@@ -145,6 +155,16 @@ namespace ToolkitGUI.Views
             if (selected.Any(f => !f.CanRemediate))
             {
                 MessageBox.Show("One or more selected findings are not actionable. Clear selection or choose actionable rows only.", "Core Security Tool", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            if (selected.Any(f => string.IsNullOrWhiteSpace(f.Id)))
+            {
+                MessageBox.Show(
+                    "One or more selected findings are missing IDs and cannot be remediated. Re-run the scan to refresh findings.",
+                    "Core Security Tool",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
                 return false;
             }
 

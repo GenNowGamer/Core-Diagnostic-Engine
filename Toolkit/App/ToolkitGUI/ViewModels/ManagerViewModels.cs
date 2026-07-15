@@ -370,7 +370,7 @@ namespace ToolkitGUI.ViewModels
                     "Startup Manager — remove target file?",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Question,
-                    MessageBoxResult.Yes);
+                    MessageBoxResult.No);
 
                 if (removeTarget == MessageBoxResult.Yes)
                 {
@@ -1700,6 +1700,8 @@ namespace ToolkitGUI.ViewModels
         private double _sfcDisplayPercent;
         private static readonly HashSet<string> WinPeUnavailableFixes = new(StringComparer.OrdinalIgnoreCase)
         {
+            "ResetWinsock",
+            "RenewIp",
             "DisableIPv6",
             "ResetWindowsUpdate",
             "ClearEventLogs",

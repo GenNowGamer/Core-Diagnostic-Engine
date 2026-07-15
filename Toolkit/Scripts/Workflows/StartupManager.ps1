@@ -337,6 +337,10 @@ function New-StartupRow {
             else { 'Registry' }
         }
     }
+    $isGpoRun = ($SourceGroup -match '\(GPO\)') -or ($entryType -eq 'GpoRun')
+    if ($isGpoRun) {
+        $SupportsDelete = $false
+    }
     $isRunOnce = $SourceGroup -match 'RunOnce'
     $resolvedPath = $FilePath
     $targetExists = $false
@@ -672,7 +676,7 @@ function Reset-WinlogonRegistryValue {
         throw 'PROTECTED_OR_UNSUPPORTED: Winlogon reset is not supported for offline registry mode in this build.'
     }
 
-    $fullKey = Resolve-RegistryPath -RawPath $RegistryPath
+    $fullKey = Resolve-StartupMutationRegistryPath -RawPath $RegistryPath
     $currentValue = Get-WinlogonRegistryValueText -Path $fullKey -Name $ValueName
     $deviation = Test-WinlogonValueDeviation -ValueName $ValueName -CurrentValue $currentValue
     if (-not $deviation.IsDeviated) {
@@ -723,7 +727,7 @@ function Undo-WinlogonRegistryValue {
         throw "No Winlogon backup is available for '$ValueName'."
     }
 
-    $fullKey = Resolve-RegistryPath -RawPath $RegistryPath
+    $fullKey = Resolve-StartupMutationRegistryPath -RawPath $RegistryPath
     $currentValue = Get-ItemPropertyValue -Path $fullKey -Name $ValueName -ErrorAction Stop
     if (-not (Test-WinlogonUndoAvailable -ValueName $ValueName -CurrentValue ([string]$currentValue))) {
         throw "Undo is only available after a reset has restored '$ValueName' to the default value."
@@ -829,7 +833,7 @@ function Set-DriverEntryState {
         throw 'RegistryPath is required for driver entry actions.'
     }
 
-    $fullKey = Resolve-RegistryPath -RawPath $RegistryPath
+    $fullKey = Resolve-StartupMutationRegistryPath -RawPath $RegistryPath
     $start = Get-ItemPropertyValue -Path $fullKey -Name 'Start' -ErrorAction Stop
     $isCritical = ([int]$start -eq 0) -or ([int]$start -eq 1)
 
@@ -878,7 +882,7 @@ function Set-RegistryValueEntryState {
         throw 'RegistryPath and ValueName are required for registry value actions.'
     }
 
-    $fullKey = Resolve-RegistryPath -RawPath $RegistryPath
+    $fullKey = Resolve-StartupMutationRegistryPath -RawPath $RegistryPath
     $disabledKey = "$fullKey\AutorunsDisabled"
     $approvedCategory = Get-StartupApprovedCategoryForSource -SourceGroup $SourceGroup -RowType 'RegistryValue'
     if ([string]::IsNullOrWhiteSpace($SourceGroup)) {
@@ -920,20 +924,66 @@ function Set-RegistryValueEntryState {
 function Remove-RegistryValueEntry {
     param(
         [string]$RegistryPath,
-        [string]$ValueName
+        [string]$ValueName,
+        [string]$SourceGroup = ''
     )
 
     if ([string]::IsNullOrWhiteSpace($RegistryPath) -or [string]::IsNullOrWhiteSpace($ValueName)) {
         throw 'RegistryPath and ValueName are required for registry value delete.'
     }
 
-    $fullKey = Resolve-RegistryPath -RawPath $RegistryPath
+    $fullKey = Resolve-StartupMutationRegistryPath -RawPath $RegistryPath
     $disabledKey = "$fullKey\AutorunsDisabled"
 
-    try { Remove-ItemProperty -Path $fullKey -Name $ValueName -ErrorAction Stop } catch {}
-    if (Test-Path $disabledKey) {
-        try { Remove-ItemProperty -Path $disabledKey -Name $ValueName -ErrorAction Stop } catch {}
+    try {
+        Remove-ItemProperty -Path $fullKey -Name $ValueName -ErrorAction Stop
+    } catch {
+        $removeErr = $_.Exception.Message
+        $stillPresent = $false
+        try {
+            $null = Get-ItemPropertyValue -Path $fullKey -Name $ValueName -ErrorAction Stop
+            $stillPresent = $true
+        } catch {
+            $stillPresent = $false
+        }
+
+        if ($stillPresent) {
+            throw "Delete failed for registry value '$ValueName' under $RegistryPath`: $removeErr"
+        }
     }
+
+    if (Test-Path $disabledKey) {
+        try {
+            Remove-ItemProperty -Path $disabledKey -Name $ValueName -ErrorAction Stop
+        } catch {
+            $disabledErr = $_.Exception.Message
+            $disabledPresent = $false
+            try {
+                $null = Get-ItemPropertyValue -Path $disabledKey -Name $ValueName -ErrorAction Stop
+                $disabledPresent = $true
+            } catch {
+                $disabledPresent = $false
+            }
+
+            if ($disabledPresent) {
+                throw "Delete failed for disabled registry value '$ValueName' under $disabledKey`: $disabledErr"
+            }
+        }
+    }
+
+    $verifyActive = $false
+    try {
+        $null = Get-ItemPropertyValue -Path $fullKey -Name $ValueName -ErrorAction Stop
+        $verifyActive = $true
+    } catch {
+        $verifyActive = $false
+    }
+
+    if ($verifyActive) {
+        throw "Delete verification failed for registry value '$ValueName' under $RegistryPath"
+    }
+
+    Sync-StartupApprovedAfterMutation -SourceGroup $SourceGroup -RegistryPath $RegistryPath -RowType 'RegistryValue' -ValueName $ValueName -Name $ValueName -Action Remove
 }
 
 function Set-RegistrySubKeyEntryState {
@@ -947,7 +997,7 @@ function Set-RegistrySubKeyEntryState {
         throw 'RegistryPath and SubKeyName are required for registry subkey actions.'
     }
 
-    $fullKey = Resolve-RegistryPath -RawPath $RegistryPath
+    $fullKey = Resolve-StartupMutationRegistryPath -RawPath $RegistryPath
     $disabledContainer = "$fullKey\CDE_Disabled"
     $activeSubKey = "$fullKey\$SubKeyName"
     $disabledSubKey = "$disabledContainer\$SubKeyName"
@@ -1062,6 +1112,107 @@ function Resolve-RegistryPath {
     return $fullKey
 }
 
+function ConvertTo-StartupRegistryComparePath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+    $normalized = $Path.Trim()
+    $normalized = $normalized -replace '\\+', '\'
+    $normalized = $normalized -replace ':$', ''
+    $normalized = $normalized -replace '^HKLM:', 'HKLM\' -replace '^HKCU:', 'HKCU\' -replace '^HKU:', 'HKU\'
+    $normalized = $normalized -replace '\\+', '\'
+    return $normalized.TrimEnd('\').ToUpperInvariant()
+}
+
+function Get-StartupMutationAllowedRegistryRoots {
+    $roots = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($def in @(Get-StandardStartupRunKeyDefinitions)) {
+        $path = ConvertTo-StartupRegistryComparePath -Path ([string]$def.RegistryPath)
+        if (-not [string]::IsNullOrWhiteSpace($path)) {
+            $roots.Add($path) | Out-Null
+        }
+    }
+
+    $winlogon = Get-WinlogonRegistryContext
+    $roots.Add((ConvertTo-StartupRegistryComparePath -Path ([string]$winlogon.RegistryPath))) | Out-Null
+
+    $roots.Add((ConvertTo-StartupRegistryComparePath -Path 'HKLM\SYSTEM\CurrentControlSet\Services')) | Out-Null
+    $roots.Add((ConvertTo-StartupRegistryComparePath -Path 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager')) | Out-Null
+    $roots.Add((ConvertTo-StartupRegistryComparePath -Path (Get-StartupApprovedRegistryRoot))) | Out-Null
+    $roots.Add((ConvertTo-StartupRegistryComparePath -Path (Get-MsixStartupTaskRegistryRoot))) | Out-Null
+
+    $extensionKeys = @(
+        'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Browser Helper Objects',
+        'HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Explorer\Browser Helper Objects',
+        'HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Browser Helper Objects',
+        'HKLM\SOFTWARE\Microsoft\Internet Explorer\Toolbar',
+        'HKLM\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Toolbar',
+        'HKCU\SOFTWARE\Microsoft\Internet Explorer\Toolbar',
+        'HKLM\SOFTWARE\Microsoft\Internet Explorer\URLSearchHooks',
+        'HKCU\SOFTWARE\Microsoft\Internet Explorer\URLSearchHooks'
+    )
+    foreach ($key in $extensionKeys) {
+        $roots.Add((ConvertTo-StartupRegistryComparePath -Path $key)) | Out-Null
+    }
+
+    return @($roots | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Assert-StartupMutationPathAllowed {
+    param([Parameter(Mandatory)][string]$RegistryPath)
+
+    $candidate = ConvertTo-StartupRegistryComparePath -Path $RegistryPath
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+        throw "PROTECTED_OR_UNSUPPORTED: Empty registry path is not allowed for mutation."
+    }
+
+    foreach ($root in @(Get-StartupMutationAllowedRegistryRoots)) {
+        if ($candidate -eq $root -or $candidate.StartsWith($root + '\', [System.StringComparison]::Ordinal)) {
+            return
+        }
+    }
+
+    throw "PROTECTED_OR_UNSUPPORTED: Registry path is outside Startup Manager mutation allowlist: $RegistryPath"
+}
+
+function Resolve-StartupMutationRegistryPath {
+    param([string]$RawPath)
+
+    $fullKey = Resolve-RegistryPath -RawPath $RawPath
+    Assert-StartupMutationPathAllowed -RegistryPath $fullKey
+    return $fullKey
+}
+
+function Sync-StartupApprovedAfterMutation {
+    param(
+        [string]$SourceGroup = '',
+        [string]$RegistryPath = '',
+        [string]$RowType = 'RegistryValue',
+        [string]$ValueName = '',
+        [string]$Name = '',
+        [string]$FilePath = '',
+        [ValidateSet('Enable', 'Disable', 'Remove')]
+        [string]$Action = 'Remove'
+    )
+
+    $category = Get-StartupApprovedCategoryForSource -SourceGroup $SourceGroup -RowType $RowType
+    if ([string]::IsNullOrWhiteSpace($SourceGroup) -and $RegistryPath -match 'WOW6432Node') {
+        $category = 'Run32'
+    }
+
+    $entryName = Get-StartupApprovedEntryName -RowType $RowType -ValueName $ValueName -Name $Name -FilePath $FilePath
+    if ([string]::IsNullOrWhiteSpace($category) -or [string]::IsNullOrWhiteSpace($entryName)) {
+        return
+    }
+
+    switch ($Action) {
+        'Enable' { Set-StartupApprovedEntryEnabled -Category $category -EntryName $entryName -Enable $true }
+        'Disable' { Set-StartupApprovedEntryEnabled -Category $category -EntryName $entryName -Enable $false }
+        'Remove' { Remove-StartupApprovedEntry -Category $category -EntryName $entryName }
+    }
+}
+
 # Keep startup-folder migration active across all actions so legacy paths are cleaned
 # even when callers do not first execute the List action.
 if (Invoke-StartupManagerElevationRelay) { exit 0 }
@@ -1144,7 +1295,7 @@ switch ($Action) {
                     throw "PROTECTED_OR_UNSUPPORTED: Delete is not supported for driver services."
                 }
                 'RegistryValue' {
-                    Remove-RegistryValueEntry -RegistryPath $RegistryPath -ValueName $ValueName
+                    Remove-RegistryValueEntry -RegistryPath $RegistryPath -ValueName $ValueName -SourceGroup $SourceGroup
                     Write-Output "Deleted: $ValueName"
                 }
                 'RegistryKey' {
@@ -1155,7 +1306,8 @@ switch ($Action) {
                     throw 'PROTECTED_OR_UNSUPPORTED: Delete is not supported for MSIX startup tasks. Disable instead.'
                 }
                 'ScheduledTask' {
-                    throw 'PROTECTED_OR_UNSUPPORTED: Delete is not supported for scheduled tasks. Disable instead.'
+                    Remove-StartupScheduledTaskEntry -TaskName $ServiceName -TaskPath $ActionStatePayload
+                    Write-Output "Deleted: $EntryName"
                 }
                 default {
                     throw "Unsupported row type for DeleteEntry: $RowType"
@@ -1194,7 +1346,7 @@ switch ($Action) {
     'Enable' {
         try {
             if (-not [string]::IsNullOrWhiteSpace($EntryKey)) {
-                $fullKey = Resolve-RegistryPath -RawPath $EntryKey
+                $fullKey = Resolve-StartupMutationRegistryPath -RawPath $EntryKey
                 $disabledKey = "$fullKey\AutorunsDisabled"
                 if (-not (Test-Path $disabledKey)) {
                     throw "Disabled key not found: $disabledKey"
@@ -1242,7 +1394,7 @@ switch ($Action) {
     'Disable' {
         try {
             if (-not [string]::IsNullOrWhiteSpace($EntryKey)) {
-                $fullKey = Resolve-RegistryPath -RawPath $EntryKey
+                $fullKey = Resolve-StartupMutationRegistryPath -RawPath $EntryKey
                 $val = Get-ItemPropertyValue -Path $fullKey -Name $EntryName -ErrorAction Stop
                 $disabledKey = "$fullKey\AutorunsDisabled"
                 if (-not (Test-Path $disabledKey)) { New-Item -Path $disabledKey -Force -ErrorAction Stop | Out-Null }
@@ -1300,7 +1452,7 @@ switch ($Action) {
     'Delete' {
         try {
             if (-not [string]::IsNullOrWhiteSpace($EntryKey)) {
-                $fullKey = Resolve-RegistryPath -RawPath $EntryKey
+                $fullKey = Resolve-StartupMutationRegistryPath -RawPath $EntryKey
                 Remove-ItemProperty -Path $fullKey -Name $EntryName -ErrorAction Stop
 
                 $exists = $false
@@ -1314,16 +1466,21 @@ switch ($Action) {
                 if ($exists) {
                     throw "Delete verification failed for $EntryName"
                 }
+
+                Sync-StartupApprovedAfterMutation -SourceGroup $SourceGroup -RegistryPath $EntryKey -RowType 'RegistryValue' -ValueName $EntryName -Name $EntryName -Action Remove
             } else {
                 $resolved = Resolve-StartupFolderEntryContext -Path $EntryPath
                 if (-not (Test-Path $resolved.FullPath)) {
                     throw "Startup folder item not found: $EntryPath"
                 }
 
+                $fileName = [System.IO.Path]::GetFileName($resolved.FullPath)
                 Remove-Item -LiteralPath $resolved.FullPath -Force -ErrorAction Stop
                 if (Test-Path $resolved.FullPath) {
                     throw "Delete verification failed for $EntryPath"
                 }
+
+                Sync-StartupApprovedAfterMutation -RowType 'FileStartupItem' -Name $EntryName -FilePath $resolved.FullPath -ValueName $fileName -Action Remove
             }
 
             Write-Output "Deleted: $EntryName"

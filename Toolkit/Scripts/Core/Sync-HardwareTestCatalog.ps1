@@ -41,8 +41,18 @@ $export = @{
     version  = $root.hardwareTestCatalog.version
     profiles = $root.hardwareTestCatalog.profiles
     tests    = $root.hardwareTestCatalog.tests
-    source   = $ChuSourcePath
     syncedAt = (Get-Date).ToString('o')
+}
+
+# Prefer a relative source path; omit absolute machine paths from published JSON.
+$toolkitRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$fullSrc = [IO.Path]::GetFullPath($ChuSourcePath)
+if ($fullSrc.StartsWith($toolkitRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    $export.source = $fullSrc.Substring($toolkitRoot.Length).TrimStart('\', '/')
+}
+else {
+    # Outside toolkit tree: store a portable relative hint instead of an absolute path.
+    $export.source = Join-Path '..' (Join-Path 'Core Hardware Utility' 'Core_Hardware_Utility.json')
 }
 
 $destDir = Split-Path -Parent $DestPath

@@ -7,12 +7,14 @@ param(
     [string]$ToolName = 'All',
     [string]$FindingIds = '',
     [string]$SnapshotPath = '',
-    [switch]$ElevatedRelay
+    [switch]$ElevatedRelay,
+    [switch]$ConfirmHostsRestore
 )
 
 $ErrorActionPreference = 'Stop'
 
 $Script:HijackRepairScriptPath = $MyInvocation.MyCommand.Path
+$Script:HijackConfirmHostsRestore = [bool]$ConfirmHostsRestore
 $ScriptDir  = Split-Path $Script:HijackRepairScriptPath
 $CoreModule = Join-Path $ScriptDir '..\Core\Toolkit.Core.psm1'
 $ElevationModule = Join-Path $ScriptDir '..\Core\Toolkit.Elevation.psm1'
@@ -65,10 +67,15 @@ function Invoke-HijackRepairElevationRelay {
     param([string]$Tool, [string]$ExtraArgs = '')
     if ($ElevatedRelay) { return $false }
     if (Test-ToolkitIsElevated) { return $false }
-    $argString = "-ToolName $Tool -ElevatedRelay"
+
+    $parts = [System.Collections.Generic.List[string]]::new()
+    Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'ToolName' -Value $Tool
+    Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'ElevatedRelay' -IsSwitch
+    $argString = Join-ToolkitRelayArgumentString -Parts $parts
     if (-not [string]::IsNullOrWhiteSpace($ExtraArgs)) {
-        $argString += " $ExtraArgs"
+        $argString = "$argString $ExtraArgs".Trim()
     }
+
     $relay = Invoke-ToolkitElevatedRelay -ScriptPath $Script:HijackRepairScriptPath -ArgumentString $argString
     if ($null -eq $relay) { return $false }
     if ($relay.ExitCode -ne 0) {
@@ -79,16 +86,15 @@ function Invoke-HijackRepairElevationRelay {
 
 function Get-HijackRepairRelayExtraArgs {
     param([string]$Tool)
-    $extra = @()
+    $parts = [System.Collections.Generic.List[string]]::new()
     if ($Tool -eq 'RepairSelected') {
-        if (-not [string]::IsNullOrWhiteSpace($FindingIds)) {
-            $extra += "-FindingIds `"$FindingIds`""
-        }
-        if (-not [string]::IsNullOrWhiteSpace($SnapshotPath)) {
-            $extra += "-SnapshotPath `"$SnapshotPath`""
+        Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'FindingIds' -Value $FindingIds
+        Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'SnapshotPath' -Value $SnapshotPath
+        if ($ConfirmHostsRestore -or $Script:HijackConfirmHostsRestore) {
+            Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'ConfirmHostsRestore' -IsSwitch
         }
     }
-    return ($extra -join ' ')
+    return Join-ToolkitRelayArgumentString -Parts $parts
 }
 
 function Invoke-HijackScanWorkflow {

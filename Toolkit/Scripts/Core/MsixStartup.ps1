@@ -510,6 +510,14 @@ function Resolve-MsixStartupRegistryPsPath {
         throw "Unsupported registry path: $RawPath"
     }
 
+    $root = (Get-MsixStartupTaskRegistryRoot).TrimEnd('\').ToUpperInvariant() -replace ':$', ''
+    $compare = $fullKey.TrimEnd('\').ToUpperInvariant() -replace ':$', ''
+    $rootNorm = $root -replace '^HKCU:', 'HKCU\' -replace '^HKLM:', 'HKLM\' -replace '^HKU:', 'HKU\'
+    $candNorm = $compare -replace '^HKCU:', 'HKCU\' -replace '^HKLM:', 'HKLM\' -replace '^HKU:', 'HKU\'
+    if (-not ($candNorm -eq $rootNorm -or $candNorm.StartsWith($rootNorm + '\', [System.StringComparison]::Ordinal))) {
+        throw "PROTECTED_OR_UNSUPPORTED: Registry path is outside MSIX startup mutation allowlist: $RawPath"
+    }
+
     return $fullKey
 }
 
@@ -546,6 +554,13 @@ function Set-MsixStartupTaskEntryState {
         }
 
         $target = 2
+        try {
+            $priorState = Get-ItemPropertyValue -LiteralPath $fullKey -Name 'CDE_PriorMsixState' -ErrorAction Stop
+            $priorInt = [int]$priorState
+            if (Test-MsixStartupStateEnabled -State $priorInt) {
+                $target = $priorInt
+            }
+        } catch { }
     } else {
         if (-not (Test-MsixStartupStateEnabled -State $current)) {
             throw 'ALREADY_IN_DESIRED_STATE: MSIX startup task is already disabled.'

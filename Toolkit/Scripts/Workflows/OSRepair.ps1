@@ -12,6 +12,7 @@ param(
     [string]$PackageName  = '',
     [string]$DismSource   = '',
     [int]$DismSourceIndex = 0,
+    [switch]$Confirmed,
     [switch]$ElevatedRelay
 )
 
@@ -69,6 +70,9 @@ function Get-OSRepairRelayArgumentString {
     }
     if ($DismSourceIndex -gt 0) {
         Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'DismSourceIndex' -Value ([string]$DismSourceIndex)
+    }
+    if ($Confirmed) {
+        Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'Confirmed' -IsSwitch
     }
     return Join-ToolkitRelayArgumentString -Parts $parts
 }
@@ -231,7 +235,7 @@ function Get-DismWimIndex {
     return [int]$indexes[0].Index
 }
 
-function Get-DismRestoreHealthCommandLine {
+function Get-DismRestoreHealthArgs {
     param(
         [Parameter(Mandatory)]
         [ValidateSet('Online', 'Offline')]
@@ -241,22 +245,26 @@ function Get-DismRestoreHealthCommandLine {
         [int]$SourceIndex = 0
     )
 
-    $args = if ($Mode -eq 'Online') {
-        @('/Online', '/Cleanup-Image', '/RestoreHealth')
+    $args = [System.Collections.Generic.List[string]]::new()
+    if ($Mode -eq 'Online') {
+        $args.Add('/Online') | Out-Null
+        $args.Add('/Cleanup-Image') | Out-Null
+        $args.Add('/RestoreHealth') | Out-Null
     } else {
-        @("/Image:$ImageDrive", '/Cleanup-Image', '/RestoreHealth')
+        $args.Add("/Image:$ImageDrive") | Out-Null
+        $args.Add('/Cleanup-Image') | Out-Null
+        $args.Add('/RestoreHealth') | Out-Null
     }
 
     if (-not [string]::IsNullOrWhiteSpace($SourcePath)) {
         $wimPath = Resolve-DismRepairWimPath -Source $SourcePath
         $index = Get-DismWimIndex -WimPath $wimPath -PreferredIndex $SourceIndex
-        $sourceSpec = "wim:`"$wimPath`":$index"
-        $args += "/Source:$sourceSpec"
-        $args += '/LimitAccess'
+        $args.Add("/Source:wim:$wimPath`:$index") | Out-Null
+        $args.Add('/LimitAccess') | Out-Null
         Write-Log "DISM repair source: $wimPath (index $index)"
     }
 
-    return ('dism ' + ($args -join ' '))
+    return @($args)
 }
 
 function Invoke-DismRestoreHealthStep {
@@ -270,11 +278,11 @@ function Invoke-DismRestoreHealthStep {
         [int]$SourceIndex = 0
     )
 
-    $commandLine = Get-DismRestoreHealthCommandLine -Mode $Mode -ImageDrive $ImageDrive `
+    $argList = Get-DismRestoreHealthArgs -Mode $Mode -ImageDrive $ImageDrive `
         -SourcePath $SourcePath -SourceIndex $SourceIndex
-    Write-Log "Running: $commandLine"
+    Write-Log ("Running: dism.exe " + ($argList -join ' '))
 
-    $step = Invoke-CommandStreamed -CommandLine $commandLine -StepName $StepName -ProgressKind 'DISM'
+    $step = Invoke-ProcessStreamed -FilePath 'dism.exe' -ArgumentList $argList -StepName $StepName -ProgressKind 'DISM'
     if (Test-DismSourceMissingError -Output $step.Output -ExitCode $step.ExitCode) {
         Write-DismSourceMissingGuidance -SourceWasProvided:(-not [string]::IsNullOrWhiteSpace($SourcePath))
     }
@@ -299,7 +307,7 @@ function Invoke-CommandCaptured {
 
         return [PSCustomObject]@{
             Name     = $StepName
-            Status   = if ($proc.ExitCode -eq 0) { 'Pass' } else { 'Warn' }
+            Status   = Get-RepairStepStatusFromExitCode -ExitCode $proc.ExitCode
             ExitCode = $proc.ExitCode
             Output   = $stdout.Trim()
         }
@@ -342,9 +350,15 @@ function Get-DismProgressPercent {
         return $null
     }
 
-    $match = [regex]::Match($Line, '(?<percent>\d{1,3}(?:\.\d+)?)\s*%')
-    if ($match.Success) {
-        $value = [double]$match.Groups['percent'].Value
+    # Prefer DISM progress tokens and the classic bracket bar; avoid grepping any bare %.
+    $token = [regex]::Match($Line, 'DISM_PROGRESS\s*:\s*(?<percent>\d{1,3})', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($token.Success) {
+        return [int]$token.Groups['percent'].Value
+    }
+
+    $bar = [regex]::Match($Line, '\[\s*=+\s*(?<percent>\d{1,3}(?:\.\d+)?)\s*%\s*=*\s*\]', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($bar.Success) {
+        $value = [double]$bar.Groups['percent'].Value
         if ($value -lt 0) { $value = 0 }
         if ($value -gt 100) { $value = 100 }
         return [int][math]::Floor($value)
@@ -353,9 +367,53 @@ function Get-DismProgressPercent {
     return $null
 }
 
-function Invoke-CommandStreamed {
+function ConvertTo-ProcessArgumentString {
+    param([string[]]$ArgumentList)
+
+    if ($null -eq $ArgumentList -or $ArgumentList.Count -eq 0) {
+        return ''
+    }
+
+    $parts = foreach ($arg in $ArgumentList) {
+        $text = [string]$arg
+        if ($text -match '[\s"]') {
+            '"' + ($text.Replace('"', '\"')) + '"'
+        } else {
+            $text
+        }
+    }
+    return ($parts -join ' ')
+}
+
+function Get-RepairStepStatusFromExitCode {
+    param([AllowNull()][object]$ExitCode)
+
+    if ($null -eq $ExitCode) {
+        return 'Fail'
+    }
+
+    try {
+        $code = [int]$ExitCode
+    } catch {
+        return 'Fail'
+    }
+
+    if ($code -eq 0) {
+        return 'Pass'
+    }
+
+    # SFC: 1 = repair performed successfully (still Pass).
+    if ($code -eq 1) {
+        return 'Warn'
+    }
+
+    return 'Fail'
+}
+
+function Invoke-ProcessStreamed {
     param(
-        [string]$CommandLine,
+        [Parameter(Mandatory)][string]$FilePath,
+        [string[]]$ArgumentList = @(),
         [string]$StepName,
         [ValidateSet('SFC', 'DISM')][string]$ProgressKind
     )
@@ -364,16 +422,31 @@ function Invoke-CommandStreamed {
         $lines = New-Object System.Collections.Generic.List[string]
         $lastPercent = -1
 
-        cmd.exe /c $CommandLine 2>&1 | ForEach-Object {
-            $line = [string]$_
-            if (-not [string]::IsNullOrWhiteSpace($line)) {
-                $lines.Add($line)
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $FilePath
+        $psi.Arguments = ConvertTo-ProcessArgumentString -ArgumentList $ArgumentList
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $psi.StandardOutputEncoding = [System.Text.Encoding]::GetEncoding(0)
+        $psi.StandardErrorEncoding = [System.Text.Encoding]::GetEncoding(0)
+
+        $proc = New-Object System.Diagnostics.Process
+        $proc.StartInfo = $psi
+        $null = $proc.Start()
+
+        $stderrTask = $proc.StandardError.ReadToEndAsync()
+        while ($null -ne ($line = $proc.StandardOutput.ReadLine())) {
+            $text = [string]$line
+            if (-not [string]::IsNullOrWhiteSpace($text)) {
+                $lines.Add($text) | Out-Null
             }
 
             $percent = if ($ProgressKind -eq 'SFC') {
-                Get-SfcProgressPercent -Line $line
+                Get-SfcProgressPercent -Line $text
             } else {
-                Get-DismProgressPercent -Line $line
+                Get-DismProgressPercent -Line $text
             }
 
             if ($null -ne $percent -and $percent -ne $lastPercent) {
@@ -382,10 +455,20 @@ function Invoke-CommandStreamed {
             }
         }
 
-        $exit = $LASTEXITCODE
+        $proc.WaitForExit()
+        $errText = $stderrTask.Result
+        if (-not [string]::IsNullOrWhiteSpace($errText)) {
+            foreach ($errLine in ($errText -split "`r?`n")) {
+                if (-not [string]::IsNullOrWhiteSpace($errLine)) {
+                    $lines.Add([string]$errLine) | Out-Null
+                }
+            }
+        }
 
-        # Drop progress-only lines so the captured Output (used for structured
-        # results) does not spam every percentage; keep meaningful summary lines.
+        $exit = $proc.ExitCode
+        $proc.Dispose()
+
+        # Drop progress-only lines from structured Output; keep real diagnostics.
         $meaningful = $lines | Where-Object {
             $p = if ($ProgressKind -eq 'SFC') {
                 Get-SfcProgressPercent -Line $_
@@ -397,7 +480,7 @@ function Invoke-CommandStreamed {
 
         return [PSCustomObject]@{
             Name     = $StepName
-            Status   = if ($exit -eq 0) { 'Pass' } else { 'Warn' }
+            Status   = Get-RepairStepStatusFromExitCode -ExitCode $exit
             ExitCode = $exit
             Output   = (($meaningful -join "`r`n").Trim())
         }
@@ -411,6 +494,21 @@ function Invoke-CommandStreamed {
     }
 }
 
+function Invoke-CommandStreamed {
+    # Legacy shim: prefer Invoke-ProcessStreamed for argv safety.
+    param(
+        [string]$CommandLine,
+        [string]$StepName,
+        [ValidateSet('SFC', 'DISM')][string]$ProgressKind
+    )
+
+    if ($CommandLine -match '^(?i)sfc(\s|$)') {
+        return Invoke-ProcessStreamed -FilePath 'sfc.exe' -ArgumentList @('/scannow') -StepName $StepName -ProgressKind $ProgressKind
+    }
+
+    throw "Invoke-CommandStreamed is deprecated for arbitrary cmd lines. Use Invoke-ProcessStreamed. Got: $CommandLine"
+}
+
 function Invoke-SFC {
     param($r)
 
@@ -419,7 +517,7 @@ function Invoke-SFC {
     if ($envMode -eq 'Windows') {
         Write-Log 'Running SFC /scannow...'
         Write-CdeEvent -Payload @{ type = 'progress'; tool = 'OSRepair'; step = 'SFC'; pct = 0; message = 'Starting SFC' }
-        $step = Invoke-CommandStreamed -CommandLine 'sfc /scannow' -StepName 'SFC' -ProgressKind 'SFC'
+        $step = Invoke-ProcessStreamed -FilePath 'sfc.exe' -ArgumentList @('/scannow') -StepName 'SFC' -ProgressKind 'SFC'
         $r.Steps.Add($step)
         Write-Log "SFC Result: $($step.Status) (ExitCode $($step.ExitCode))"
         if ($step.Output) { Write-Log $step.Output }
@@ -429,8 +527,8 @@ function Invoke-SFC {
         $imageDrive = ($WindowsDir | Split-Path -Qualifier) + '\'
         Write-Log "SFC unavailable in WinPE — running DISM offline repair on $imageDrive"
 
-        $checkStep = Invoke-CommandStreamed `
-            -CommandLine "dism /Image:$imageDrive /Cleanup-Image /CheckHealth" `
+        $checkStep = Invoke-ProcessStreamed -FilePath 'dism.exe' `
+            -ArgumentList @("/Image:$imageDrive", '/Cleanup-Image', '/CheckHealth') `
             -StepName 'DISM_CheckHealth' -ProgressKind 'DISM'
         $r.Steps.Add($checkStep)
         Write-Log "DISM CheckHealth: $($checkStep.Status) (ExitCode $($checkStep.ExitCode))"
@@ -555,6 +653,10 @@ function Invoke-OfflineUpdateUninstall {
     if ($envMode -ne 'WinPE') {
         $r.Steps.Add([PSCustomObject]@{ Name = 'OfflineUpdateUninstall'; Status = 'N/A'; Output = 'Offline update uninstallation targets an offline image and is intended to run from WinPE.' })
         return
+    }
+
+    if (-not $Confirmed) {
+        throw 'PROTECTED_OR_UNSUPPORTED: OfflineUpdateUninstall requires -Confirmed after DestructiveActionDialog.'
     }
 
     $imageRoot = ($WindowsDir | Split-Path -Qualifier) + '\'

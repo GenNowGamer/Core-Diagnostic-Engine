@@ -323,8 +323,6 @@ namespace ToolkitGUI.ViewModels
         private bool CanRunRestore() => _isWinPe && !IsRunning && _selectedInstall != null &&
             (EfiBackupFiles.Any(f => f.IsSelected) || BiosBackupFiles.Any(f => f.IsSelected));
 
-        private static string QuotePath(string path) => $"\"{path.Replace("\"", "`\"")}\"";
-
         private static string GetBackupRoot(string driveRoot)
         {
             var root = driveRoot.Trim().TrimEnd('\\');
@@ -353,7 +351,7 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
-            var parameters = $"-TargetDrive {QuotePath(_selectedInstall.DriveRoot)} -Confirmed";
+            var parameters = $"-TargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(_selectedInstall.DriveRoot)} -Confirmed";
 
             if (scriptName.Equals("BootloaderRebuildEfi.ps1", StringComparison.OrdinalIgnoreCase))
             {
@@ -367,7 +365,7 @@ namespace ToolkitGUI.ViewModels
                     efiDrive = pick.DriveRoot;
                 }
 
-                parameters += $" -EfiTargetDrive {QuotePath(efiDrive)}";
+                parameters += $" -EfiTargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(efiDrive)}";
             }
 
             await ExecuteWorkflowAsync(scriptName, parameters, scriptName);
@@ -389,7 +387,7 @@ namespace ToolkitGUI.ViewModels
 
             var parameters = string.Empty;
             if (_selectedInstall != null)
-                parameters = $"-TargetDrive {QuotePath(_selectedInstall.DriveRoot)} -Confirmed";
+                parameters = $"-TargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(_selectedInstall.DriveRoot)} -Confirmed";
             await ExecuteWorkflowAsync(scriptName, parameters, scriptName);
         }
 
@@ -402,7 +400,7 @@ namespace ToolkitGUI.ViewModels
                 case "bcd":
                     if (_selectedInstall == null) return;
                     await ExecuteWorkflowAsync("BootloaderBcdBackup.ps1",
-                        $"-TargetDrive {QuotePath(_selectedInstall.DriveRoot)} -Confirmed", "Backup BCD");
+                        $"-TargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(_selectedInstall.DriveRoot)} -Confirmed", "Backup BCD");
                     break;
                 case "partition":
                     if (_selectedDisk == null) return;
@@ -411,15 +409,15 @@ namespace ToolkitGUI.ViewModels
                         : string.Empty;
                     var p = $"-DiskNumber {_selectedDisk.DiskNumber} -Confirmed";
                     if (!string.IsNullOrWhiteSpace(backupRoot))
-                        p += $" -BackupRoot {QuotePath(backupRoot)}";
+                        p += $" -BackupRoot {PowerShellArgumentHelper.QuotePathParameterForProcess(backupRoot)}";
                     else if (_selectedInstall != null)
-                        p += $" -TargetDrive {QuotePath(_selectedInstall.DriveRoot)}";
+                        p += $" -TargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(_selectedInstall.DriveRoot)}";
                     await ExecuteWorkflowAsync("PartitionTableBackup.ps1", p, "Backup partition table");
                     break;
                 case "all":
                     if (_selectedInstall == null || _selectedDisk == null) return;
                     await ExecuteWorkflowAsync("BootArtifactsBackup.ps1",
-                        $"-TargetDrive {QuotePath(_selectedInstall.DriveRoot)} -DiskNumber {_selectedDisk.DiskNumber} -Confirmed",
+                        $"-TargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(_selectedInstall.DriveRoot)} -DiskNumber {_selectedDisk.DiskNumber} -Confirmed",
                         "Backup all boot artifacts");
                     break;
             }
@@ -440,9 +438,9 @@ namespace ToolkitGUI.ViewModels
                 MessageBoxImage.Warning);
             if (result != MessageBoxResult.Yes) return;
 
-            var parameters = $"-TargetDrive {QuotePath(_selectedInstall.DriveRoot)} -Confirmed";
-            if (efi != null) parameters += $" -EfiBackupPath {QuotePath(efi.FullPath)}";
-            if (bios != null) parameters += $" -BiosBackupPath {QuotePath(bios.FullPath)}";
+            var parameters = $"-TargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(_selectedInstall.DriveRoot)} -Confirmed";
+            if (efi != null) parameters += $" -EfiBackupPath {PowerShellArgumentHelper.QuotePathParameterForProcess(efi.FullPath)}";
+            if (bios != null) parameters += $" -BiosBackupPath {PowerShellArgumentHelper.QuotePathParameterForProcess(bios.FullPath)}";
 
             await ExecuteWorkflowAsync("BootloaderBcdRestore.ps1", parameters, "Restore BCD");
         }

@@ -14,6 +14,13 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-07-15)
+
+- **Code review Pass 1 & 2 — shipped** — Correctness/security/UX fixes across Startup Manager, CST/Malware glue, workflow elevation, Hijack repair, OS Repair/Fast Fixes, File Manager/Robocopy, Diag & Repair/hardware tests, and work orders/logging. Regression helpers: `Test-StartupManagerCoverage.ps1`, `Test-ToolkitElevation.ps1`, `Test-HijackRepairHelpers.ps1` (also in `Invoke-CdeRegressionSuite.ps1` where wired).
+- **CST Scan Results UI** — Findings and Suppressed grids are the focal layout (shared height 2:1); footer coverage/action-summary text removed from the dialog (still in Copy summary / PDF).
+- **Code review Pass 3 — deferred** — Publish/launcher/packaging reviewed (14 documented findings); operator keeping current workflow. No changes to `Publish-ToolkitGUI.ps1`, `CDE.exe`, or `SyncUSB.bat` from that review.
+- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; full validation `App/Publish-ToolkitGUI-FullVerify.ps1`. Details — `session_handoff.md`.
+
 ## Session Update (2026-07-10)
 
 - **CST CIRCL (live Windows)** — ThreatScan/FullScan/CustomScan use CIRCL Hashlookup when not WinPE/`OfflineOnly`; content scans defer until batch known-good map is ready. Synced via `Publish-ToolkitGUI.ps1`.
@@ -69,7 +76,7 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 ## Session Update (2026-06-26)
 
 - **Phase 3 — diagnostic depth** — CHU catalog parity test (`Test-HardwareTestCatalogSync.ps1`); CHU Pre-Boot Results rollup + per-failure **Open matching Diag & Repair test** links; Diag & Repair `highlight:{catalogId}` navigation; tiered CST findings (`CstFindingsExpander` in workflow execution window — actionable default unchanged); Dashboard **suggested path** + **Case timeline**; work-order optional fields `EventKind`, `DisplayLabel`, `SourceArtifact`, `GuidanceContext`; CHU/CST/Process Analyzer recording hooks.
-- **Startup Manager — persistence depth** — Scheduled logon/boot tasks, `StartupApproved` parity for Run/folder entries, GPO Run keys, cross-mechanism correlation (SOURCE/RELATED columns), MSIX startup tasks in list + `audit_startup` (manifest executable resolution + package publisher signature). `\Microsoft\*` scheduled tasks hidden by default (optional checkbox; read-only when shown). Core: `StartupApproved.ps1`, `StartupScheduledTask.ps1`, `StartupCorrelation.ps1`, `MsixStartup.ps1`; tests `Test-StartupManagerCoverage.ps1`, `Test-MsixStartupTasks.ps1`.
+- **Startup Manager — persistence depth** — Scheduled logon/boot tasks, `StartupApproved` parity for Run/folder entries, GPO Run keys, cross-mechanism correlation (SOURCE/RELATED columns), MSIX startup tasks in list + `audit_startup` (manifest executable resolution + package publisher signature). `\Microsoft\*` scheduled tasks hidden by default (optional checkbox; read-only when shown). Non-Microsoft scheduled tasks support **Delete** (unregister). Core: `StartupApproved.ps1`, `StartupScheduledTask.ps1`, `StartupCorrelation.ps1`, `MsixStartup.ps1`; tests `Test-StartupManagerCoverage.ps1`, `Test-MsixStartupTasks.ps1`.
 - **Post-Op Cleanup — eight tools** — Added icon/thumbnail cache, DNS flush, proxy reset, hosts restore (confirmation), restart Explorer via `PostOpCleanup.ps1`. Removed duplicate fixes from **Fast Fixes** (Flush DNS, icon/thumb cache) and **OS Repair** network reset (DNS flush). Hosts **audit** remains in System Health Check only.
 - **Fast Fixes** — Catalog trimmed to **14** verified one-click fixes (DNS/icon/thumb cache moved to Post-Op).
 - **Regression** — `Test-WorkOrderCaseEvents.ps1`, `Test-CstStructuredResults.ps1`, `Test-PostOpCleanup.ps1` wired into `Invoke-CdeRegressionSuite.ps1`.

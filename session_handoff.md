@@ -1,7 +1,14 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-14  
+**Last updated:** 2026-07-15  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-15 update — Code review Pass 1–2 shipped; Pass 3 deferred
+
+- **Pass 1 & 2** — Toolkit-wide review fixes shipped (Startup Manager, CST/Malware glue, workflows/elevation, Hijack repair, OS Repair, File Manager, Diag & Repair/hardware, work orders). CST Scan Results dialog layout refined (Findings/Suppressed focal grids; footer coverage text removed from UI).
+- **Pass 3** — Publish / launcher / packaging reviewed (14 findings); **no code changes** — operator keeping current canonical publish workflow (`Toolkit\App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`).
+- **BenchLab** — Section 10 of the review plan skipped.
+- **Publish** — Canonical publish after Pass 2 ~**2:38 PM** GUI payload; launch `Toolkit\CDE.exe`. Full notes — `Toolkit\session_handoff.md` (top section).
 
 ## 2026-07-14 update — Infect lab: Azure off → local Hyper-V
 

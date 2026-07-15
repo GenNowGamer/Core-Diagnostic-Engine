@@ -1,6 +1,68 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-14
+**Last updated:** 2026-07-15
+
+## 2026-07-15 — CDE toolkit code review (Pass 1–3)
+
+Read-only review across ~10 toolkit slices; **Pass 1 and Pass 2 fixes shipped** this session; **Pass 3 (publish / launcher / packaging) documented only — operator deferred implementation**; **BenchLab (section 10) not reviewed**.
+
+### Pass 1 — implemented (sections 1–4)
+
+- **Startup Manager** — Mutation path allowlist; delete verify fail-closed; `Remove-StartupApprovedEntry` on Run/folder delete; safer target-file delete UX (default No); MSIX prior-state restore; PE header stream read; correlation/heuristic tuning.
+- **CST / Malware glue** — ScanOnly coercion; quarantine confirm; shared argv quoting; log redaction.
+- **Workflow host + elevation** — Quoted elevation relay; elevated PID watch/kill on cancel; runspace cancel improvements.
+- **Hijack & Scam Repair** — Safer destructive UX; hosts confirm; helper/heuristic fixes.
+- **Verify** — `Scripts\Tests\Test-StartupManagerCoverage.ps1`, `Test-ToolkitElevation.ps1`, `Test-HijackRepairHelpers.ps1`.
+
+### Pass 2 — implemented (sections 5–8)
+
+- **OS Repair / Fast Fixes** — WinPE detection via MiniNT/SystemRoot-on-X (not any `X:\`); non-zero DISM/SFC exit → Fail (not Done ✓); argv-safe DISM; offline update uninstall requires `-Confirmed` + GUI confirm.
+- **File Manager / Robocopy** — `DestructiveActionDialog` for delete/move/cut/Mirror; DryRun wired; pane focus; offline tree opens.
+- **Diag & Repair / hardware** — Cancel ≠ success; Skip/Fail health; memory impl dispatch; catalog fallback; stress cancel hooks.
+- **Work orders / logging** — CaseId validation; pointer-first Open; PDF-before-Closed; scoped feedback zip + redaction; session log retention; `TryRecord*` logging.
+
+### CST Scan Results UI (same session)
+
+- **Layout** — Findings + Suppressed share remaining height **2:1** (min heights); removed Suppressed `MaxHeight=200` cap; taller default window (`820×1080`).
+- **Copy** — Footer coverage/action-summary text removed from dialog (detail remains in **Copy summary** / PDF); verdict detail capped with tooltip.
+- **Supersedes** — 2026-07-15 ~10:07 AM H-scroll + suppressed Auto-row entry below (kept H-scroll mechanics; layout/copy changed again ~1:47 PM).
+
+### Pass 3 — findings only, deferred (section 9)
+
+- **Scope** — Publish scripts, verify gates, USB sync orchestration, CST/CHU staging checks, launcher/WinPE entry points, duplicate publish paths.
+- **Findings** — 14 tickets (PL-01…PL-08 publish pipeline; LA-01…LA-06 launcher/entry). Highest risk if ever hit: WinPE `TOOLKIT_ROOT=D:` without normalization (LA-01); CST partial sync succeeding (PL-03).
+- **Decision** — Operator confirmed current publish/launcher/packaging workflow is sufficient; **no Pass 3 code changes** planned for now.
+- **Artifacts** — Cursor workspace canvases (not in git): `cde-code-review-pass1.canvas.tsx`, `cde-code-review-pass2.canvas.tsx`, `cde-code-review-pass3.canvas.tsx` under the Core Diagnostic Engine Cursor project `canvases/` folder.
+
+### Publish (Pass 1 + 2 + CST UI)
+
+- Canonical `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; GUI payload under `CDE\ToolkitGUI\bin\Release\net8.0-windows\`.
+- Last full publish this session: GUI payload ~**2026-07-15 ~2:38 PM** (after Pass 2 wave 5). CST UI-only republish ~**1:47 PM** if tested separately.
+- Full validation: `App\Publish-ToolkitGUI-FullVerify.ps1`.
+
+## 2026-07-15 — Startup Manager: Delete non-Microsoft scheduled tasks
+
+- **Gap** — Logon tasks like BenchLab `CDEBENCHX_C05_StageTask` were enable/disable only; Delete threw `PROTECTED_OR_UNSUPPORTED`.
+- **Fix** — Non-Windows plumbing tasks (`SupportsDelete = -not Microsoft path`) can be **Delete'd** via `Remove-StartupScheduledTaskEntry` (`Unregister-ScheduledTask`). `\Microsoft\*` tasks stay blocked/read-only.
+- **UX** — Same Delete flow as Run keys, including optional “also delete linked target file” when the action path is remediable.
+- **Verify** — Refresh Startup Manager → Delete `CDEBENCHX_C05_StageTask` → gone from Task Scheduler. `Scripts\Tests\Test-StartupManagerCoverage.ps1`.
+- **Publish** — Canonical `App\Publish-ToolkitGUI.ps1` (scripts ship in Toolkit tree; republish if pushing GUI to lab).
+
+## 2026-07-15 — Windows Defender scan: live elapsed + estimated progress
+
+- **Problem** — Defender workflow stuck near **32%** for the whole scan: GUI +2% per log line (~16 status lines), then `Start-MpScan` blocked with no output.
+- **Limit** — Microsoft Defender does **not** expose files scanned, true %, or accurate ETA to apps. CDE cannot show “items being scanned” for Defender (use **Core Security Tool** for that).
+- **Fix** — `Invoke-DefenderScan` uses `Start-MpScan -AsJob`, emits `[DEFENDER:PROGRESS]` every 2s with elapsed + estimated %/ETA (stretches if scan runs long), then collects `Get-MpThreatDetection`. GUI parses markers (stops +2% heuristic), shows `~N%` while estimated; fixed Phase/Status overlap in Workflow Execution.
+- **Verify** — Malware Cleanup → Windows Defender Scan: bar advances during quiet wait; caption shows elapsed/ETA; completes at 100%.
+- **Publish** — `App\Publish-ToolkitGUI.ps1` → GUI payload **2026-07-15 ~10:35 AM**; launch `Toolkit\CDE.exe`. Scripts under `Toolkit\Scripts\Core\SecurityAuditChecks.ps1` ship with the toolkit tree (no separate publish).
+
+## 2026-07-15 — CST Scan Results: persistent H-scroll + suppressed section
+
+- **Problem** — Horizontal scrollbar on Findings kept regressing (grid measured wider than the window so the bar painted off-screen). **Suppressed audit findings** sat inside the Findings `*` row and was clipped at default 720px height; only visible when maximized.
+- **Layout (interim ~10:07 AM)** — Suppressed in its own **Auto** row (`SuppressedPanel`, max height 200); footer hint wraps.
+- **H-scroll** — Host `SizeChanged` sets DataGrid `Width`/`MaxWidth` to host `ActualWidth`; ScrollViewer H-bar forced `Visible`; dialog-local ScrollBar style keeps horizontal bars at Height 16 (app Width=12 would otherwise collapse them).
+- **Superseded ~1:47 PM** — See **CDE toolkit code review (Pass 1–3)** top section: Findings/Suppressed **2:1** shared height, footer coverage text removed, taller default window. H-scroll mechanics retained.
+- **Verify** — Default window: both grids usable without maximize; H-scrollbar under Findings; suppressed visible in lower section.
 
 ## 2026-07-14 — Lab infra: Azure tear-down → local Hyper-V
 
@@ -29,6 +91,7 @@
 
 - **Fix** — Findings (and suppressed) `DataGrid` use native `ScrollViewer.HorizontalScrollBarVisibility=Visible` with wide Location/Evidence columns (outer ScrollViewer + fixed grid width was unreliable).
 - **Verify** — Long paths show a horizontal scrollbar under Findings.
+- **Superseded 2026-07-15** — See top-of-file for durable H-scroll + suppressed layout fix.
 
 ### CST remediation progress
 

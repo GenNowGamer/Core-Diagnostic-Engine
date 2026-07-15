@@ -2,6 +2,27 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
+/// <summary>
+/// Cooperative cancel for in-process hardware stress loops.
+/// Host stop already kills the PowerShell process tree (PowerShellService process.Kill);
+/// this flag is best-effort when the engine runs in-process and something sets Requested.
+/// SMART short self-tests have no abort API in CdeSmart.Reader — stop relies on process kill.
+/// </summary>
+public static class CdeHardwareCancel
+{
+    public static volatile bool Requested;
+
+    public static void Reset()
+    {
+        Requested = false;
+    }
+
+    public static void Request()
+    {
+        Requested = true;
+    }
+}
+
 public static class HardwareTestEngine
 {
     public static int RegisterIterations = 25000000;
@@ -129,20 +150,29 @@ public static class HardwareTestEngine
 
     /// <summary>
     /// Timed multi-core soak using verify-able integer/FPU work for CpuStressSeconds.
+    /// Checks <see cref="CdeHardwareCancel.Requested"/> each worker chunk (cooperative cancel).
     /// </summary>
     public static string RunCpuStressTest()
     {
+        CdeHardwareCancel.Reset();
         int seconds = Math.Max(1, CpuStressSeconds);
         DateTime deadline = DateTime.UtcNow.AddSeconds(seconds);
         bool ok = true;
+        bool cancelled = false;
         long iterations = 0;
         object sync = new object();
 
         Parallel.For(0, Environment.ProcessorCount, _ =>
         {
             long localIters = 0;
-            while (DateTime.UtcNow < deadline && ok)
+            while (DateTime.UtcNow < deadline && ok && !cancelled)
             {
+                if (CdeHardwareCancel.Requested)
+                {
+                    cancelled = true;
+                    return;
+                }
+
                 long accumulator = 0;
                 long verify = 0;
                 const int chunk = 50000;
@@ -175,6 +205,8 @@ public static class HardwareTestEngine
             lock (sync) { iterations += localIters; }
         });
 
+        if (cancelled || CdeHardwareCancel.Requested)
+            return "Warn: CPU timed stress cancelled";
         if (!ok)
             return "Failed: CPU timed stress verification mismatch";
         return string.Format("Passed: {0}s multi-core soak ({1} worker chunks)", seconds, iterations);
@@ -199,24 +231,25 @@ public static class HardwareTestEngine
             : last;
     }
 
-    private static string RunMemoryTestOnce(string testName, int sizeMB)
+    private static string RunMemoryTestOnce(string testIdOrName, int sizeMB)
     {
         int sizeBytes = sizeMB * 1024 * 1024;
         try
         {
-            switch (testName)
+            // Dispatch on catalog implementations.windows allowlist ids (displayName accepted as legacy alias).
+            switch (NormalizeMemoryImplId(testIdOrName))
             {
-                case "Address Test": return AddressTest(sizeBytes);
-                case "Auxiliary Pattern Test": return AuxPatternTest(sizeBytes);
-                case "Bit High Test": return BitHighTest(sizeBytes);
-                case "Bit Low Test": return BitLowTest(sizeBytes);
-                case "Checkerboard Test": return CheckerboardTest(sizeBytes);
-                case "Modulo20 Test": return Modulo20Test(sizeBytes);
-                case "Moving Inversion Test": return MovingInversionTest(sizeBytes);
-                case "Nibble Move Test": return NibbleMoveTest(sizeBytes);
-                case "Walking Ones Left Test": return WalkingOnesLeftTest(sizeBytes);
-                case "Walking Ones Right Test": return WalkingOnesRightTest(sizeBytes);
-                default: return "Failed: Unknown test " + testName;
+                case "AddressTest": return AddressTest(sizeBytes);
+                case "AuxPatternTest": return AuxPatternTest(sizeBytes);
+                case "BitHighTest": return BitHighTest(sizeBytes);
+                case "BitLowTest": return BitLowTest(sizeBytes);
+                case "CheckerboardTest": return CheckerboardTest(sizeBytes);
+                case "Modulo20Test": return Modulo20Test(sizeBytes);
+                case "MovingInversionTest": return MovingInversionTest(sizeBytes);
+                case "NibbleMoveTest": return NibbleMoveTest(sizeBytes);
+                case "WalkingOnesLeftTest": return WalkingOnesLeftTest(sizeBytes);
+                case "WalkingOnesRightTest": return WalkingOnesRightTest(sizeBytes);
+                default: return "Failed: Unknown test " + testIdOrName;
             }
         }
         catch (OutOfMemoryException)
@@ -226,6 +259,48 @@ public static class HardwareTestEngine
         catch (Exception ex)
         {
             return "Failed: " + ex.Message;
+        }
+    }
+
+    private static string NormalizeMemoryImplId(string testIdOrName)
+    {
+        if (string.IsNullOrWhiteSpace(testIdOrName))
+            return string.Empty;
+
+        switch (testIdOrName.Trim())
+        {
+            case "AddressTest":
+            case "Address Test":
+                return "AddressTest";
+            case "AuxPatternTest":
+            case "Auxiliary Pattern Test":
+                return "AuxPatternTest";
+            case "BitHighTest":
+            case "Bit High Test":
+                return "BitHighTest";
+            case "BitLowTest":
+            case "Bit Low Test":
+                return "BitLowTest";
+            case "CheckerboardTest":
+            case "Checkerboard Test":
+                return "CheckerboardTest";
+            case "Modulo20Test":
+            case "Modulo20 Test":
+                return "Modulo20Test";
+            case "MovingInversionTest":
+            case "Moving Inversion Test":
+                return "MovingInversionTest";
+            case "NibbleMoveTest":
+            case "Nibble Move Test":
+                return "NibbleMoveTest";
+            case "WalkingOnesLeftTest":
+            case "Walking Ones Left Test":
+                return "WalkingOnesLeftTest";
+            case "WalkingOnesRightTest":
+            case "Walking Ones Right Test":
+                return "WalkingOnesRightTest";
+            default:
+                return testIdOrName.Trim();
         }
     }
 

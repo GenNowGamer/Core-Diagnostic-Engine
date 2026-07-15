@@ -182,6 +182,61 @@ function Get-NextCaseId {
     }
 }
 
+function Test-ValidCaseId {
+    param([string]$CaseId)
+
+    if ([string]::IsNullOrWhiteSpace($CaseId)) {
+        return $false
+    }
+
+    $trimmed = $CaseId.Trim()
+    if ($trimmed -match '[\\/]' -or $trimmed.Contains('..')) {
+        return $false
+    }
+
+    # Match CreateWorkOrder / Get-NextCaseId: PREFIX-yyyyMMdd-#####
+    return [bool]($trimmed -match '^[A-Za-z0-9]+-\d{8}-\d{5}$')
+}
+
+function Assert-ValidCaseId {
+    param(
+        [Parameter(Mandatory)][string]$CaseId
+    )
+
+    $trimmed = $CaseId.Trim()
+    if (-not (Test-ValidCaseId -CaseId $trimmed)) {
+        throw "Invalid CaseId format: '$CaseId'."
+    }
+
+    return $trimmed
+}
+
+function Assert-PathUnderWorkOrdersRoot {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string]$ToolkitRoot = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ToolkitRoot)) {
+        $ToolkitRoot = Get-WorkOrderToolkitRoot
+    }
+
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $roots = @(
+        (Get-InternalWorkOrdersDirectory -ToolkitRoot $ToolkitRoot),
+        (Get-OperatorWorkOrdersDirectory -ToolkitRoot $ToolkitRoot)
+    )
+
+    foreach ($rootDir in $roots) {
+        $rootFull = [System.IO.Path]::GetFullPath($rootDir).TrimEnd('\', '/') + '\'
+        if ($full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $full
+        }
+    }
+
+    throw "Work order path escapes WorkOrders root: $full"
+}
+
 function Resolve-WorkOrderFilePath {
     param(
         [Parameter(Mandatory)][string]$CaseId,
@@ -192,16 +247,19 @@ function Resolve-WorkOrderFilePath {
         $ToolkitRoot = Get-WorkOrderToolkitRoot
     }
 
+    $CaseId = Assert-ValidCaseId -CaseId $CaseId
+
     $runtimePath = Join-Path (Get-InternalWorkOrdersDirectory -ToolkitRoot $ToolkitRoot) "$CaseId.json"
     $legacyPath = Join-Path (Get-OperatorWorkOrdersDirectory -ToolkitRoot $ToolkitRoot) "$CaseId.json"
+
     if (Test-Path -LiteralPath $runtimePath) {
-        return $runtimePath
+        return Assert-PathUnderWorkOrdersRoot -Path $runtimePath -ToolkitRoot $ToolkitRoot
     }
     if (Test-Path -LiteralPath $legacyPath) {
-        return $legacyPath
+        return Assert-PathUnderWorkOrdersRoot -Path $legacyPath -ToolkitRoot $ToolkitRoot
     }
 
-    return $runtimePath
+    return Assert-PathUnderWorkOrdersRoot -Path $runtimePath -ToolkitRoot $ToolkitRoot
 }
 
 function Get-WorkOrderFilePath {
@@ -220,39 +278,57 @@ function Get-ActiveWorkOrderPointer {
         $ToolkitRoot = Get-WorkOrderToolkitRoot
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($env:CDE_ACTIVE_CASE_ID)) {
-        $caseId = $env:CDE_ACTIVE_CASE_ID.Trim()
-        $path = Get-WorkOrderFilePath -CaseId $caseId -ToolkitRoot $ToolkitRoot
-        if (Test-Path -LiteralPath $path) {
-            return [PSCustomObject]@{
-                CaseId          = $caseId
-                WorkOrderPath   = $path
-                Source          = 'Environment'
+    # Pointer file is source of truth. Env is only accepted when it matches the pointer
+    # and the work order Status is Open.
+    $pointerCaseId = $null
+    $pointerPath = Get-ActiveWorkOrderPointerPath -ToolkitRoot $ToolkitRoot
+    if (Test-Path -LiteralPath $pointerPath) {
+        try {
+            $ptr = Get-Content -LiteralPath $pointerPath -Raw | ConvertFrom-Json
+            $pointerCaseId = [string]$ptr.CaseId
+            if (-not [string]::IsNullOrWhiteSpace($pointerCaseId) -and (Test-ValidCaseId -CaseId $pointerCaseId)) {
+                # Re-resolve from CaseId; do not trust ptr.WorkOrderPath.
+                $workPath = Get-WorkOrderFilePath -CaseId $pointerCaseId -ToolkitRoot $ToolkitRoot
+                if (Test-Path -LiteralPath $workPath) {
+                    $order = Get-Content -LiteralPath $workPath -Raw | ConvertFrom-Json
+                    if ([string]$order.Status -eq 'Open') {
+                        $env:CDE_ACTIVE_CASE_ID = $pointerCaseId
+                        return [PSCustomObject]@{
+                            CaseId        = $pointerCaseId
+                            WorkOrderPath = $workPath
+                            Source        = 'PointerFile'
+                        }
+                    }
+                }
             }
+        } catch {
+            # fall through
         }
     }
 
-    $pointerPath = Get-ActiveWorkOrderPointerPath -ToolkitRoot $ToolkitRoot
-    if (-not (Test-Path -LiteralPath $pointerPath)) {
-        return $null
-    }
-
-    try {
-        $ptr = Get-Content -LiteralPath $pointerPath -Raw | ConvertFrom-Json
-        $caseId = [string]$ptr.CaseId
-        $workPath = if ($ptr.WorkOrderPath) { [string]$ptr.WorkOrderPath } else { Get-WorkOrderFilePath -CaseId $caseId -ToolkitRoot $ToolkitRoot }
-        if ([string]::IsNullOrWhiteSpace($caseId) -or -not (Test-Path -LiteralPath $workPath)) {
+    $envCase = if (-not [string]::IsNullOrWhiteSpace($env:CDE_ACTIVE_CASE_ID)) { $env:CDE_ACTIVE_CASE_ID.Trim() } else { '' }
+    if (-not [string]::IsNullOrWhiteSpace($envCase) -and
+        -not [string]::IsNullOrWhiteSpace($pointerCaseId) -and
+        $envCase -eq $pointerCaseId -and
+        (Test-ValidCaseId -CaseId $envCase)) {
+        try {
+            $path = Get-WorkOrderFilePath -CaseId $envCase -ToolkitRoot $ToolkitRoot
+            if (Test-Path -LiteralPath $path) {
+                $order = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+                if ([string]$order.Status -eq 'Open') {
+                    return [PSCustomObject]@{
+                        CaseId        = $envCase
+                        WorkOrderPath = $path
+                        Source        = 'Environment'
+                    }
+                }
+            }
+        } catch {
             return $null
         }
-
-        return [PSCustomObject]@{
-            CaseId        = $caseId
-            WorkOrderPath = $workPath
-            Source        = 'PointerFile'
-        }
-    } catch {
-        return $null
     }
+
+    return $null
 }
 
 function Set-ActiveWorkOrderPointer {
@@ -266,9 +342,9 @@ function Set-ActiveWorkOrderPointer {
         $ToolkitRoot = Get-WorkOrderToolkitRoot
     }
 
-    if ([string]::IsNullOrWhiteSpace($WorkOrderPath)) {
-        $WorkOrderPath = Get-WorkOrderFilePath -CaseId $CaseId -ToolkitRoot $ToolkitRoot
-    }
+    $CaseId = Assert-ValidCaseId -CaseId $CaseId
+    # Always re-resolve under known roots; do not persist caller-supplied absolute paths unverified.
+    $WorkOrderPath = Get-WorkOrderFilePath -CaseId $CaseId -ToolkitRoot $ToolkitRoot
 
     $runtimeDir = Get-WorkOrderRuntimeDirectory -ToolkitRoot $ToolkitRoot
     if (-not (Test-Path -LiteralPath $runtimeDir)) {
@@ -392,7 +468,8 @@ function New-WorkOrder {
     }
 
     $existing = Get-ActiveWorkOrderPointer -ToolkitRoot $ToolkitRoot
-    if ($existing) {
+    if ($existing -and (Test-Path -LiteralPath $existing.WorkOrderPath)) {
+        # Get-ActiveWorkOrderPointer already requires Status -eq Open.
         throw "Work order already active: $($existing.CaseId). Close it before starting a new one."
     }
 
@@ -627,16 +704,22 @@ function Close-WorkOrder {
         throw 'No active work order to close.'
     }
 
+    $CaseId = Assert-ValidCaseId -CaseId $CaseId
     $order = Get-WorkOrder -CaseId $CaseId -ToolkitRoot $ToolkitRoot
     if (-not [string]::IsNullOrWhiteSpace($TechnicianNotes)) {
         $order.TechnicianNotes = $TechnicianNotes
+        Save-WorkOrder -WorkOrder $order -ToolkitRoot $ToolkitRoot
     }
 
+    # Export PDF first while Status stays Open on disk. On PDF failure do not mark Closed
+    # or clear the pointer (aligns with C# CloseActiveWorkOrder).
+    $result = Export-WorkOrderReport -WorkOrder $order -ToolkitRoot $ToolkitRoot
+
+    $order = Get-WorkOrder -CaseId $CaseId -ToolkitRoot $ToolkitRoot
     $order.Status = 'Closed'
     $order.ClosedAt = (Get-Date).ToString('o')
+    $order | Add-Member -NotePropertyName FinalReportPdf -NotePropertyValue $result.PdfPath -Force
     Save-WorkOrder -WorkOrder $order -ToolkitRoot $ToolkitRoot
-
-    $result = Export-WorkOrderReport -WorkOrder $order -ToolkitRoot $ToolkitRoot
     Clear-ActiveWorkOrderPointer -ToolkitRoot $ToolkitRoot
 
     return [PSCustomObject]@{
@@ -664,7 +747,7 @@ function Export-WorkOrderReport {
     }
 
     $jsonPath = Get-WorkOrderFilePath -CaseId $WorkOrder.CaseId -ToolkitRoot $ToolkitRoot
-    $pdfPath = Join-Path $operatorDir "$($WorkOrder.CaseId).pdf"
+    $pdfPath = Assert-PathUnderWorkOrdersRoot -Path (Join-Path $operatorDir "$($WorkOrder.CaseId).pdf") -ToolkitRoot $ToolkitRoot
 
     $errorMessage = ''
     $generated = Invoke-WorkOrderReportPdf -OrderJsonPath $jsonPath -PdfPath $pdfPath -ToolkitRoot $ToolkitRoot -ErrorMessage ([ref]$errorMessage)

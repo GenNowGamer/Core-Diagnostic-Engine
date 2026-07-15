@@ -43,6 +43,10 @@ namespace ToolkitGUI.Views
             BottomItemsListView.View = CreateFileGridView(Pane.Bottom);
             AttachColumnHeaderSorting(TopItemsListView, Pane.Top);
             AttachColumnHeaderSorting(BottomItemsListView, Pane.Bottom);
+            AttachPaneFocusTracking(TopItemsListView, Pane.Top);
+            AttachPaneFocusTracking(BottomItemsListView, Pane.Bottom);
+            AttachPaneFocusTracking(TopFolderTree, Pane.Top);
+            AttachPaneFocusTracking(BottomFolderTree, Pane.Bottom);
             _topPath = string.Empty;
             _bottomPath = string.Empty;
             InitializeFolderTree(TopFolderTree);
@@ -258,19 +262,19 @@ namespace ToolkitGUI.Views
             {
                 var path = offline.TrimEnd('\\');
                 if (Directory.Exists(path))
-                    computer.Children.Add(new FolderTreeNode("Offline OS", path));
+                    computer.Children.Add(new FolderTreeNode("Offline OS", path) { OpensPaneOnSelect = true });
             }
 
             var users = ResolveUsersPath();
             if (!string.IsNullOrEmpty(users))
-                computer.Children.Add(new FolderTreeNode("Users", users));
+                computer.Children.Add(new FolderTreeNode("Users", users) { OpensPaneOnSelect = true });
 
             var toolkit = Environment.GetEnvironmentVariable("TOOLKIT_ROOT");
             if (!string.IsNullOrWhiteSpace(toolkit))
             {
                 var path = toolkit.TrimEnd('\\');
                 if (Directory.Exists(path))
-                    computer.Children.Add(new FolderTreeNode("Toolkit", path));
+                    computer.Children.Add(new FolderTreeNode("Toolkit", path) { OpensPaneOnSelect = true });
             }
 
             if (ShadowCopyBrowseService.IsAvailable())
@@ -461,6 +465,62 @@ namespace ToolkitGUI.Views
 
         private void TopPane_SelectionChanged(object sender, SelectionChangedEventArgs e) => _activePane = Pane.Top;
         private void BottomPane_SelectionChanged(object sender, SelectionChangedEventArgs e) => _activePane = Pane.Bottom;
+
+        private void AttachPaneFocusTracking(UIElement element, Pane pane)
+        {
+            element.PreviewMouseDown += (_, _) => _activePane = pane;
+            element.GotKeyboardFocus += (_, _) => _activePane = pane;
+        }
+
+        /// <summary>
+        /// Toolbar actions must target the pane that last had keyboard/mouse focus,
+        /// not whichever list merely kept the stale selection-changed pane.
+        /// </summary>
+        private void SyncActivePaneFromFocus()
+        {
+            if (!_splitViewEnabled)
+            {
+                _activePane = Pane.Top;
+                return;
+            }
+
+            if (TopItemsListView.IsKeyboardFocusWithin || TopFolderTree.IsKeyboardFocusWithin)
+            {
+                _activePane = Pane.Top;
+                return;
+            }
+
+            if (BottomItemsListView.IsKeyboardFocusWithin || BottomFolderTree.IsKeyboardFocusWithin)
+            {
+                _activePane = Pane.Bottom;
+                return;
+            }
+
+            var focused = Keyboard.FocusedElement as DependencyObject;
+            if (focused == null)
+                return;
+
+            if (IsVisualDescendantOf(focused, TopItemsListView) || IsVisualDescendantOf(focused, TopFolderTree))
+            {
+                _activePane = Pane.Top;
+                return;
+            }
+
+            if (IsVisualDescendantOf(focused, BottomItemsListView) || IsVisualDescendantOf(focused, BottomFolderTree))
+                _activePane = Pane.Bottom;
+        }
+
+        private static bool IsVisualDescendantOf(DependencyObject? child, DependencyObject? ancestor)
+        {
+            while (child != null)
+            {
+                if (ReferenceEquals(child, ancestor))
+                    return true;
+                child = VisualTreeHelper.GetParent(child);
+            }
+
+            return false;
+        }
 
         private void TopItemsListView_MouseDoubleClick(object sender, MouseButtonEventArgs e)
             => OpenOrNavigateSelected(Pane.Top, TopItemsListView);
@@ -660,6 +720,20 @@ namespace ToolkitGUI.Views
             {
                 SetStatus("Current folder is invalid.");
                 return;
+            }
+
+            if (_clipboardIsCut)
+            {
+                var pathPreview = FormatPathPreview(_clipboardPaths);
+                if (!DestructiveActionDialog.Confirm(
+                        "File Manager — Move (paste)",
+                        $"Move {_clipboardPaths.Count} cut item(s) into:\n{targetPath}\n\n{pathPreview}",
+                        "Sources will be permanently deleted after paste (folders recursively).",
+                        defaultNo: true))
+                {
+                    SetStatus("Paste/move cancelled.");
+                    return;
+                }
             }
 
             try
@@ -993,6 +1067,7 @@ namespace ToolkitGUI.Views
 
         private void OpenSelected_Click(object sender, RoutedEventArgs e)
         {
+            SyncActivePaneFromFocus();
             var selected = GetSelectedItems(_activePane).ToList();
             if (!selected.Any())
             {
@@ -1021,11 +1096,21 @@ namespace ToolkitGUI.Views
             }
         }
 
-        private void CopySelected_Click(object sender, RoutedEventArgs e) => CopyOrMoveSelected(copyOnly: true);
-        private void MoveSelected_Click(object sender, RoutedEventArgs e) => CopyOrMoveSelected(copyOnly: false);
+        private void CopySelected_Click(object sender, RoutedEventArgs e)
+        {
+            SyncActivePaneFromFocus();
+            CopyOrMoveSelected(copyOnly: true);
+        }
+
+        private void MoveSelected_Click(object sender, RoutedEventArgs e)
+        {
+            SyncActivePaneFromFocus();
+            CopyOrMoveSelected(copyOnly: false);
+        }
 
         private void DeleteSelected_Click(object sender, RoutedEventArgs e)
         {
+            SyncActivePaneFromFocus();
             if (IsReadOnlyBrowsePath(GetPanePath(_activePane)))
             {
                 SetStatus("Shadow copy folders are read-only.");
@@ -1039,8 +1124,20 @@ namespace ToolkitGUI.Views
                 return;
             }
 
-            if (MessageBox.Show($"Delete {selected.Count} item(s)?", "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            var hasFolders = selected.Any(i => i.IsDirectory);
+            var pathPreview = FormatPathPreview(selected.Select(i => i.FullPath));
+            var impact = hasFolders
+                ? "Folders are deleted recursively (all nested files and subfolders)."
+                : "Selected files will be permanently deleted.";
+            if (!DestructiveActionDialog.Confirm(
+                    "File Manager — Delete",
+                    $"Delete {selected.Count} item(s)?\n\n{pathPreview}",
+                    impact,
+                    defaultNo: true))
+            {
+                SetStatus("Delete cancelled.");
                 return;
+            }
 
             try
             {
@@ -1062,6 +1159,7 @@ namespace ToolkitGUI.Views
 
         private void NewFolder_Click(object sender, RoutedEventArgs e)
         {
+            SyncActivePaneFromFocus();
             var targetPath = GetPanePath(_activePane);
             if (IsReadOnlyBrowsePath(targetPath))
             {
@@ -1181,6 +1279,20 @@ namespace ToolkitGUI.Views
                 return;
             }
 
+            if (!copyOnly)
+            {
+                var pathPreview = FormatPathPreview(selected.Select(i => i.FullPath));
+                if (!DestructiveActionDialog.Confirm(
+                        "File Manager — Move",
+                        $"Move {selected.Count} item(s) to:\n{targetFolder}\n\n{pathPreview}",
+                        "Source files/folders will be permanently removed after a successful copy (folders recursively).",
+                        defaultNo: true))
+                {
+                    SetStatus("Move cancelled.");
+                    return;
+                }
+            }
+
             try
             {
                 foreach (var item in selected)
@@ -1232,14 +1344,28 @@ namespace ToolkitGUI.Views
             LoadDirectory(currentPath, pane);
         }
 
+        private static string FormatPathPreview(IEnumerable<string> paths, int maxLines = 8)
+        {
+            var list = paths.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+            if (list.Count == 0)
+                return "(no paths)";
+
+            var lines = list.Take(maxLines).ToList();
+            var preview = string.Join("\n", lines);
+            if (list.Count > maxLines)
+                preview += $"\n… and {list.Count - maxLines} more";
+            return preview;
+        }
+
         private IEnumerable<FileItem> GetSelectedItems(Pane pane)
         {
-            var checkedItems = GetAllItems(pane).Where(i => i.IsChecked).ToList();
-            if (checkedItems.Count > 0)
-                return checkedItems;
-
+            // Prefer ListView highlight when present so confirm dialogs match what the user last clicked.
             var listView = GetItemsListView(pane);
-            return listView.SelectedItems.Cast<FileItem>();
+            var highlighted = listView.SelectedItems.Cast<FileItem>().ToList();
+            if (highlighted.Count > 0)
+                return highlighted;
+
+            return GetAllItems(pane).Where(i => i.IsChecked);
         }
 
         private IEnumerable<FileItem> GetAllItems(Pane pane)

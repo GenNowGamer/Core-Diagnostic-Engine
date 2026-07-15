@@ -20,7 +20,7 @@ function Invoke-ToolkitElevatedRelay {
         to the caller so GUI workflows still receive live tagged lines (e.g. [HIJACK:FINDING]).
     .OUTPUTS
         $null when already elevated (caller should continue in-process).
-        PSCustomObject with Relayed/ExitCode when an elevated child ran.
+        PSCustomObject with Relayed/ExitCode/PidFile/Pid when an elevated child ran.
     #>
     param(
         [Parameter(Mandatory)][string]$ScriptPath,
@@ -35,13 +35,29 @@ function Invoke-ToolkitElevatedRelay {
         throw "Elevated relay script not found: $ScriptPath"
     }
 
-    $transcriptFile = Join-Path $env:TEMP ("cde_elev_{0}.log" -f [Guid]::NewGuid().ToString('N'))
+    $elevDir = if (-not [string]::IsNullOrWhiteSpace($env:CDE_ELEV_PID_DIR)) {
+        $env:CDE_ELEV_PID_DIR
+    } else {
+        Join-Path $env:LOCALAPPDATA 'CoreDiagnosticEngine\Runtime\elev'
+    }
+    if (-not (Test-Path -LiteralPath $elevDir -PathType Container)) {
+        New-Item -ItemType Directory -Path $elevDir -Force | Out-Null
+    }
+
+    $runId = [Guid]::NewGuid().ToString('N')
+    $pidFile = Join-Path $elevDir ("cde_elev_pid_{0}.txt" -f $runId)
+    $transcriptFile = Join-Path $elevDir ("cde_elev_{0}.log" -f $runId)
+    $env:CDE_ELEVATED_PID_FILE = $pidFile
+
     $escapedScript = $ScriptPath.Replace("'", "''")
+    $escapedPidFile = $pidFile.Replace("'", "''")
+    $escapedTranscript = $transcriptFile.Replace("'", "''")
     $argSuffix = if ([string]::IsNullOrWhiteSpace($ArgumentString)) { '' } else { " $ArgumentString" }
 
     $inner = @"
 `$ErrorActionPreference = 'Continue'
-Start-Transcript -LiteralPath '$transcriptFile' -Force | Out-Null
+`$env:CDE_ELEVATED_PID_FILE = '$escapedPidFile'
+Start-Transcript -LiteralPath '$escapedTranscript' -Force | Out-Null
 try {
     & '$escapedScript'$argSuffix
     `$exitCode = if (`$null -ne `$LASTEXITCODE) { `$LASTEXITCODE } else { 0 }
@@ -57,8 +73,16 @@ exit `$exitCode
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
     $launchArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded"
 
+    $child = $null
     try {
-        $child = Start-Process -FilePath 'powershell.exe' -ArgumentList $launchArgs -Verb RunAs -Wait -PassThru -WindowStyle Hidden
+        $child = Start-Process -FilePath 'powershell.exe' -ArgumentList $launchArgs -Verb RunAs -PassThru -WindowStyle Hidden
+        if ($null -eq $child) {
+            throw "Elevation request was canceled or failed: no process started"
+        }
+
+        Set-Content -LiteralPath $pidFile -Value ([string]$child.Id) -Encoding ascii -Force
+        Wait-Process -Id $child.Id -ErrorAction SilentlyContinue
+        try { $child.Refresh() } catch { }
     } catch {
         throw "Elevation request was canceled or failed: $($_.Exception.Message)"
     } finally {
@@ -76,6 +100,8 @@ exit `$exitCode
     return [PSCustomObject]@{
         Relayed  = $true
         ExitCode = if ($null -ne $child) { $child.ExitCode } else { 1 }
+        PidFile  = $pidFile
+        Pid      = if ($null -ne $child) { $child.Id } else { $null }
     }
 }
 

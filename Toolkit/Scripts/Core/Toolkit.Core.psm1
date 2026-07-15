@@ -49,18 +49,20 @@ function Get-EnvironmentMode {
     [OutputType([string])]
     param()
 
-    # WinPE mounts its ramdisk at X:\
-    if (Test-Path 'X:\') {
-        return 'WinPE'
-    }
-
-    # Additional check: WinPE registry key
+    # Primary: MiniNT key is present only in WinPE (not on a full Windows install).
     try {
         $val = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control' `
                                 -Name 'MiniNT' -ErrorAction SilentlyContinue
         if ($null -ne $val) { return 'WinPE' }
     } catch {}
 
+    # Fallback: SystemRoot on the X: ramdisk (aligns with GUI IsWinPeMode).
+    $systemRoot = [string]$env:SystemRoot
+    if ($systemRoot -match '^[Xx]:\\') {
+        return 'WinPE'
+    }
+
+    # Do NOT treat "any X:\ volume exists" as WinPE — live Windows often has X: USB/secondary disks.
     return 'Windows'
 }
 
@@ -206,6 +208,18 @@ function Initialize-SessionLog {
             New-Item -ItemType Directory -Force -Path $internalDir | Out-Null
         }
     }
+
+    # Retention: keep the newest 50 session logs (cap is enough for light cleanup).
+    try {
+        $sessionFiles = @(Get-ChildItem -LiteralPath $Script:InternalSessionsRoot -Filter '*.log' -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTimeUtc -Descending)
+        if ($sessionFiles.Count -gt 50) {
+            $sessionFiles | Select-Object -Skip 50 | ForEach-Object {
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } catch {}
+
     $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $Script:SessionTimestamp = $timestamp
     $Script:SessionLogFile = Join-Path $Script:InternalSessionsRoot "$WorkflowName`_$timestamp.log"
@@ -233,13 +247,26 @@ function Write-Log {
         [string]$Level = 'Info'
     )
 
+    # Basic secret redaction (aligned with WorkflowViewModelBase AppendLog).
+    $safeMessage = [regex]::Replace(
+        [string]$Message,
+        '\b(password|pwd|token|apikey|api_key|secret)\s*=\s*[^\s,;"'']+',
+        {
+            param($m)
+            $eq = $m.Value.IndexOf('=')
+            if ($eq -lt 0) { return $m.Value }
+            return $m.Value.Substring(0, $eq + 1) + '***'
+        },
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+
     $ts = Get-Date -Format 'HH:mm:ss'
-    $line = "[$ts][$Level] $Message"
+    $line = "[$ts][$Level] $safeMessage"
 
     # Always write to PowerShell streams (GUI picks these up via stdout)
     switch ($Level) {
-        'Warning' { Write-Warning $Message }
-        'Error'   { Write-Error   $Message -ErrorAction Continue }
+        'Warning' { Write-Warning $safeMessage }
+        'Error'   { Write-Error   $safeMessage -ErrorAction Continue }
         default   { Write-Host $line }
     }
 

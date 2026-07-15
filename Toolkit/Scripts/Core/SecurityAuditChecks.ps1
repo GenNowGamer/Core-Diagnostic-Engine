@@ -162,6 +162,18 @@ function Invoke-CoreSecurityTool {
     Write-Log "Running Core Security Tool ($CstMode)..."
     $behaviorTelemetry = $null
     try {
+        $effectiveActionMode = $CstActionMode
+        if ($effectiveActionMode -in @('ScanAndRemove', 'ScanAndQuarantine')) {
+            $confirmDestructive = $false
+            if (Get-Variable -Name ConfirmDestructiveActionMode -ErrorAction SilentlyContinue) {
+                $confirmDestructive = [bool]$ConfirmDestructiveActionMode
+            }
+            if (-not $confirmDestructive) {
+                Write-Warning "ActionMode='$effectiveActionMode' without -ConfirmDestructiveActionMode; coercing to ScanOnly."
+                $effectiveActionMode = 'ScanOnly'
+            }
+        }
+
         $cstScript = Resolve-CoreSecurityToolPath
         if (-not $cstScript) {
             $r.Steps.Add([PSCustomObject]@{ Name='CoreSecurityTool'; Status='Skip'; Output='Core Security Tool was not found in expected paths.' })
@@ -192,7 +204,7 @@ function Invoke-CoreSecurityTool {
         $invokeArgs = @{
             Mode = $CstMode
             DetectionScope = $CstDetectionScope
-            ActionMode = $CstActionMode
+            ActionMode = $effectiveActionMode
             OutputPath = $resultArtifactPath
             RequireElevation = $true
             AutoElevate = $true
@@ -384,6 +396,41 @@ function Invoke-CoreSecurityTool {
     }
 }
 
+function Write-DefenderProgress {
+    <#
+    .SYNOPSIS Emit a machine-readable progress line for the CST / Malware Cleanup GUI.
+    .NOTES Defender does not expose files-scanned or true %. Progress is estimated from elapsed time.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Phase,
+        [Parameter(Mandatory)][double]$Percent,
+        [string]$Detail = '',
+        [int]$ElapsedSec = 0,
+        [int]$EtaSec = 0,
+        [int]$ThreatCount = -1,
+        [string]$EngineVersion = '',
+        [bool]$Estimated = $true
+    )
+
+    $payload = [ordered]@{
+        phase         = $Phase
+        percent       = [math]::Round([math]::Max(0, [math]::Min(100, $Percent)), 1)
+        detail        = $Detail
+        elapsedSec    = [int][math]::Max(0, $ElapsedSec)
+        etaSec        = [int][math]::Max(0, $EtaSec)
+        threatCount   = $ThreatCount
+        engineVersion = $EngineVersion
+        estimated     = [bool]$Estimated
+    }
+    [Console]::Out.WriteLine("[DEFENDER:PROGRESS] $($payload | ConvertTo-Json -Compress)")
+}
+
+function Format-DefenderElapsed([int]$Seconds) {
+    $ts = [TimeSpan]::FromSeconds([math]::Max(0, $Seconds))
+    if ($ts.TotalHours -ge 1) { return $ts.ToString('h\:mm\:ss') }
+    return $ts.ToString('m\:ss')
+}
+
 function Invoke-DefenderScan {
     param($r)
     $envMode = Get-EnvironmentMode
@@ -399,20 +446,176 @@ function Invoke-DefenderScan {
         }
         return
     }
+
     Write-Log "Checking Windows Defender status..."
+    Write-DefenderProgress -Phase 'Status' -Percent 4 -Detail 'Reading Windows Defender status...' -Estimated $false
     try {
         $mpStatus = Get-MpComputerStatus -ErrorAction Stop
-        
+
+        $engineProp = $mpStatus.PSObject.Properties['EngineVersion']
+        $amEngineProp = $mpStatus.PSObject.Properties['AMEngineVersion']
+        $engineVersion = if ($engineProp -and -not [string]::IsNullOrWhiteSpace([string]$engineProp.Value)) {
+            [string]$engineProp.Value
+        } elseif ($amEngineProp -and -not [string]::IsNullOrWhiteSpace([string]$amEngineProp.Value)) {
+            [string]$amEngineProp.Value
+        } else {
+            'Unknown'
+        }
+
         $formatted = Format-DefenderStatus -MpStatus $mpStatus
-        Write-Log $formatted
-        
+        Write-Log ("Defender status — Antivirus:{0}; Antispyware:{1}; RTP:{2}; Mode:{3}; Signature:{4}; Engine:{5}" -f `
+            $mpStatus.AntivirusEnabled,
+            $mpStatus.AntiSpywareEnabled,
+            $mpStatus.RealTimeProtectionEnabled,
+            $mpStatus.AMRunningMode,
+            $mpStatus.AntivirusSignatureVersion,
+            $engineVersion)
+
         $defStatus = if ($mpStatus.AntivirusEnabled) { 'Pass' } else { 'Warn' }
         $r.Steps.Add([PSCustomObject]@{ Name='DefenderStatus'; Status=$defStatus; Output=$formatted })
-        
-        Start-MpScan -ScanType QuickScan -ErrorAction SilentlyContinue
-        Write-Log "  Quick scan initiated (runs in background via Windows Security)"
-        $r.Steps.Add([PSCustomObject]@{ Name='DefenderScan'; Status='Pass'; Output='Quick scan initiated. Check Windows Security for results.' })
+
+        if (-not $mpStatus.AntivirusEnabled) {
+            Write-DefenderProgress -Phase 'Blocked' -Percent 100 -Detail 'Antivirus is disabled — cannot start a Defender scan.' -EngineVersion $engineVersion -Estimated $false
+            $r.Steps.Add([PSCustomObject]@{ Name='DefenderScan'; Status='Warn'; Output='Antivirus is disabled. Enable Windows Defender or another AV before scanning.' })
+            return
+        }
+
+        $priorEnd = $null
+        if ($mpStatus.PSObject.Properties['QuickScanEndTime'] -and $null -ne $mpStatus.QuickScanEndTime) {
+            $priorEnd = [datetime]$mpStatus.QuickScanEndTime
+        }
+
+        Write-Log "Starting Windows Defender quick scan (live elapsed + estimated progress; Defender does not report files scanned)..."
+        Write-DefenderProgress -Phase 'Starting' -Percent 8 -Detail 'Starting Windows Defender quick scan...' -EngineVersion $engineVersion -Estimated $false
+
+        $scanStart = Get-Date
+        # Typical quick scans finish in a few minutes; ETA stretches if the scan runs longer.
+        $estimateSec = 180
+        $job = Start-MpScan -ScanType QuickScan -AsJob -ErrorAction Stop
+
+        while ($true) {
+            $elapsed = [int][math]::Floor(((Get-Date) - $scanStart).TotalSeconds)
+
+            $jobState = $null
+            try { $jobState = [string]$job.State } catch { $jobState = 'Unknown' }
+
+            $scanCompleted = $false
+            if ($jobState -eq 'Completed' -or $jobState -eq 'Failed' -or $jobState -eq 'Stopped') {
+                $scanCompleted = $true
+            }
+
+            if (-not $scanCompleted) {
+                try {
+                    $live = Get-MpComputerStatus -ErrorAction SilentlyContinue
+                    if ($live -and $live.PSObject.Properties['QuickScanEndTime'] -and $null -ne $live.QuickScanEndTime) {
+                        $endTime = [datetime]$live.QuickScanEndTime
+                        if ($null -eq $priorEnd -or $endTime -gt $priorEnd) {
+                            # End time advanced after we started — treat as completed.
+                            if ($endTime -ge $scanStart.AddSeconds(-5)) {
+                                $scanCompleted = $true
+                            }
+                        }
+                    }
+                } catch { }
+            }
+
+            if ($scanCompleted) { break }
+
+            if ($elapsed -gt [int]($estimateSec * 0.85)) {
+                $estimateSec = [math]::Max($estimateSec + 30, [int][math]::Ceiling($elapsed / 0.85))
+            }
+
+            $ratio = [math]::Min(1.0, $elapsed / [math]::Max(1, $estimateSec))
+            $pct = 8.0 + (82.0 * $ratio)
+            $eta = [math]::Max(0, $estimateSec - $elapsed)
+            $elapsedText = Format-DefenderElapsed $elapsed
+            $etaText = Format-DefenderElapsed $eta
+            $detail = "Elapsed $elapsedText • ETA ~$etaText (estimated) • Defender does not report files scanned"
+
+            Write-DefenderProgress -Phase 'Scanning' -Percent $pct -Detail $detail `
+                -ElapsedSec $elapsed -EtaSec $eta -EngineVersion $engineVersion -Estimated $true
+
+            Start-Sleep -Seconds 2
+        }
+
+        $elapsedFinal = [int][math]::Floor(((Get-Date) - $scanStart).TotalSeconds)
+        try { $jobState = [string]$job.State } catch { }
+        try {
+            Wait-Job -Job $job -Timeout 10 | Out-Null
+            Receive-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
+            try { $jobState = [string]$job.State } catch { }
+        } catch { }
+        try { Remove-Job -Job $job -Force -ErrorAction SilentlyContinue } catch { }
+
+        if ($jobState -eq 'Failed') {
+            $jobError = ''
+            try { $jobError = (@($job.ChildJobs | ForEach-Object { $_.JobStateInfo.Reason }) | Where-Object { $_ }) -join '; ' } catch { }
+            Write-DefenderProgress -Phase 'Failed' -Percent 100 -Detail "Defender scan job failed. $jobError" `
+                -ElapsedSec $elapsedFinal -EngineVersion $engineVersion -Estimated $false
+            $r.Steps.Add([PSCustomObject]@{
+                Name   = 'DefenderScan'
+                Status = 'Warn'
+                Output = "Defender quick scan job failed after $(Format-DefenderElapsed $elapsedFinal). $jobError"
+            })
+            return
+        }
+
+        Write-DefenderProgress -Phase 'Completing' -Percent 95 -Detail 'Collecting Defender threat results...' `
+            -ElapsedSec $elapsedFinal -EngineVersion $engineVersion -Estimated $false
+
+        $threatLines = @()
+        $threatCount = 0
+        $unscopedPriorCount = 0
+        try {
+            $detectionCutoff = $scanStart.AddMinutes(-2)
+            $allDetections = @(Get-MpThreatDetection -ErrorAction SilentlyContinue | Sort-Object InitialDetectionTime -Descending | Select-Object -First 40)
+            $detections = @()
+            foreach ($d in $allDetections) {
+                $when = $null
+                if ($d.PSObject.Properties['InitialDetectionTime'] -and $d.InitialDetectionTime) {
+                    try { $when = [datetime]$d.InitialDetectionTime } catch { $when = $null }
+                }
+                if ($null -ne $when -and $when -ge $detectionCutoff) {
+                    $detections += $d
+                } else {
+                    $unscopedPriorCount++
+                }
+            }
+            $threatCount = $detections.Count
+            foreach ($d in $detections) {
+                $name = if ($d.PSObject.Properties['ThreatName'] -and $d.ThreatName) { [string]$d.ThreatName } else { 'Threat' }
+                $res = if ($d.PSObject.Properties['Resources'] -and $d.Resources) { @($d.Resources) -join '; ' } else { '' }
+                $when = if ($d.PSObject.Properties['InitialDetectionTime'] -and $d.InitialDetectionTime) { [string]$d.InitialDetectionTime } else { '' }
+                $line = if ($res) { "$name — $res" } else { $name }
+                if ($when) { $line = "$line ($when)" }
+                $threatLines += $line
+                Write-Log "  Detection: $line"
+            }
+        } catch {
+            Write-Log "  Unable to enumerate Defender threat detections: $_"
+        }
+
+        $elapsedText = Format-DefenderElapsed $elapsedFinal
+        $summary = if ($threatCount -gt 0) {
+            "Quick scan finished in $elapsedText. Threat detections reported: $threatCount. Review Windows Security for remediation."
+        } else {
+            "Quick scan finished in $elapsedText. No threat detections returned by Get-MpThreatDetection."
+        }
+        if ($unscopedPriorCount -gt 0) {
+            $summary = $summary + " ($unscopedPriorCount prior detection(s) omitted — InitialDetectionTime before scan start window.)"
+        }
+        if ($threatLines.Count -gt 0) {
+            $summary = $summary + "`n`n" + ($threatLines -join "`n")
+        }
+
+        Write-Log "  $summary"
+        Write-DefenderProgress -Phase 'Completed' -Percent 100 -Detail $summary.Split("`n")[0] `
+            -ElapsedSec $elapsedFinal -ThreatCount $threatCount -EngineVersion $engineVersion -Estimated $false
+
+        $scanStepStatus = if ($threatCount -gt 0) { 'Warn' } else { 'Pass' }
+        $r.Steps.Add([PSCustomObject]@{ Name='DefenderScan'; Status=$scanStepStatus; Output=$summary })
     } catch {
+        Write-DefenderProgress -Phase 'Failed' -Percent 100 -Detail "Defender cmdlets unavailable: $_" -Estimated $false
         $r.Steps.Add([PSCustomObject]@{ Name='DefenderScan'; Status='Warn'; Output="Defender cmdlets unavailable: $_" })
     }
 }

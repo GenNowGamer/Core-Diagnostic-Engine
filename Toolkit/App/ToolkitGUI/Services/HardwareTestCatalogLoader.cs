@@ -19,7 +19,8 @@ namespace ToolkitGUI.Services
             "Level 2 Cache Test", "Register Test", "MMX Test",
             "SSE Test", "SSE2 Test", "SSE3 Test", "SSSE3 Test",
             "SSE4.1 Test", "SSE4.2 Test", "Math Register Test",
-            "Prime Number Generation Test", "Floating Point Unit Test"
+            "Prime Number Generation Test", "Floating Point Unit Test",
+            "CPU Timed Stress"
         };
 
         private static readonly string[] FallbackMemory =

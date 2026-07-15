@@ -256,6 +256,76 @@ namespace ToolkitGUI.ViewModels
             }
         }
 
+        private static string CreateElevatedPidWatchDirectory()
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CoreDiagnosticEngine",
+                "Runtime",
+                "elev",
+                Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+
+        private static void TryKillElevatedWatchedProcesses(string? elevPidDir)
+        {
+            if (string.IsNullOrWhiteSpace(elevPidDir) || !Directory.Exists(elevPidDir))
+                return;
+
+            IEnumerable<string> pidFiles;
+            try
+            {
+                pidFiles = Directory.EnumerateFiles(elevPidDir, "*.*", SearchOption.TopDirectoryOnly)
+                    .Where(path =>
+                    {
+                        var name = Path.GetFileName(path);
+                        return name.EndsWith(".pid", StringComparison.OrdinalIgnoreCase)
+                            || (name.StartsWith("pid", StringComparison.OrdinalIgnoreCase)
+                                && name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+                            || (name.StartsWith("cde_elev_pid_", StringComparison.OrdinalIgnoreCase)
+                                && name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase));
+                    });
+            }
+            catch
+            {
+                return;
+            }
+
+            foreach (var pidFile in pidFiles)
+            {
+                try
+                {
+                    var text = File.ReadAllText(pidFile).Trim();
+                    if (!int.TryParse(text, out var pid) || pid <= 0)
+                        continue;
+
+                    using var elevated = Process.GetProcessById(pid);
+                    elevated.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                    // Best-effort: process may already be gone or inaccessible.
+                }
+            }
+        }
+
+        private static void TryCleanupElevPidDirectory(string? elevPidDir)
+        {
+            if (string.IsNullOrWhiteSpace(elevPidDir))
+                return;
+
+            try
+            {
+                if (Directory.Exists(elevPidDir))
+                    Directory.Delete(elevPidDir, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup.
+            }
+        }
+
         public static async Task<WorkflowProcessResult> RunWorkflowAsync(
             string scriptPath,
             string? parameters,
@@ -264,6 +334,7 @@ namespace ToolkitGUI.ViewModels
         {
             var sb = new StringBuilder();
             var errSb = new StringBuilder();
+            string? elevPidDir = null;
 
             // Use powershell.exe (Windows PowerShell 5.1) so all built-in modules
             // (CimCmdlets, NetTCPIP, etc.) are available without module-path issues
@@ -295,10 +366,16 @@ namespace ToolkitGUI.ViewModels
 
             psi.Environment["TOOLKIT_ROOT"] = ToolkitPaths.GetToolkitRoot();
 
+            elevPidDir = CreateElevatedPidWatchDirectory();
+            psi.Environment["CDE_ELEV_PID_DIR"] = elevPidDir;
+
             using var process = new System.Diagnostics.Process { StartInfo = psi, EnableRaisingEvents = true };
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(GetWorkflowTimeout());
             var effectiveToken = timeoutCts.Token;
+
+            using var stdoutDone = new ManualResetEventSlim(false);
+            using var stderrDone = new ManualResetEventSlim(false);
 
             using var cancellationRegistration = effectiveToken.Register(() =>
             {
@@ -313,82 +390,130 @@ namespace ToolkitGUI.ViewModels
                 {
                     // Best-effort kill on cancellation.
                 }
+
+                TryKillElevatedWatchedProcesses(elevPidDir);
             });
 
             process.OutputDataReceived += (s, e) =>
             {
-                if (e.Data == null) return;
+                if (e.Data == null)
+                {
+                    stdoutDone.Set();
+                    return;
+                }
                 onOutput?.Invoke(e.Data);
                 sb.AppendLine(e.Data);
             };
             process.ErrorDataReceived += (s, e) =>
             {
-                if (e.Data == null) return;
+                if (e.Data == null)
+                {
+                    stderrDone.Set();
+                    return;
+                }
                 // Suppress the noisy PS unapproved-verbs warning that is cosmetic only
                 if (e.Data.Contains("unapproved verbs")) return;
                 onOutput?.Invoke($"[WARN] {e.Data}");
                 errSb.AppendLine(e.Data);
             };
 
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
             try
             {
-                await process.WaitForExitAsync(effectiveToken);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
                 try
                 {
-                    if (!process.HasExited)
+                    await process.WaitForExitAsync(effectiveToken);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    try
                     {
-                        process.Kill(entireProcessTree: true);
+                        if (!process.HasExited)
+                        {
+                            process.Kill(entireProcessTree: true);
+                        }
                     }
-                }
-                catch
-                {
-                    // Best-effort kill on timeout.
-                }
-
-                return new WorkflowProcessResult(
-                    sb.ToString().Trim(),
-                    $"Workflow timed out after {GetWorkflowTimeout().TotalMinutes:0} minutes.",
-                    -2);
-            }
-            catch (OperationCanceledException)
-            {
-                try
-                {
-                    if (!process.HasExited)
+                    catch
                     {
-                        process.Kill(entireProcessTree: true);
+                        // Best-effort kill on timeout.
                     }
-                }
-                catch
-                {
-                    // Best-effort kill on cancellation.
-                }
-                throw;
-            }
 
-            if (process.ExitCode != 0)
+                    TryKillElevatedWatchedProcesses(elevPidDir);
+                    DrainWorkflowOutput(process, stdoutDone, stderrDone);
+
+                    return new WorkflowProcessResult(
+                        sb.ToString().Trim(),
+                        $"Workflow timed out after {GetWorkflowTimeout().TotalMinutes:0} minutes.",
+                        -2);
+                }
+                catch (OperationCanceledException)
+                {
+                    try
+                    {
+                        if (!process.HasExited)
+                        {
+                            process.Kill(entireProcessTree: true);
+                        }
+                    }
+                    catch
+                    {
+                        // Best-effort kill on cancellation.
+                    }
+
+                    TryKillElevatedWatchedProcesses(elevPidDir);
+                    DrainWorkflowOutput(process, stdoutDone, stderrDone);
+                    throw;
+                }
+
+                DrainWorkflowOutput(process, stdoutDone, stderrDone);
+
+                if (process.ExitCode != 0)
+                {
+                    var err = errSb.ToString().Trim();
+                    if (string.IsNullOrWhiteSpace(err))
+                    {
+                        err = $"Workflow exited with code {process.ExitCode}.";
+                    }
+
+                    // Do NOT throw on a non-zero exit. The exit code is an automation
+                    // backstop; the structured JSON report (and any stderr) is the
+                    // authoritative result. Returning it lets the caller still load and
+                    // render the report instead of discarding stdout.
+                    return new WorkflowProcessResult(sb.ToString().Trim(), err, process.ExitCode);
+                }
+
+                return new WorkflowProcessResult(sb.ToString().Trim(), errSb.ToString().Trim(), process.ExitCode);
+            }
+            finally
             {
-                var err = errSb.ToString().Trim();
-                if (string.IsNullOrWhiteSpace(err))
-                {
-                    err = $"Workflow exited with code {process.ExitCode}.";
-                }
+                TryCleanupElevPidDirectory(elevPidDir);
+            }
+        }
 
-                // Do NOT throw on a non-zero exit. The exit code is an automation
-                // backstop; the structured JSON report (and any stderr) is the
-                // authoritative result. Returning it lets the caller still load and
-                // render the report instead of discarding stdout.
-                return new WorkflowProcessResult(sb.ToString().Trim(), err, process.ExitCode);
+        /// <summary>
+        /// After WaitForExit, wait for End-of-stream (null) Output/ErrorDataReceived events
+        /// so the last lines are not lost to the async read race.
+        /// </summary>
+        private static void DrainWorkflowOutput(
+            Process process,
+            ManualResetEventSlim stdoutDone,
+            ManualResetEventSlim stderrDone)
+        {
+            const int drainTimeoutMs = 2000;
+            if (!stdoutDone.Wait(drainTimeoutMs))
+            {
+                try { process.CancelOutputRead(); } catch { /* already cancelled / disposed */ }
+                stdoutDone.Wait(100);
             }
 
-            return new WorkflowProcessResult(sb.ToString().Trim(), errSb.ToString().Trim(), process.ExitCode);
+            if (!stderrDone.Wait(drainTimeoutMs))
+            {
+                try { process.CancelErrorRead(); } catch { /* already cancelled / disposed */ }
+                stderrDone.Wait(100);
+            }
         }
 
         /// <summary>
@@ -416,7 +541,8 @@ namespace ToolkitGUI.ViewModels
                     ps.AddScript("Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; $InformationPreference = 'Continue'").Invoke();
                     ps.Commands.Clear();
                     ps.AddScript(script);
-                    var results = ps.Invoke();
+
+                    var results = InvokePowerShellCancellable(ps, ct);
 
                     var errSb = new StringBuilder();
                     foreach (var e in ps.Streams.Error)
@@ -474,7 +600,7 @@ namespace ToolkitGUI.ViewModels
                     ps.AddScript("Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; $ErrorActionPreference = 'Stop'").Invoke();
                     ps.Commands.Clear();
                     ps.AddScript(script);
-                    var results = ps.Invoke();
+                    var results = InvokePowerShellCancellable(ps, ct);
 
                     var outputSb = new StringBuilder();
                     foreach (var r in results)
@@ -526,6 +652,43 @@ namespace ToolkitGUI.ViewModels
                     ExceptionMessage = $"{ex.GetType().Name}: {ex.Message}"
                 };
             }
+        }
+
+        /// <summary>
+        /// BeginInvoke + cancel via Stop so long in-process scripts can be aborted.
+        /// Throws <see cref="OperationCanceledException"/> when the token fires.
+        /// </summary>
+        private static IList<PSObject> InvokePowerShellCancellable(
+            PowerShell ps,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            IAsyncResult asyncResult = ps.BeginInvoke();
+            using (cancellationToken.Register(() =>
+            {
+                try { ps.Stop(); } catch { /* best-effort */ }
+            }))
+            {
+                while (!asyncResult.AsyncWaitHandle.WaitOne(100))
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        try { ps.Stop(); } catch { /* best-effort */ }
+                        asyncResult.AsyncWaitHandle.WaitOne(2000);
+                        try { ps.EndInvoke(asyncResult); } catch { /* ignored after cancel */ }
+                        throw new OperationCanceledException(cancellationToken);
+                    }
+                }
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                try { ps.EndInvoke(asyncResult); } catch { /* ignored after cancel */ }
+                throw new OperationCanceledException(cancellationToken);
+            }
+
+            return ps.EndInvoke(asyncResult);
         }
     }
 }

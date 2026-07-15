@@ -55,6 +55,12 @@ Assert-True -Name 'Suspicious browser policy URL' -Condition (
 Assert-True -Name 'Benign browser policy search name' -Condition (
     -not (Test-HijackSuspiciousBrowserPolicyValue -PropertyName 'DefaultSearchProviderName' -Value 'Google')
 )
+Assert-True -Name 'Enabled boolean policy is not search-heuristiced' -Condition (
+    -not (Test-HijackSuspiciousBrowserPolicyValue -PropertyName 'DefaultSearchProviderEnabled' -Value '1')
+)
+Assert-True -Name 'Generic Enabled policy is not search-heuristiced' -Condition (
+    -not (Test-HijackSuspiciousBrowserPolicyValue -PropertyName 'HomepageIsNewTabPageEnabled' -Value '0')
+)
 Assert-True -Name 'Internal proxy is not suspicious' -Condition (
     -not (Test-HijackSuspiciousProxySetting -Url 'http://192.168.1.1:8080/proxy.pac')
 )

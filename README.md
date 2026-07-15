@@ -4,6 +4,8 @@ A Windows repair and diagnostics toolkit: **ToolkitGUI** (C# WPF), **PowerShell*
 
 Current preboot policy: **rEFInd** on the USB toolkit provides the primary UEFI menu. The repo `EFI\boot\refind.conf` currently lists **CDE WinPE** and **CHU**; Windows Memory Diagnostic (`memtest.efi`) is onboarded via `Ensure-BootArtifacts.ps1` and launchable from WinPE (`Invoke-PreBootTool.ps1 -Tool MemDiag`) or `CDEBoot.efi` when staged to `EFI\CDE\memtest.efi`.
 
+**Code review (2026-07-15):** Pass 1–2 toolkit fixes shipped; Pass 3 (publish/launcher/packaging) reviewed and **deferred** — canonical publish unchanged. See `Toolkit\session_handoff.md`.
+
 Current field status:
 
 - rEFInd menu loads cleanly on hardware when USB is prepared with `Prepare-BootableUSB.ps1`.

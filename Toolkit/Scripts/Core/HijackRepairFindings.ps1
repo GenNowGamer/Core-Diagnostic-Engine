@@ -392,32 +392,42 @@ function Get-HijackStructuredNetworkFindings {
     $findings = [System.Collections.Generic.List[object]]::new()
     $envMode = if (Get-Command Get-EnvironmentMode -ErrorAction SilentlyContinue) { Get-EnvironmentMode } else { 'Windows' }
 
+    $hostsPath = if (Get-Command Get-ToolkitHostsFilePath -ErrorAction SilentlyContinue) {
+        Get-ToolkitHostsFilePath
+    } else {
+        "$env:SystemRoot\System32\drivers\etc\hosts"
+    }
+
     if ($envMode -ne 'Windows') {
-        $custom = @(Get-HijackHostsCustomEntries -HostsPath 'C:\Windows\System32\drivers\etc\hosts')
+        $custom = @(Get-HijackHostsCustomEntries -HostsPath $hostsPath)
         if ($custom.Count -gt 0) {
             $findings.Add((New-HijackFinding `
                 -Category 'Network' `
                 -Name 'Hosts file custom entries' `
-                -Location 'C:\Windows\System32\drivers\etc\hosts' `
+                -Location $hostsPath `
                 -CurrentValue "$($custom.Count) non-default entries" `
                 -Severity 'Hijacked' `
+                -Repairable $false `
                 -RepairAction 'network.hosts.restore' `
-                -RepairData @{})) | Out-Null
+                -RepairData @{} `
+                -Guidance 'Review only by default. Use Post-Op Cleanup > Restore hosts (confirm), or Repair Selected with an explicit hosts confirmation.')) | Out-Null
         }
         return @($findings)
     }
 
-    $customHosts = @(Get-HijackHostsCustomEntries)
+    $customHosts = @(Get-HijackHostsCustomEntries -HostsPath $hostsPath)
     if ($customHosts.Count -gt 0) {
         $hostsSeverity = if ($customHosts.Count -gt 10) { 'Hijacked' } else { 'Suspicious' }
         $findings.Add((New-HijackFinding `
             -Category 'Network' `
             -Name 'Hosts file custom entries' `
-            -Location "$env:SystemRoot\System32\drivers\etc\hosts" `
+            -Location $hostsPath `
             -CurrentValue "$($customHosts.Count) non-default entries" `
             -Severity $hostsSeverity `
+            -Repairable $false `
             -RepairAction 'network.hosts.restore' `
-            -RepairData @{})) | Out-Null
+            -RepairData @{} `
+            -Guidance 'Review only by default (FIX checkbox disabled). Use Post-Op Cleanup > Restore hosts with confirm, or pass -ConfirmHostsRestore when repairing via script.')) | Out-Null
     }
 
     $internetSettings = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
@@ -811,7 +821,7 @@ function Invoke-HijackSingleFindingRepair {
             }
         }
         'browser.chromium.prefs' {
-            $work = Repair-HijackChromiumPreferences -PrefsPath ([string]$data.prefsPath) -Label ([string]$data.label)
+            $work = Repair-HijackChromiumPreferences -PrefsPath ([string]$data.prefsPath) -Label ([string]$data.label) -OnlyIfHijacked
             return @{ Status = if ($work.Changed) { 'Pass' } else { 'Warn' }; Details = $work.Details }
         }
         'browser.firefox.prefs' {
@@ -835,6 +845,16 @@ function Invoke-HijackSingleFindingRepair {
         }
         'network.hosts.restore' {
             if (Get-Command Invoke-PostOpHostsFileRestore -ErrorAction SilentlyContinue) {
+                $hostsConfirmed = [bool]$script:HijackConfirmHostsRestore
+                if (-not $hostsConfirmed) {
+                    return @{
+                        Status  = 'Warn'
+                        Details = @(
+                            'Hosts file restore requires explicit confirmation.',
+                            'Re-run with -ConfirmHostsRestore (or confirm in the GUI) to replace hosts with Windows defaults (backup created first).'
+                        )
+                    }
+                }
                 $r = Invoke-PostOpHostsFileRestore -Confirmed
                 return @{ Status = [string]$r.Status; Details = @([string]$r.Output) + @($r.Details) }
             }
@@ -886,6 +906,16 @@ function Invoke-HijackSingleFindingRepair {
         'security.defender.enable' {
             $warn = $false
             $details = [System.Collections.Generic.List[string]]::new()
+
+            if (Test-HijackThirdPartyAvActive) {
+                return @{
+                    Status  = 'Warn'
+                    Details = @(
+                        'Third-party antivirus is active. Skipping WinDefend Automatic / RTP force-enable to avoid conflicting with the installed AV.',
+                        'Review Windows Security / the third-party product before changing Defender settings.'
+                    )
+                }
+            }
 
             if (Get-Command Test-ToolkitIsElevated -ErrorAction SilentlyContinue) {
                 if (-not (Test-ToolkitIsElevated)) {

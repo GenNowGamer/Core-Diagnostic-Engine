@@ -35,18 +35,39 @@ namespace ToolkitGUI.Services
             if (p.Contains(@"\program files\") || p.Contains(@"\program files (x86)\"))
                 return false;
 
-            // Microsoft ProgramData products are usually legitimate.
+            // Microsoft ProgramData products are usually legitimate,
+            // except the common Startup folder under Start Menu.
             if (p.Contains(@"\programdata\microsoft\") &&
                 !p.Contains(@"\programdata\microsoft\windows\start menu\programs\startup\"))
                 return false;
 
-            return p.Contains(@"\programdata\")
-                || p.Contains(@"\appdata\")
+            // Temp / Public / Downloads are always eligible.
+            if (p.Contains(@"\temp\")
                 || p.Contains(@"\users\public\")
-                || p.Contains(@"\temp\")
-                || p.Contains(@"\downloads\")
-                || p.Contains(@"\desktop\")
-                || p.Contains(@"\documents\");
+                || p.Contains(@"\downloads\"))
+                return true;
+
+            // Explicit AppData Local Temp and Roaming Startup.
+            if (p.Contains(@"\appdata\local\temp\")
+                || p.Contains(@"\appdata\roaming\microsoft\windows\start menu\programs\startup\"))
+                return true;
+
+            // Non-Microsoft ProgramData trees (vendor drop nests).
+            if (p.Contains(@"\programdata\"))
+                return true;
+
+            // AppData only for known drop-style nests (not Documents/Desktop).
+            if (p.Contains(@"\appdata\"))
+            {
+                return p.Contains(@"\temp\")
+                    || p.Contains(@"\startup\")
+                    || p.Contains(@"\vendorcache\")
+                    || p.Contains(@"\appdata\local\microsoft\windows\start menu");
+            }
+
+            // Documents and Desktop are not remediable unless already matched above
+            // via Temp/Public (e.g. Users\Public\Documents).
+            return false;
         }
 
         public static bool TryDeleteFileAndEmptyParents(string fullPath, out string detail)

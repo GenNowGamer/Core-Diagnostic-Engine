@@ -52,7 +52,7 @@ function Invoke-MemoryTests {
         $displayName = $entry.displayName
         $impl = [string]$entry.implementations.windows
         Invoke-SingleTest -Category 'Memory' -TestName $displayName -Result $r -Counter $counter -Total $total -Phase $phase -TestAction {
-            $result = [HardwareTestEngine]::RunMemoryTest($displayName, $sizeMB)
+            $result = [HardwareTestEngine]::RunMemoryTest($impl, $sizeMB)
             if ($result.StartsWith('Passed')) {
                 return ('Passed: {0}' -f $coverage)
             }

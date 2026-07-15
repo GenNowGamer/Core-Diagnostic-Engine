@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using ToolkitGUI.Models;
 
 namespace ToolkitGUI.Services
@@ -23,6 +25,9 @@ namespace ToolkitGUI.Services
     {
         public static event Action? ActiveWorkOrderChanged;
 
+        /// <summary>Last TryRecord* failure message (case id + detail) for operator/debug visibility.</summary>
+        public static string? LastWorkOrderAttachError { get; private set; }
+
         private static string GetToolkitRoot() => WorkOrderPathHelper.GetToolkitRoot();
 
         private static string GetWorkOrdersDirectory() => WorkOrderPathHelper.GetOperatorWorkOrdersDirectory();
@@ -37,25 +42,36 @@ namespace ToolkitGUI.Services
         {
             try
             {
-                var envCase = Environment.GetEnvironmentVariable("CDE_ACTIVE_CASE_ID");
-                if (!string.IsNullOrWhiteSpace(envCase))
+                // Pointer file is source of truth. Env is only accepted when it matches the pointer
+                // and the work order Status is Open (checked in TryLoadActiveSummary).
+                string? pointerCaseId = null;
+                var pointerPath = GetActivePointerPath();
+                if (File.Exists(pointerPath))
                 {
-                    var fromEnv = TryLoadActiveSummary(envCase.Trim());
-                    if (fromEnv != null)
-                        return fromEnv;
+                    var ptr = JsonNode.Parse(File.ReadAllText(pointerPath)) as JsonObject;
+                    pointerCaseId = ptr?["CaseId"]?.GetValue<string>()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(pointerCaseId) && WorkOrderPathHelper.IsValidCaseId(pointerCaseId))
+                    {
+                        // Re-resolve from CaseId; do not trust ptr.WorkOrderPath.
+                        var fromPointer = TryLoadActiveSummary(pointerCaseId);
+                        if (fromPointer != null)
+                        {
+                            Environment.SetEnvironmentVariable("CDE_ACTIVE_CASE_ID", fromPointer.CaseId, EnvironmentVariableTarget.Process);
+                            return fromPointer;
+                        }
+                    }
                 }
 
-                var pointerPath = GetActivePointerPath();
-                if (!File.Exists(pointerPath))
-                    return null;
+                var envCase = Environment.GetEnvironmentVariable("CDE_ACTIVE_CASE_ID")?.Trim();
+                if (!string.IsNullOrWhiteSpace(envCase) &&
+                    !string.IsNullOrWhiteSpace(pointerCaseId) &&
+                    string.Equals(envCase, pointerCaseId, StringComparison.OrdinalIgnoreCase) &&
+                    WorkOrderPathHelper.IsValidCaseId(envCase))
+                {
+                    return TryLoadActiveSummary(envCase);
+                }
 
-                var ptr = JsonNode.Parse(File.ReadAllText(pointerPath)) as JsonObject;
-                var caseId = ptr?["CaseId"]?.GetValue<string>()?.Trim();
-                if (string.IsNullOrWhiteSpace(caseId))
-                    return null;
-
-                Environment.SetEnvironmentVariable("CDE_ACTIVE_CASE_ID", caseId, EnvironmentVariableTarget.Process);
-                return TryLoadActiveSummary(caseId);
+                return null;
             }
             catch
             {
@@ -66,6 +82,9 @@ namespace ToolkitGUI.Services
 
         private static ActiveWorkOrderInfo? TryLoadActiveSummary(string caseId)
         {
+            if (!WorkOrderPathHelper.IsValidCaseId(caseId))
+                return null;
+
             var path = GetWorkOrderPath(caseId);
             if (!File.Exists(path))
                 return null;
@@ -285,9 +304,9 @@ namespace ToolkitGUI.Services
                 File.WriteAllText(active.WorkOrderPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                 NotifyChanged();
             }
-            catch
+            catch (Exception ex)
             {
-                /* best-effort */
+                RecordTryAttachFailure(active.CaseId, ex);
             }
         }
 
@@ -384,10 +403,10 @@ namespace ToolkitGUI.Services
             var root = JsonNode.Parse(File.ReadAllText(active.WorkOrderPath)) as JsonObject
                 ?? throw new InvalidOperationException("Work order file is invalid.");
 
+            // Export PDF first. On failure the on-disk Status stays Open and the pointer remains.
+            var pdfPath = ExportFinalReport(root, active.CaseId);
             root["Status"] = "Closed";
             root["ClosedAt"] = DateTime.Now.ToString("o");
-
-            var pdfPath = ExportFinalReport(root, active.CaseId);
             root["FinalReportPdf"] = pdfPath;
             File.WriteAllText(active.WorkOrderPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
@@ -482,10 +501,16 @@ namespace ToolkitGUI.Services
                 File.WriteAllText(active.WorkOrderPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                 NotifyChanged();
             }
-            catch
+            catch (Exception ex)
             {
-                /* best-effort */
+                RecordTryAttachFailure(active.CaseId, ex);
             }
+        }
+
+        private static void RecordTryAttachFailure(string caseId, Exception ex)
+        {
+            LastWorkOrderAttachError = $"{caseId}: {ex.Message}";
+            Debug.WriteLine($"WorkOrder TryRecord failed [{caseId}]: {ex.Message}");
         }
 
         public static void ApplyActiveCaseToProcess()
@@ -734,10 +759,16 @@ namespace ToolkitGUI.Services
 
         private static void WriteActivePointer(string caseId, string workOrderPath)
         {
+            caseId = WorkOrderPathHelper.RequireValidCaseId(caseId);
+            // Re-resolve under known roots; do not trust caller-supplied absolute paths.
+            var resolvedPath = WorkOrderPathHelper.ResolveInternalJsonPath(caseId);
+            if (string.IsNullOrWhiteSpace(resolvedPath))
+                resolvedPath = workOrderPath;
+
             var pointer = new JsonObject
             {
                 ["CaseId"] = caseId,
-                ["WorkOrderPath"] = workOrderPath,
+                ["WorkOrderPath"] = resolvedPath,
                 ["ActivatedAt"] = DateTime.Now.ToString("o")
             };
             var pointerPath = GetActivePointerPath();
@@ -764,8 +795,8 @@ namespace ToolkitGUI.Services
         }
 
         /// <summary>
-        /// Packages workflow JSON, CST results, case timeline, and latest publish verify log for field support.
-        /// No cloud upload — local zip only.
+        /// Packages case-scoped workflow/CST artifacts, timeline, and latest publish verify log for field support.
+        /// No cloud upload — local zip only. Does not include ClientPhone or entire workflows/cst trees.
         /// </summary>
         public static string ExportFieldFeedbackBundle(string? caseId = null)
         {
@@ -776,6 +807,8 @@ namespace ToolkitGUI.Services
                 : caseId.Trim();
             if (string.IsNullOrWhiteSpace(resolvedCaseId))
                 throw new InvalidOperationException("Open a work order or supply a case ID before exporting feedback.");
+
+            resolvedCaseId = WorkOrderPathHelper.RequireValidCaseId(resolvedCaseId);
 
             var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             var exportDir = Path.Combine(toolkitRoot, "CDE", "Runtime", "Data", "exports");
@@ -790,37 +823,50 @@ namespace ToolkitGUI.Services
 
             try
             {
-                void CopyIfExists(string sourcePath, string relativeDest)
+                var allowedRoots = new[]
                 {
-                    if (!File.Exists(sourcePath))
-                        return;
-                    var dest = Path.Combine(tempRoot, relativeDest);
-                    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                    File.Copy(sourcePath, dest, overwrite: true);
-                }
-
-                void CopyDirectoryJson(string sourceDir, string relativeDest, string pattern = "*.json")
-                {
-                    if (!Directory.Exists(sourceDir))
-                        return;
-
-                    foreach (var file in Directory.GetFiles(sourceDir, pattern))
-                    {
-                        var dest = Path.Combine(tempRoot, relativeDest, Path.GetFileName(file));
-                        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                        File.Copy(file, dest, overwrite: true);
-                    }
-                }
-
-                CopyDirectoryJson(Path.Combine(toolkitRoot, "CDE", "Runtime", "Data", "workflows"), "workflows");
-                CopyDirectoryJson(Path.Combine(toolkitRoot, "CDE", "Runtime", "Data", "cst"), "cst");
-
-                var timeline = WorkOrderTimelineService.LoadTimelineForCase(resolvedCaseId);
-                var timelinePath = Path.Combine(tempRoot, "timeline.json");
-                File.WriteAllText(timelinePath, JsonSerializer.Serialize(timeline, new JsonSerializerOptions { WriteIndented = true }));
+                    Path.Combine(toolkitRoot, "CDE", "Runtime", "Data"),
+                    WorkOrderPathHelper.GetInternalWorkOrdersDirectory(),
+                    WorkOrderPathHelper.GetOperatorWorkOrdersDirectory(),
+                    Path.Combine(toolkitRoot, "Logs")
+                };
 
                 var workOrderPath = GetWorkOrderPath(resolvedCaseId);
-                CopyIfExists(workOrderPath, $"workorders/{Path.GetFileName(workOrderPath)}");
+                JsonObject? orderRoot = null;
+                if (File.Exists(workOrderPath))
+                {
+                    orderRoot = JsonNode.Parse(File.ReadAllText(workOrderPath)) as JsonObject;
+                    WriteScrubbedWorkOrderCopy(orderRoot, workOrderPath, Path.Combine(tempRoot, "workorders", Path.GetFileName(workOrderPath)), toolkitRoot);
+                }
+
+                var artifactPaths = CollectCaseArtifactPaths(orderRoot);
+                foreach (var sourcePath in artifactPaths)
+                {
+                    TryCopyCaseArtifact(sourcePath, tempRoot, toolkitRoot, allowedRoots);
+                }
+
+                // Also pick up any workflow/cst JSON that explicitly belongs to this CaseId
+                // (without copying entire session trees).
+                CopyCaseIdTaggedJson(
+                    Path.Combine(toolkitRoot, "CDE", "Runtime", "Data", "workflows"),
+                    "workflows",
+                    resolvedCaseId,
+                    tempRoot,
+                    toolkitRoot,
+                    artifactPaths);
+                CopyCaseIdTaggedJson(
+                    Path.Combine(toolkitRoot, "CDE", "Runtime", "Data", "cst"),
+                    "cst",
+                    resolvedCaseId,
+                    tempRoot,
+                    toolkitRoot,
+                    artifactPaths);
+
+                var timeline = WorkOrderTimelineService.LoadTimelineForCase(resolvedCaseId);
+                var timelineJson = RedactFeedbackText(
+                    JsonSerializer.Serialize(timeline, new JsonSerializerOptions { WriteIndented = true }),
+                    toolkitRoot);
+                File.WriteAllText(Path.Combine(tempRoot, "timeline.json"), timelineJson);
 
                 var verifyRoot = Path.Combine(toolkitRoot, "CDE", "Runtime", "Data");
                 if (Directory.Exists(verifyRoot))
@@ -829,14 +875,14 @@ namespace ToolkitGUI.Services
                         .OrderByDescending(File.GetLastWriteTimeUtc)
                         .FirstOrDefault();
                     if (!string.IsNullOrWhiteSpace(latestVerify))
-                        CopyIfExists(latestVerify, $"verify/{Path.GetFileName(latestVerify)}");
+                        TryCopyCaseArtifact(latestVerify, tempRoot, toolkitRoot, allowedRoots, forceRelativeDest: $"verify/{Path.GetFileName(latestVerify)}");
                 }
 
                 var manifest = new JsonObject
                 {
                     ["CaseId"] = resolvedCaseId,
                     ["ExportedAt"] = DateTime.Now.ToString("o"),
-                    ["ToolkitRoot"] = toolkitRoot
+                    ["ToolkitRoot"] = "<redacted>"
                 };
                 File.WriteAllText(
                     Path.Combine(tempRoot, "manifest.json"),
@@ -856,6 +902,241 @@ namespace ToolkitGUI.Services
                 {
                     // best-effort cleanup
                 }
+            }
+        }
+
+        private static readonly Regex FeedbackSecretRegex = new(
+            @"\b(password|pwd|token|apikey|api_key|secret)\s*=\s*[^\s,;""']+",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static HashSet<string> CollectCaseArtifactPaths(JsonObject? orderRoot)
+        {
+            var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (orderRoot == null)
+                return paths;
+
+            void Add(string? path)
+            {
+                if (!string.IsNullOrWhiteSpace(path))
+                    paths.Add(path.Trim());
+            }
+
+            Add(orderRoot["FinalReportPdf"]?.GetValue<string>());
+
+            if (orderRoot["Runs"] is JsonArray runs)
+            {
+                foreach (var node in runs)
+                {
+                    if (node is not JsonObject run)
+                        continue;
+                    Add(run["ReportJson"]?.GetValue<string>());
+                    Add(run["ReportHtml"]?.GetValue<string>());
+                    Add(run["ReportPdf"]?.GetValue<string>());
+                    Add(run["SourceArtifact"]?.GetValue<string>());
+                }
+            }
+
+            return paths;
+        }
+
+        private static void WriteScrubbedWorkOrderCopy(JsonObject? root, string sourcePath, string destPath, string toolkitRoot)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            if (root == null)
+            {
+                File.Copy(sourcePath, destPath, overwrite: true);
+                return;
+            }
+
+            var clone = JsonNode.Parse(root.ToJsonString()) as JsonObject ?? new JsonObject();
+            // Exclude client phone from share zip (not opted-in).
+            clone.Remove("ClientPhone");
+
+            RedactJsonAbsolutePaths(clone, toolkitRoot);
+            var text = RedactFeedbackText(
+                clone.ToJsonString(new JsonSerializerOptions { WriteIndented = true }),
+                toolkitRoot);
+            File.WriteAllText(destPath, text);
+        }
+
+        private static void RedactJsonAbsolutePaths(JsonNode? node, string toolkitRoot)
+        {
+            if (node is JsonObject obj)
+            {
+                foreach (var prop in obj.ToList())
+                {
+                    if (prop.Value is JsonValue value && value.TryGetValue<string>(out var s) && LooksLikeAbsolutePath(s))
+                    {
+                        obj[prop.Key] = ToFeedbackRelativePath(s, toolkitRoot);
+                    }
+                    else
+                    {
+                        RedactJsonAbsolutePaths(prop.Value, toolkitRoot);
+                    }
+                }
+            }
+            else if (node is JsonArray arr)
+            {
+                for (var i = 0; i < arr.Count; i++)
+                    RedactJsonAbsolutePaths(arr[i], toolkitRoot);
+            }
+        }
+
+        private static bool LooksLikeAbsolutePath(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || value.Length < 3)
+                return false;
+            return Path.IsPathRooted(value) || value.Contains(":\\", StringComparison.Ordinal) || value.StartsWith("\\\\", StringComparison.Ordinal);
+        }
+
+        private static string ToFeedbackRelativePath(string path, string toolkitRoot)
+        {
+            try
+            {
+                var full = Path.GetFullPath(path);
+                var root = Path.GetFullPath(toolkitRoot)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                    full.StartsWith(root + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(full, root, StringComparison.OrdinalIgnoreCase))
+                {
+                    return "<toolkit>/" + full[root.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        .Replace('\\', '/');
+                }
+
+                return "<redacted-path>/" + Path.GetFileName(path);
+            }
+            catch
+            {
+                return "<redacted-path>";
+            }
+        }
+
+        private static string RedactFeedbackText(string text, string toolkitRoot)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            var result = FeedbackSecretRegex.Replace(text, match =>
+            {
+                var eq = match.Value.IndexOf('=');
+                if (eq < 0)
+                    return match.Value;
+                return match.Value[..(eq + 1)] + "***";
+            });
+
+            try
+            {
+                var root = Path.GetFullPath(toolkitRoot)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (!string.IsNullOrWhiteSpace(root))
+                {
+                    result = Regex.Replace(
+                        result,
+                        Regex.Escape(root).Replace("\\\\", @"[\\/]"),
+                        "<toolkit>",
+                        RegexOptions.IgnoreCase);
+                }
+            }
+            catch
+            {
+                // best-effort
+            }
+
+            return result;
+        }
+
+        private static void TryCopyCaseArtifact(
+            string sourcePath,
+            string tempRoot,
+            string toolkitRoot,
+            IEnumerable<string> allowedRoots,
+            string? forceRelativeDest = null)
+        {
+            if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+                return;
+
+            string full;
+            try
+            {
+                full = Path.GetFullPath(sourcePath);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (!allowedRoots.Any(root => WorkOrderPathHelper.IsPathUnderRoot(full, root)))
+                return;
+
+            var relative = forceRelativeDest;
+            if (string.IsNullOrWhiteSpace(relative))
+            {
+                var dataRoot = Path.Combine(toolkitRoot, "CDE", "Runtime", "Data");
+                if (WorkOrderPathHelper.IsPathUnderRoot(full, dataRoot))
+                {
+                    var dataFull = Path.GetFullPath(dataRoot)
+                        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    relative = full[dataFull.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                }
+                else
+                {
+                    relative = Path.Combine("artifacts", Path.GetFileName(full));
+                }
+            }
+
+            var dest = Path.Combine(tempRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+
+            var ext = Path.GetExtension(full);
+            if (string.Equals(ext, ".json", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(ext, ".txt", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(ext, ".log", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(ext, ".html", StringComparison.OrdinalIgnoreCase))
+            {
+                var text = RedactFeedbackText(File.ReadAllText(full), toolkitRoot);
+                File.WriteAllText(dest, text);
+            }
+            else
+            {
+                File.Copy(full, dest, overwrite: true);
+            }
+        }
+
+        private static void CopyCaseIdTaggedJson(
+            string sourceDir,
+            string relativeDest,
+            string caseId,
+            string tempRoot,
+            string toolkitRoot,
+            HashSet<string> alreadyCopied)
+        {
+            if (!Directory.Exists(sourceDir))
+                return;
+
+            foreach (var file in Directory.GetFiles(sourceDir, "*.json"))
+            {
+                var full = Path.GetFullPath(file);
+                if (alreadyCopied.Contains(full) || alreadyCopied.Contains(file))
+                    continue;
+
+                try
+                {
+                    var node = JsonNode.Parse(File.ReadAllText(file));
+                    var fileCase = node?["CaseId"]?.GetValue<string>()?.Trim();
+                    if (!string.Equals(fileCase, caseId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                alreadyCopied.Add(full);
+                var dest = Path.Combine(tempRoot, relativeDest, Path.GetFileName(file));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                var text = RedactFeedbackText(File.ReadAllText(file), toolkitRoot);
+                File.WriteAllText(dest, text);
             }
         }
 

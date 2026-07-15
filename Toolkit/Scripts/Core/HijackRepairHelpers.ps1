@@ -147,6 +147,12 @@ function Test-HijackSuspiciousBrowserPolicyValue {
     )
 
     if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+
+    # Skip Search/URL heuristics for known boolean/enum-style policy names.
+    if ($PropertyName -match '(?i)Enabled$|Disabled$') {
+        return $false
+    }
+
     if ($PropertyName -match 'URL|Homepage|Restore') {
         return (Test-HijackSuspiciousUrl -Url $Value)
     }
@@ -925,6 +931,8 @@ function Invoke-HijackNetworkRepair {
         return [PSCustomObject]@{ Status = 'N/A'; Output = 'Not applicable in WinPE.'; Details = @() }
     }
 
+    # Bulk network repair: proxy + DNS flush always. Adapter DHCP reset only for flagged DNS.
+    # NRPT deletes stay on selected findings (network.nrpt.remove), not Repair All Network.
     if (Get-Command Invoke-PostOpProxyReset -ErrorAction SilentlyContinue) {
         $proxy = Invoke-PostOpProxyReset
         $details.Add([string]$proxy.Output) | Out-Null
@@ -938,38 +946,50 @@ function Invoke-HijackNetworkRepair {
     }
 
     try {
-        $adapters = @(Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop)
+        $gatewayMap = if (Get-Command Get-HijackAdapterGatewayMap -ErrorAction SilentlyContinue) {
+            Get-HijackAdapterGatewayMap
+        } else {
+            @{}
+        }
+        $adapters = @(Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop |
+            Where-Object { $_.ServerAddresses -and $_.ServerAddresses.Count -gt 0 })
+        $resetIndexes = @{}
         foreach ($adapter in $adapters) {
+            $idx = [int]$adapter.InterfaceIndex
+            $gateway = if ($gatewayMap -is [hashtable] -and $gatewayMap.ContainsKey($idx)) {
+                [string]$gatewayMap[$idx]
+            } else { '' }
+            $flagged = $false
+            foreach ($server in @($adapter.ServerAddresses)) {
+                if (-not (Test-HijackBenignDnsServer -Server ([string]$server) -Gateway $gateway -InterfaceIndex $idx)) {
+                    $flagged = $true
+                    break
+                }
+            }
+            if (-not $flagged) { continue }
+            if ($resetIndexes.ContainsKey($idx)) { continue }
+            $resetIndexes[$idx] = $true
             try {
-                Set-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -ResetServerAddresses -ErrorAction Stop
-                $details.Add("Reset DNS to DHCP on $($adapter.InterfaceAlias).") | Out-Null
+                Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop
+                $details.Add("Reset DNS to DHCP on $($adapter.InterfaceAlias) (flagged DNS finding).") | Out-Null
             } catch {
                 $warn = $true
                 $details.Add("DNS reset failed on $($adapter.InterfaceAlias): $($_.Exception.Message)") | Out-Null
             }
+        }
+        if ($resetIndexes.Count -eq 0) {
+            $details.Add('No flagged DNS adapters required DHCP reset.') | Out-Null
         }
     } catch {
         $warn = $true
         $details.Add("DNS adapter enumeration failed: $($_.Exception.Message)") | Out-Null
     }
 
-    try {
-        $nrpt = @(Get-DnsClientNrptRule -ErrorAction Stop)
-        foreach ($rule in $nrpt) {
-            if (Test-HijackBenignNrptRule -RuleName ([string]$rule.Name)) { continue }
-            try {
-                Remove-DnsClientNrptRule -Name $rule.Name -Force -ErrorAction Stop
-                $details.Add("Removed NRPT rule: $($rule.Name)") | Out-Null
-            } catch {
-                $warn = $true
-                $details.Add("NRPT remove failed ($($rule.Name)): $($_.Exception.Message)") | Out-Null
-            }
-        }
-    } catch { }
+    $details.Add('NRPT rules were not bulk-deleted; use Repair Selected on network.nrpt findings.') | Out-Null
 
     return [PSCustomObject]@{
         Status  = if ($warn) { 'Warn' } else { 'Pass' }
-        Output  = 'Network hijack repair completed (proxy, DNS cache, adapter DNS, non-Microsoft NRPT).'
+        Output  = 'Network hijack repair completed (proxy, DNS flush, flagged adapter DNS). NRPT requires selected repair.'
         Details = @($details)
     }
 }
@@ -983,20 +1003,26 @@ function Invoke-HijackSecurityTamperingRepair {
         return [PSCustomObject]@{ Status = 'N/A'; Output = 'Not applicable in WinPE.'; Details = @() }
     }
 
-    try {
-        Set-Service -Name 'WinDefend' -StartupType Automatic -ErrorAction Stop
-        Start-Service -Name 'WinDefend' -ErrorAction SilentlyContinue
-        $details.Add('WinDefend set to Automatic and start attempted.') | Out-Null
-    } catch {
+    $thirdPartyAv = Test-HijackThirdPartyAvActive
+    if ($thirdPartyAv) {
+        $details.Add('Third-party antivirus is active. Skipping WinDefend Automatic / RTP force-enable.') | Out-Null
         $warn = $true
-        $details.Add("WinDefend: $($_.Exception.Message)") | Out-Null
-    }
+    } else {
+        try {
+            Set-Service -Name 'WinDefend' -StartupType Automatic -ErrorAction Stop
+            Start-Service -Name 'WinDefend' -ErrorAction SilentlyContinue
+            $details.Add('WinDefend set to Automatic and start attempted.') | Out-Null
+        } catch {
+            $warn = $true
+            $details.Add("WinDefend: $($_.Exception.Message)") | Out-Null
+        }
 
-    try {
-        Set-MpPreference -DisableRealtimeMonitoring $false -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue
-        $details.Add('Defender real-time monitoring and tamper protection enable attempted.') | Out-Null
-    } catch { }
+        try {
+            Set-MpPreference -DisableRealtimeMonitoring $false -ErrorAction SilentlyContinue
+            Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue
+            $details.Add('Defender real-time monitoring and tamper protection enable attempted.') | Out-Null
+        } catch { }
+    }
 
     try {
         Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled True -ErrorAction Stop

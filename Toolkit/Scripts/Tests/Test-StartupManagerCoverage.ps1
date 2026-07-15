@@ -70,6 +70,42 @@ Assert-True -Name 'Idle trigger not startup' -Condition (-not (Test-ScheduledTas
 Assert-True -Name 'Microsoft task path detected' -Condition (Test-IsWindowsPlumbingScheduledTaskPath -TaskPath '\Microsoft\Windows\MemoryDiagnostic\')
 Assert-True -Name 'Vendor task path not Microsoft plumbing' -Condition (-not (Test-IsWindowsPlumbingScheduledTaskPath -TaskPath '\AcmeUpdater\'))
 
+$cautionOnly = Test-PostOpStartupSuspicious `
+    -Name 'OneDrive' `
+    -SourceGroup 'HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' `
+    -ResolvedPath "$env:SystemRoot\System32\notepad.exe" `
+    -Publisher 'Microsoft Corporation' `
+    -IsSigned $true `
+    -RiskBand 'Caution' `
+    -IsRunOnce $false `
+    -TargetExists $true `
+    -EntryType 'Registry'
+Assert-True -Name 'Caution alone is not hijack-suspicious' -Condition (-not [bool]$cautionOnly.IsSuspicious)
+
+$warningRisk = Test-PostOpStartupSuspicious `
+    -Name 'Dropper' `
+    -SourceGroup 'HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' `
+    -ResolvedPath "$env:TEMP\dropper.exe" `
+    -Publisher 'Unknown' `
+    -IsSigned $false `
+    -RiskBand 'Warning' `
+    -IsRunOnce $false `
+    -TargetExists $true `
+    -EntryType 'Registry'
+Assert-True -Name 'Warning risk marks hijack-suspicious' -Condition ([bool]$warningRisk.IsSuspicious)
+
+$corrTokens = Get-StartupCorrelationTokens -Entry ([PSCustomObject]@{
+        Name       = 'SecurityHealth'
+        Publisher  = 'Microsoft Corporation'
+        FilePath   = "$env:SystemRoot\System32\SecurityHealthSystray.exe"
+        RowType    = 'RegistryValue'
+        SourceGroup = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+        ServiceName = ''
+    })
+Assert-True -Name 'Generic Microsoft publisher not a correlation token' -Condition (
+    @($corrTokens | Where-Object { $_ -eq 'Microsoft Corporation' }).Count -eq 0
+)
+
 $defaultRows = @(Get-StartupScheduledTaskRows)
 $allRows = @(Get-StartupScheduledTaskRows -IncludeWindowsScheduledTasks)
 Assert-True -Name 'Default excludes some Microsoft tasks when present' -Condition (
@@ -126,10 +162,36 @@ Assert-True -Name 'PostOp includes standard registry or folder entries' -Conditi
 $startupScript = Join-Path (Split-Path $MyInvocation.MyCommand.Path) '..\Workflows\StartupManager.ps1'
 $startupScriptText = Get-Content -LiteralPath $startupScript -Raw
 Assert-True -Name 'StartupManager wires scheduled tasks' -Condition ($startupScriptText -match "'ScheduledTask'")
+Assert-True -Name 'StartupManager can delete non-Windows scheduled tasks' -Condition (
+    $startupScriptText -match 'Remove-StartupScheduledTaskEntry'
+)
 Assert-True -Name 'StartupManager wires StartupApproved' -Condition ($startupScriptText -match 'StartupApproved')
 Assert-True -Name 'StartupManager wires correlation' -Condition ($startupScriptText -match 'Add-StartupEntryCorrelations')
 Assert-True -Name 'StartupManager passes SourceGroup to registry actions' -Condition ($startupScriptText -match '-SourceGroup \$SourceGroup')
+Assert-True -Name 'StartupManager enforces mutation allowlist' -Condition ($startupScriptText -match 'Assert-StartupMutationPathAllowed')
+Assert-True -Name 'StartupManager delete removes StartupApproved' -Condition ($startupScriptText -match 'Sync-StartupApprovedAfterMutation')
+Assert-True -Name 'StartupManager blocks GPO Run delete' -Condition ($startupScriptText -match '\$isGpoRun')
+Assert-True -Name 'Remove-RegistryValueEntry fails closed' -Condition (
+    $startupScriptText -match 'Delete verification failed for registry value'
+)
 
+# Non-Microsoft task rows should advertise SupportsDelete when any are present on this machine.
+$vendorLike = @($defaultRows | Where-Object {
+    -not (Test-IsWindowsPlumbingScheduledTaskPath -TaskPath $_.ActionStatePayload)
+})
+if ($vendorLike.Count -gt 0) {
+    Assert-True -Name 'Non-Microsoft scheduled tasks support Delete' -Condition (
+        @($vendorLike | Where-Object { $_.SupportsDelete }).Count -eq $vendorLike.Count
+    )
+}
+$msftLike = @($allRows | Where-Object {
+    Test-IsWindowsPlumbingScheduledTaskPath -TaskPath $_.ActionStatePayload
+} | Select-Object -First 5)
+if ($msftLike.Count -gt 0) {
+    Assert-True -Name 'Microsoft scheduled tasks remain delete-blocked' -Condition (
+        (@($msftLike | Where-Object { $_.SupportsDelete }).Count -eq 0)
+    )
+}
 Write-Host ''
 Write-Host "Passed: $passed"
 Write-Host "Failed: $($failures.Count)"

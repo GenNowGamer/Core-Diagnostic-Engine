@@ -58,7 +58,7 @@ namespace ToolkitGUI.Views
         {
             if (!ValidatePaths()) return;
 
-            DryRun = false;
+            DryRun = DryRunCheckBox.IsChecked ?? false;
             MirrorMode = MirrorCheckBox.IsChecked ?? false;
             DialogResult = true;
             Close();

@@ -26,7 +26,32 @@ function Get-StartupCorrelationTokens {
 
     $publisher = [string]$Entry.Publisher
     if (-not [string]::IsNullOrWhiteSpace($publisher) -and $publisher -ne 'Unknown') {
-        [void]$tokens.Add($publisher.Trim())
+        $publisherKey = $publisher.Trim()
+        # Broad vendor names (esp. Microsoft) create noisy false-positive correlation groups.
+        $genericPublishers = @(
+            'Microsoft',
+            'Microsoft Corporation',
+            'Microsoft Windows',
+            'Google LLC',
+            'Google Inc.',
+            'Mozilla Corporation',
+            'Adobe Inc.',
+            'Adobe Systems Incorporated',
+            'Intel Corporation',
+            'NVIDIA Corporation',
+            'Advanced Micro Devices, Inc.',
+            'Unknown'
+        )
+        $isGeneric = $false
+        foreach ($generic in $genericPublishers) {
+            if ($publisherKey.Equals($generic, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $isGeneric = $true
+                break
+            }
+        }
+        if (-not $isGeneric) {
+            [void]$tokens.Add($publisherKey)
+        }
     }
 
     $pathCandidates = @(

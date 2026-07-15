@@ -63,7 +63,7 @@
 | **GPO Run** | `Policies\Explorer\Run` — listed and managed like standard Run keys |
 | **Startup folder** | Active folder vs `CDE\DisabledStartup`; `StartupApproved` synced for Task Manager parity |
 | **MSIX startup task** | Per-package tasks under AppModel (e.g. Teams, Copilot); disable via package `State` DWORD. CDE resolves the startup executable from the Appx manifest (`windows.startupTask` `TaskId`) and checks Authenticode when the file is accessible. If WindowsApps blocks direct file access, **Signed** shows `Package (Publisher)` instead of **Not found**. |
-| **Scheduled task** | Tasks with logon, boot, registration, or session triggers; enable/disable via Task Scheduler. **Windows `\Microsoft\` tasks are hidden by default** (checkbox: *Include Windows scheduled tasks*); when shown, they are read-only. |
+| **Scheduled task** | Tasks with logon, boot, registration, or session triggers; enable/disable via Task Scheduler. **Non-Microsoft tasks can be Delete'd** (unregister). **Windows `\Microsoft\` tasks are hidden by default** (checkbox: *Include Windows scheduled tasks*); when shown, they are read-only. |
 
 When the same app appears through more than one mechanism, the **RELATED** column and analysis tooltip warn you (e.g. Teams via MSIX task and a Run key).
 
@@ -81,7 +81,7 @@ Right-click a row for technician jump tools (Enable / Disable / Delete stay on t
 | **Show entry details** | Full name, source, risk, analysis, command line, **resolved target**, related |
 | **Open Malware Cleanup / Process Analyzer / File Manager** | Jump to related workflows |
 
-When you **Delete** a Run/Startup entry whose target still exists in a remediable path (e.g. `ProgramData\VendorCache\...`), CDE asks whether to **also delete that target file** (and empty parent folders). Prefer Yes for leftover malware droppers after clearing persistence.
+When you **Delete** a Run/Startup/**non-Microsoft scheduled task** entry whose target still exists in a remediable path (e.g. `ProgramData\VendorCache\...`), CDE asks whether to **also delete that target file** (and empty parent folders). Prefer Yes for leftover malware droppers after clearing persistence.
 
 Services tab offers the same file/CST/copy/details jumps (plus **Copy service name**).
 

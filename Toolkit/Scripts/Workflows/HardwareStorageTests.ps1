@@ -132,6 +132,7 @@ function Invoke-StorageTestsForDrive {
                     }
                 }
                 'SmartSelfTest' {
+                    # No SMART abort API on CdeSmart.Reader; workflow stop relies on process.Kill of the host PS tree.
                     return (Start-CdeSmartShortSelfTest -DriveIndex $driveIndex -TimeoutSec $timeout)
                 }
                 default {

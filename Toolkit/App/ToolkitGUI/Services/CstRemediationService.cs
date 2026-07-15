@@ -62,6 +62,33 @@ namespace ToolkitGUI.Services
                     return false;
                 }
 
+                var actionableTargets = targets
+                    .Where(t => t is not null && !string.IsNullOrWhiteSpace(t.Id))
+                    .GroupBy(t => t.Id.Trim(), StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.First())
+                    .ToList();
+
+                if (actionableTargets.Count == 0)
+                {
+                    MessageBox.Show(
+                        "Selected findings are missing IDs and cannot be remediated. Re-run the scan to refresh findings.",
+                        "Core Security Tool",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return false;
+                }
+
+                if (actionableTargets.Count < targets.Count)
+                {
+                    MessageBox.Show(
+                        "One or more selected findings have empty IDs and were excluded from remediation.",
+                        "Core Security Tool",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+
+                targets = actionableTargets;
+
                 var cstScriptPath = ResolveCoreSecurityToolPath();
                 if (string.IsNullOrWhiteSpace(cstScriptPath) || !File.Exists(cstScriptPath))
                 {
@@ -102,48 +129,45 @@ namespace ToolkitGUI.Services
 
                 try
                 {
-                    for (var i = 0; i < targets.Count; i++)
+                    // CST SelectedFindingId accepts a string[]; batch all IDs in one invoke.
+                    progressWindow.SetCurrent(0, $"{actionVerb} {targets.Count} finding(s)...");
+                    await DispatcherYieldAsync();
+
+                    var (ok, result, errorMessage) = await RunBatchedRemediationAsync(
+                        cstScriptPath!,
+                        artifactPath,
+                        action,
+                        targets.Select(t => t.Id).ToList());
+
+                    if (!ok || result is null)
                     {
-                        var target = targets[i];
-                        var label = string.IsNullOrWhiteSpace(target.DisplayName) ? target.Id : target.DisplayName;
-                        progressWindow.SetCurrent(i, $"{actionVerb}: {label}");
-
-                        // Let the progress UI paint before the PowerShell call.
-                        await DispatcherYieldAsync();
-
-                        var (ok, result, errorMessage) = await RunSingleRemediationAsync(
-                            cstScriptPath!,
-                            artifactPath,
-                            action,
-                            target.Id);
-
-                        if (!ok || result is null)
-                        {
-                            totalFailed++;
-                            if (!string.IsNullOrWhiteSpace(errorMessage))
-                                allErrors.Add($"{label}: {errorMessage}");
+                        totalFailed = targets.Count;
+                        if (!string.IsNullOrWhiteSpace(errorMessage))
+                            allErrors.Add(errorMessage);
+                        for (var i = 0; i < targets.Count; i++)
                             progressWindow.MarkResult(i, succeeded: false, skipped: false, successLabel: successLabel, note: errorMessage);
-                            continue;
-                        }
-
-                        totalSucceeded += result.Succeeded;
-                        totalFailed += result.Failed;
-                        totalSkipped += result.Skipped;
+                    }
+                    else
+                    {
+                        totalSucceeded = result.Succeeded;
+                        totalFailed = result.Failed;
+                        totalSkipped = result.Skipped;
                         if (!string.IsNullOrWhiteSpace(result.RollbackManifestPath))
                             rollbackPaths.Add(result.RollbackManifestPath);
                         if (result.Errors.Count > 0)
-                            allErrors.AddRange(result.Errors.Select(e => $"{label}: {e}"));
+                            allErrors.AddRange(result.Errors);
 
                         var itemSucceeded = result.Failed == 0 && result.Succeeded > 0;
                         var itemSkipped = result.Failed == 0 && result.Succeeded == 0;
-                        progressWindow.MarkResult(
-                            i,
-                            succeeded: itemSucceeded,
-                            skipped: itemSkipped,
-                            successLabel: successLabel,
-                            note: result.Errors.FirstOrDefault());
-
-                        await DispatcherYieldAsync();
+                        for (var i = 0; i < targets.Count; i++)
+                        {
+                            progressWindow.MarkResult(
+                                i,
+                                succeeded: itemSucceeded,
+                                skipped: itemSkipped,
+                                successLabel: successLabel,
+                                note: result.Errors.FirstOrDefault());
+                        }
                     }
 
                     progressWindow.SetFinished("Remediation finished. Review the summary next.");
@@ -160,7 +184,9 @@ namespace ToolkitGUI.Services
                     Succeeded = totalSucceeded,
                     Failed = totalFailed,
                     Skipped = totalSkipped,
-                    RollbackManifestPath = rollbackPaths.LastOrDefault() ?? string.Empty,
+                    RollbackManifestPath = rollbackPaths.Count > 0
+                        ? string.Join("; ", rollbackPaths.Distinct(StringComparer.OrdinalIgnoreCase))
+                        : string.Empty,
                     Errors = allErrors
                 };
 
@@ -182,11 +208,11 @@ namespace ToolkitGUI.Services
             }
         }
 
-        private static async Task<(bool Ok, CstRemediationResult? Result, string? ErrorMessage)> RunSingleRemediationAsync(
+        private static async Task<(bool Ok, CstRemediationResult? Result, string? ErrorMessage)> RunBatchedRemediationAsync(
             string cstScriptPath,
             string artifactPath,
             string action,
-            string findingId)
+            IReadOnlyList<string> findingIds)
         {
             try
             {
@@ -198,7 +224,7 @@ namespace ToolkitGUI.Services
                 remediationCommand.Append(" -RemediationAction ");
                 remediationCommand.Append(action);
                 remediationCommand.Append(" -SelectedFindingId ");
-                remediationCommand.Append(BuildPowerShellArray(new[] { findingId }));
+                remediationCommand.Append(BuildPowerShellArray(findingIds));
                 remediationCommand.Append(" -AutoElevate -RequireElevation -EmitJson; $result");
 
                 var (output, error) = await PowerShellService.QueryAsync(remediationCommand.ToString());
@@ -221,6 +247,13 @@ namespace ToolkitGUI.Services
                 return (false, null, ex.Message);
             }
         }
+
+        private static async Task<(bool Ok, CstRemediationResult? Result, string? ErrorMessage)> RunSingleRemediationAsync(
+            string cstScriptPath,
+            string artifactPath,
+            string action,
+            string findingId)
+            => await RunBatchedRemediationAsync(cstScriptPath, artifactPath, action, new[] { findingId });
 
         private static Task DispatcherYieldAsync()
         {
@@ -478,7 +511,7 @@ namespace ToolkitGUI.Services
             builder.AppendLine($"Skipped: {remediation.Skipped}");
             if (!string.IsNullOrWhiteSpace(remediation.RollbackManifestPath))
             {
-                builder.AppendLine($"Rollback Manifest: {remediation.RollbackManifestPath}");
+                builder.AppendLine($"Rollback Manifest(s): {remediation.RollbackManifestPath}");
             }
 
             if (remediation.Errors.Count > 0)
@@ -562,12 +595,107 @@ namespace ToolkitGUI.Services
             if (string.IsNullOrWhiteSpace(rawOutput))
                 return null;
 
-            var start = rawOutput.IndexOf('{');
-            var end = rawOutput.LastIndexOf('}');
-            if (start < 0 || end <= start)
-                return null;
+            string? best = null;
+            var bestScore = int.MinValue;
+            string? last = null;
 
-            return rawOutput.Substring(start, end - start + 1);
+            foreach (var candidate in EnumerateJsonObjects(rawOutput))
+            {
+                last = candidate;
+                var score = ScoreRemediationPayload(candidate);
+                if (score >= bestScore)
+                {
+                    bestScore = score;
+                    best = candidate;
+                }
+            }
+
+            if (bestScore > 0 && best is not null)
+                return best;
+
+            return last;
+        }
+
+        private static IEnumerable<string> EnumerateJsonObjects(string rawOutput)
+        {
+            for (var i = 0; i < rawOutput.Length; i++)
+            {
+                if (rawOutput[i] != '{')
+                    continue;
+
+                var depth = 0;
+                var inString = false;
+                var escape = false;
+                for (var j = i; j < rawOutput.Length; j++)
+                {
+                    var ch = rawOutput[j];
+                    if (inString)
+                    {
+                        if (escape)
+                        {
+                            escape = false;
+                            continue;
+                        }
+
+                        if (ch == '\\')
+                        {
+                            escape = true;
+                            continue;
+                        }
+
+                        if (ch == '"')
+                            inString = false;
+                        continue;
+                    }
+
+                    if (ch == '"')
+                    {
+                        inString = true;
+                        continue;
+                    }
+
+                    if (ch == '{')
+                        depth++;
+                    else if (ch == '}')
+                    {
+                        depth--;
+                        if (depth == 0)
+                        {
+                            yield return rawOutput.Substring(i, j - i + 1);
+                            i = j;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        private static int ScoreRemediationPayload(string candidate)
+        {
+            var score = 0;
+            if (candidate.IndexOf("\"Succeeded\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                score += 40;
+            if (candidate.IndexOf("\"Failed\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                score += 30;
+            if (candidate.IndexOf("\"Skipped\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                score += 20;
+            if (candidate.IndexOf("\"RollbackManifestPath\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                score += 25;
+            if (candidate.IndexOf("\"Action\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                score += 15;
+            if (candidate.IndexOf("\"Restored\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                score += 35;
+            if (candidate.IndexOf("\"Errors\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                score += 10;
+
+            // Demote live progress crumbs that also start with '{'.
+            if (candidate.IndexOf("\"overallPercent\"", StringComparison.OrdinalIgnoreCase) >= 0
+                && candidate.IndexOf("\"phase\"", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                score -= 80;
+            }
+
+            return score;
         }
 
         private static CstFindingSelectionItem BuildCstFindingSelectionItem(CstScanFinding finding, bool isSuppressedByScope)

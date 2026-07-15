@@ -125,11 +125,6 @@ namespace ToolkitGUI.Views
             {
                 _scanCompleted = true;
                 PrimaryButton.Content = "OK";
-                if (_presentation?.CanRemediate == true)
-                {
-                    FooterHintText.Text =
-                        "Select findings above, then Quarantine or Remove. Restore uses a CST rollback manifest.";
-                }
             }
         }
 
@@ -145,6 +140,8 @@ namespace ToolkitGUI.Views
             MetricsPanel.Visibility = Visibility.Collapsed;
             StartupAxisPanel.Visibility = Visibility.Collapsed;
             FindingsPanel.Visibility = Visibility.Collapsed;
+            SuppressedPanel.Visibility = Visibility.Collapsed;
+            ApplyFindingsLayout(hasSuppressed: false);
             RemediationToolbar.Visibility = Visibility.Collapsed;
             SetRemediationButtonsVisible(false);
             CopySummaryButton.IsEnabled = false;
@@ -154,7 +151,6 @@ namespace ToolkitGUI.Views
             VerdictText.Text = "Scanning...";
             VerdictBadge.Background = new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD4));
             VerdictDetailText.Text = "Core Security Tool is preparing targets and pre-scan checks.";
-            FooterHintText.Text = "You can cancel the scan if needed. Results appear here when finished.";
             ProgressPhaseText.Text = "Preparing scan...";
             ProgressDetailText.Text = "Starting Core Security Tool pre-checks (targets, known-good, path discovery)...";
             ProgressPathText.Text = string.Empty;
@@ -255,6 +251,7 @@ namespace ToolkitGUI.Views
             ProcessNameText.Text = presentation.ProcessName;
             TargetPathText.Text = presentation.TargetPath;
             VerdictDetailText.Text = presentation.VerdictDetail;
+            VerdictDetailText.ToolTip = presentation.VerdictDetail;
             ItemsScannedText.Text = presentation.ItemsScanned.ToString();
             ThreatsText.Text = presentation.ThreatsFound.ToString();
             WarningsText.Text = presentation.WarningsFound.ToString();
@@ -302,7 +299,7 @@ namespace ToolkitGUI.Views
                 ? $"Findings ({presentation.Findings.Count})"
                 : "Findings";
             FindingsSubtitleText.Text = presentation.CanRemediate
-                ? "Select concrete file/archive traces to quarantine or remove. Archive entry rows are review-only — use the parent archive row."
+                ? "Select actionable file/archive traces. Archive entry rows are review-only — pick the parent archive."
                 : (presentation.IsStartupEntryScan
                     ? "File, command-line, and persistence findings for this startup entry."
                     : "Review severity, detector, and evidence for the scanned path.");
@@ -310,45 +307,29 @@ namespace ToolkitGUI.Views
             SetRemediationButtonsVisible(presentation.CanRemediate);
             RemediationToolbar.Visibility = presentation.CanRemediate ? Visibility.Visible : Visibility.Collapsed;
             RefreshSelectionSummary();
-            FooterHintText.Text = presentation.CanRemediate
-                ? "Select findings above, then Quarantine or Remove. Archive hits remediate the .zip/.jar file. Restore uses a CST rollback manifest."
-                : "Scan completed in detect-only mode.";
 
             if (presentation.HasSuppressedFindings)
             {
-                SuppressedHeader.Visibility = Visibility.Visible;
-                SuppressedGrid.Visibility = Visibility.Visible;
+                SuppressedPanel.Visibility = Visibility.Visible;
                 SuppressedGrid.ItemsSource = presentation.SuppressedFindings;
-                SuppressedGridRow.Height = new GridLength(160);
+                ApplyFindingsLayout(hasSuppressed: true);
             }
             else
             {
-                SuppressedHeader.Visibility = Visibility.Collapsed;
-                SuppressedGrid.Visibility = Visibility.Collapsed;
+                SuppressedPanel.Visibility = Visibility.Collapsed;
                 SuppressedGrid.ItemsSource = null;
-                SuppressedGridRow.Height = new GridLength(0);
+                ApplyFindingsLayout(hasSuppressed: false);
             }
 
-            if (presentation.HasActionSummary)
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
             {
-                ActionSummaryText.Visibility = Visibility.Visible;
-                ActionSummaryText.Text = presentation.ActionSummary;
-            }
-            else
-            {
-                ActionSummaryText.Visibility = Visibility.Collapsed;
-            }
+                ConstrainDataGridToHost(FindingsGrid, FindingsGridHost);
+                ConstrainDataGridToHost(SuppressedGrid, SuppressedGridHost);
+                EnsureDataGridHorizontalScroll(FindingsGrid);
+                EnsureDataGridHorizontalScroll(SuppressedGrid);
+            }));
 
-            if (presentation.HasCoverageReason)
-            {
-                CoverageReasonText.Visibility = Visibility.Visible;
-                CoverageReasonText.Text = $"Coverage: {presentation.CoverageReason}";
-            }
-            else
-            {
-                CoverageReasonText.Visibility = Visibility.Collapsed;
-            }
-
+            // Coverage / action-summary stay in Copy summary + PDF only.
             if (presentation.HasErrorDetails)
             {
                 ErrorDetailsList.Visibility = Visibility.Visible;
@@ -361,6 +342,24 @@ namespace ToolkitGUI.Views
             }
 
             EnsureOperatorPdf(presentation);
+        }
+
+        private void ApplyFindingsLayout(bool hasSuppressed)
+        {
+            if (hasSuppressed)
+            {
+                FindingsSectionRow.Height = new GridLength(2, GridUnitType.Star);
+                FindingsSectionRow.MinHeight = 200;
+                SuppressedSectionRow.Height = new GridLength(1, GridUnitType.Star);
+                SuppressedSectionRow.MinHeight = 160;
+            }
+            else
+            {
+                FindingsSectionRow.Height = new GridLength(1, GridUnitType.Star);
+                FindingsSectionRow.MinHeight = 220;
+                SuppressedSectionRow.Height = new GridLength(0);
+                SuppressedSectionRow.MinHeight = 0;
+            }
         }
 
         private void EnsureOperatorPdf(ProcessAnalyzerCstScanPresentation presentation)
@@ -402,6 +401,8 @@ namespace ToolkitGUI.Views
             MetricsPanel.Visibility = Visibility.Collapsed;
             StartupAxisPanel.Visibility = Visibility.Collapsed;
             FindingsPanel.Visibility = Visibility.Collapsed;
+            SuppressedPanel.Visibility = Visibility.Collapsed;
+            ApplyFindingsLayout(hasSuppressed: false);
             RemediationToolbar.Visibility = Visibility.Collapsed;
             SetRemediationButtonsVisible(false);
             CopySummaryButton.IsEnabled = false;
@@ -412,8 +413,8 @@ namespace ToolkitGUI.Views
             VerdictText.Text = incomplete ? "Incomplete" : "Failed";
             VerdictBadge.Background = new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06));
             VerdictDetailText.Text = message;
-            ActionSummaryText.Visibility = Visibility.Visible;
-            ActionSummaryText.Text = message;
+            ErrorDetailsList.Visibility = Visibility.Visible;
+            ErrorDetailsList.ItemsSource = new[] { message };
         }
 
         private void ApplyProgressUpdate(CstScanProgressUpdate progress)
@@ -500,8 +501,104 @@ namespace ToolkitGUI.Views
             Dispatcher.BeginInvoke(new Action(RefreshSelectionSummary));
         }
 
+        private void FindingsGrid_Loaded(object sender, RoutedEventArgs e)
+        {
+            ConstrainDataGridToHost(FindingsGrid, FindingsGridHost);
+            EnsureDataGridHorizontalScroll(FindingsGrid);
+        }
+
+        private void FindingsGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+            => EnsureDataGridHorizontalScroll(FindingsGrid);
+
+        private void FindingsGridHost_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            ConstrainDataGridToHost(FindingsGrid, FindingsGridHost);
+            EnsureDataGridHorizontalScroll(FindingsGrid);
+        }
+
+        private void SuppressedGrid_Loaded(object sender, RoutedEventArgs e)
+        {
+            ConstrainDataGridToHost(SuppressedGrid, SuppressedGridHost);
+            EnsureDataGridHorizontalScroll(SuppressedGrid);
+        }
+
+        private void SuppressedGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+            => EnsureDataGridHorizontalScroll(SuppressedGrid);
+
+        private void SuppressedGridHost_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            ConstrainDataGridToHost(SuppressedGrid, SuppressedGridHost);
+            EnsureDataGridHorizontalScroll(SuppressedGrid);
+        }
+
+        /// <summary>
+        /// Force the DataGrid viewport width to the host so wide columns scroll inside the
+        /// visible area (otherwise the H-scrollbar paints past the window edge and "disappears").
+        /// </summary>
+        private static void ConstrainDataGridToHost(DataGrid? grid, FrameworkElement? host)
+        {
+            if (grid == null || host == null || host.ActualWidth <= 0)
+                return;
+
+            grid.Width = host.ActualWidth;
+            grid.MaxWidth = host.ActualWidth;
+        }
+
+        /// <summary>
+        /// DataGrid H-scroll can disappear when the grid measures wider than the host
+        /// (scrollbar paints off-screen) or app ScrollBar styles collapse horizontal bars.
+        /// Re-assert visibility on the internal ScrollViewer after layout.
+        /// </summary>
+        private static void EnsureDataGridHorizontalScroll(DataGrid? grid)
+        {
+            if (grid == null || !grid.IsVisible)
+                return;
+
+            ScrollViewer.SetHorizontalScrollBarVisibility(grid, ScrollBarVisibility.Visible);
+            ScrollViewer.SetVerticalScrollBarVisibility(grid, ScrollBarVisibility.Auto);
+            ScrollViewer.SetCanContentScroll(grid, false);
+
+            var sv = FindVisualChild<ScrollViewer>(grid);
+            if (sv == null)
+                return;
+
+            sv.HorizontalScrollBarVisibility = ScrollBarVisibility.Visible;
+            sv.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+            sv.CanContentScroll = false;
+        }
+
+        private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            if (parent == null)
+                return null;
+
+            var count = VisualTreeHelper.GetChildrenCount(parent);
+            for (var i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T typed)
+                    return typed;
+
+                var nested = FindVisualChild<T>(child);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
+        }
+
         private async void QuarantineButton_Click(object sender, RoutedEventArgs e)
-            => await RunRemediationAsync("Quarantine");
+        {
+            var confirm = MessageBox.Show(
+                "Quarantine moves the selected files aside so they can be restored later. Continue?",
+                "Confirm Quarantine",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes)
+                return;
+
+            await RunRemediationAsync("Quarantine");
+        }
 
         private async void RemoveButton_Click(object sender, RoutedEventArgs e)
         {
@@ -588,11 +685,27 @@ namespace ToolkitGUI.Views
                 return;
             }
 
+            if (selected.Any(f => string.IsNullOrWhiteSpace(f.Id)))
+            {
+                MessageBox.Show(
+                    "One or more selected findings are missing IDs and cannot be remediated. Re-run the scan to refresh findings.",
+                    "CST Scan",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            var remediable = selected
+                .Where(f => !string.IsNullOrWhiteSpace(f.Id))
+                .ToList();
+            if (remediable.Count == 0)
+                return;
+
             _remediationBusy = true;
             SetRemediationEnabled(false);
             try
             {
-                var targets = selected
+                var targets = remediable
                     .Select(f => new CstRemediationService.CstRemediationTarget
                     {
                         Id = f.Id,

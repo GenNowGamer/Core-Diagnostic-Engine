@@ -827,8 +827,12 @@ namespace ToolkitGUI.Services
                  || coverageReason.Contains("limited", StringComparison.OrdinalIgnoreCase)
                  || coverageReason.Contains("ThreatScan covers", StringComparison.OrdinalIgnoreCase)))
             {
-                if (!core.Contains("Coverage", StringComparison.OrdinalIgnoreCase))
-                    core = $"{core} See coverage notes below.";
+                // Coverage detail belongs in Copy summary / PDF — keep the on-screen verdict short.
+                if (string.Equals(verdict, "Incomplete", StringComparison.OrdinalIgnoreCase)
+                    && !core.Contains("incomplete", StringComparison.OrdinalIgnoreCase))
+                {
+                    core = $"{core} Coverage was incomplete.";
+                }
             }
 
             return string.IsNullOrWhiteSpace(modePrefix) ? core : $"{modePrefix} — {core}";
