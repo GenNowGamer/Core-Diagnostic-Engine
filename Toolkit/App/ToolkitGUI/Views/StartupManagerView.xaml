@@ -93,6 +93,24 @@
                     <Setter Property="Foreground" Value="#C62828"/>
                     <Setter Property="FontWeight" Value="SemiBold"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding SignedDisplay}" Value="N/A (COM)">
+                    <Setter Property="Foreground" Value="#5A6B80"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignedDisplay}" Value="Windows COM">
+                    <Setter Property="Foreground" Value="#0D7A3E"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignedDisplay}" Value="Windows task">
+                    <Setter Property="Foreground" Value="#1565C0"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignedDisplay}" Value="Windows driver">
+                    <Setter Property="Foreground" Value="#1565C0"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignedDisplay}" Value="Windows boot">
+                    <Setter Property="Foreground" Value="#1565C0"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="WindowsComTask">
+                    <Setter Property="Foreground" Value="#0D7A3E"/>
+                </DataTrigger>
                 <DataTrigger Binding="{Binding SignedDisplay}" Value="Compromised">
                     <Setter Property="Foreground" Value="#C62828"/>
                     <Setter Property="FontWeight" Value="SemiBold"/>

@@ -63,6 +63,10 @@ elseif (-not [string]::IsNullOrWhiteSpace($SelectedChecks)) {
 $uniqueSelected = [System.Collections.Generic.List[string]]::new()
 $seen = @{}
 foreach ($id in $selected) {
+    # Fold legacy duplicate into Deep System's System Information check.
+    if ($id -eq 'audit_system_info') {
+        $id = 'system_info'
+    }
     if ($seen.ContainsKey($id)) { continue }
     $seen[$id] = $true
     if (-not $validIds.Contains($id)) {

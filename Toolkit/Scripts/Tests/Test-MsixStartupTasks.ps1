@@ -44,6 +44,10 @@ Assert-True -Name 'Join package executable path' -Condition ($joined -eq 'C:\App
 $packagePublisherSig = Get-MsixPackagePublisherSignatureInfo -Publisher 'Microsoft Corporation'
 Assert-True -Name 'Package publisher signature display' -Condition ($packagePublisherSig.SignedDisplay -eq 'Package (Microsoft Corporation)')
 Assert-True -Name 'Package publisher signature status' -Condition ($packagePublisherSig.SignatureStatus -eq 'PackagePublisher')
+Assert-True -Name 'Package publisher treated as signed for audit' -Condition ($packagePublisherSig.IsSigned -eq $true)
+
+$unknownPublisherSig = Get-MsixPackagePublisherSignatureInfo -Publisher 'Unknown'
+Assert-True -Name 'Unknown package publisher remains unsigned' -Condition ($unknownPublisherSig.IsSigned -eq $false)
 
 $teamsPkg = Get-AppxPackage -ErrorAction SilentlyContinue | Where-Object { $_.PackageFamilyName -eq 'MSTeams_8wekyb3d8bbwe' } | Select-Object -First 1
 if ($teamsPkg) {
@@ -84,6 +88,9 @@ if ($copilotPkg) {
         -AppxPackage $copilotPkg
     Assert-True -Name 'Copilot uses package publisher fallback when file inaccessible' -Condition (
         $copilotSig.SignedDisplay -eq 'Package (Microsoft Corporation)' -or $copilotSig.SignatureStatus -eq 'Valid'
+    )
+    Assert-True -Name 'Copilot package-publisher fallback is signed for audit' -Condition (
+        $copilotSig.IsSigned -eq $true
     )
     $copilotAnalysis = Get-MsixStartupAnalysisInfo `
         -PackageFamilyName 'Microsoft.Copilot_8wekyb3d8bbwe' `

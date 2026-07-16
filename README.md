@@ -6,6 +6,8 @@ Current preboot policy: **rEFInd** on the USB toolkit provides the primary UEFI 
 
 **Code review (2026-07-15):** Pass 1–2 toolkit fixes shipped; Pass 3 (publish/launcher/packaging) reviewed and **deferred** — canonical publish unchanged. See `Toolkit\session_handoff.md`.
 
+**2026-07-16:** System Health Check findings order, scheduled-tasks audit tuning, Windows Update stack Pass for Manual `wuauserv`, Uninstall Manager cleanup, Hyper-V lab push/inject scripts. See `session_handoff.md` and `Toolkit\session_handoff.md`.
+
 Current field status:
 
 - rEFInd menu loads cleanly on hardware when USB is prepared with `Prepare-BootableUSB.ps1`.
@@ -246,7 +248,7 @@ Set **`TOOLKIT_ROOT`** to the folder that contains `Scripts`, `Config`, and `App
 - **System Health Check** — catalog-driven multi-check orchestrator (`SystemHealthCheck.ps1`, `Config/HealthCheckCatalog.json`); categories **Quick Vitals**, **Deep System**, **System Audit**, **Security Audits** (installed software, drivers, startup, event logs, partitions, autoruns, hosts file, browser extensions, scheduled tasks — not Defender or CST). Unified results view with grouped per-check review and PDF labeled by `CheckId`. Hardware line tests, SMART analyzer, Defender, and CST scan-only are **not** in the catalog — use **Diag & Repair** or **Malware Cleanup**.
 - **Startup Entry Audit** — auto-start registry/folder review (`audit_startup`); review/OK cards in Structured Results and PDF (`[REVIEW]` / `[OK]` lines; `[POSTOP:STARTUP]` for live structured parsing)
 - **Event Logs** — deduplicated System/Application **errors** (last 24h) via `audit_event_logs` (`[AUDIT:EVENT]` protocol)
-- Session + cold-boot uptime detail and event source in **System Information** (`audit_system_info` / `Get-CdeBootUptimeInfo`)
+- Session + cold-boot uptime detail and event source in **System Information** (`system_info` / `Get-CdeBootUptimeInfo`)
 
 > **2026-06-19:** Standalone Maintenance **System Audit** (`SystemAudit.ps1`) and Malware Cleanup audit tools were removed; all checks above run from **System Health Check** only.
 

@@ -18,14 +18,15 @@ This chapter covers the main **find problems** tools in the MAIN sidebar section
 2. Use a preset (**Recommended**, **Quick Vitals**, **Deep System**, **Full Audit**) or tick individual checks in the category list (**Select All** / **Clear All** as needed)
 3. Click **Run Health Check**
 4. Review grouped cards — green Pass, yellow Warn, red Fail
-5. Click **Open Report** for a printable PDF summary (`Logs\`)
+5. The **Findings** list on the results screen follows the catalog order in `Config/HealthCheckCatalog.json` (`findingsDisplayOrder`: Activation through Remote Access)
+6. Click **Open Report** for a printable PDF summary (`Logs\`)
 
 ### What is included
 
 | Category | Examples |
 |----------|----------|
 | Quick Vitals | OS version, CPU load, RAM, disk space, activation, recent errors |
-| Deep System | Drivers, Windows Update stack, network adapters, GPU, critical events |
+| Deep System | Drivers, Windows Update stack (idle **Stopped** + **Manual** `wuauserv` is normal on Win10/11), network adapters, GPU, critical events |
 | System Audit | Installed software, services, startup entries, event logs, partitions |
 | Security Audits | Autoruns, hosts file, browser extensions, scheduled tasks, browser hijack, network hijack, security tampering, remote access |
 

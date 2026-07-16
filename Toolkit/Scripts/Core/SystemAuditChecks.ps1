@@ -39,22 +39,6 @@ function Get-OfflineControlSet {
     return $controlSet
 }
 
-function Invoke-SystemInfoAudit {
-    param($r)
-    Write-Log "Collecting system information..."
-    try {
-        $os  = Get-CimInstance Win32_OperatingSystem
-        $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-        $mb  = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
-        
-        $formatted = Format-SystemDetail -Os $os -Cpu $cpu -Motherboard $mb
-        Write-Log $formatted
-        $r.Steps.Add([PSCustomObject]@{ Name='SystemInfo'; Status='Pass'; Output=$formatted })
-    } catch {
-        $r.Steps.Add([PSCustomObject]@{ Name='SystemInfo'; Status='Warn'; Output=$_.Exception.Message })
-    }
-}
-
 function Invoke-InstalledSoftwareAudit {
     param($r)
     Write-Log "Enumerating installed software..."
@@ -582,7 +566,6 @@ function Invoke-StartupAudit {
 }
 function Get-SystemAuditCheckDispatchMap {
     return @{
-        audit_system_info      = { param($r) Invoke-SystemInfoAudit $r }
         audit_installed_software = { param($r) Invoke-InstalledSoftwareAudit $r }
         audit_drivers          = { param($r) Invoke-DriversAudit $r }
         audit_pnp_devices      = { param($r) Invoke-PnPDevicesAudit $r }

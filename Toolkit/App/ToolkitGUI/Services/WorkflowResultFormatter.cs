@@ -148,8 +148,8 @@ namespace ToolkitGUI.Services
                     var review = countMatch.Groups["review"].Value;
                     var ok = countMatch.Groups["ok"].Value;
                     overview = review != "0"
-                        ? $"Audited {total} startup entries. {review} need review; {ok} look normal."
-                        : $"Audited {total} startup entries. All {ok} entries look normal.";
+                        ? $"{total} audited · {review} need review · {ok} verified"
+                        : $"{total} audited · all verified";
                     continue;
                 }
 
@@ -174,9 +174,9 @@ namespace ToolkitGUI.Services
             if (string.IsNullOrWhiteSpace(overview))
             {
                 overview = reviewItems.Count > 0
-                    ? $"{reviewItems.Count} startup entr{(reviewItems.Count == 1 ? "y needs" : "ies need")} review."
+                    ? $"{items.Count} audited · {reviewItems.Count} need review · {okItems.Count} verified"
                     : items.Count > 0
-                        ? $"{items.Count} startup entr{(items.Count == 1 ? "y" : "ies")} audited."
+                        ? $"{items.Count} audited · all verified"
                         : "Startup audit completed.";
             }
 
@@ -185,7 +185,9 @@ namespace ToolkitGUI.Services
             {
                 sections.Add(new FormattedResultSection
                 {
-                    Title = "Entries to review",
+                    Title = reviewItems.Count == 1
+                        ? "Needs review (1)"
+                        : $"Needs review ({reviewItems.Count})",
                     Items = reviewItems
                 });
             }
@@ -194,8 +196,13 @@ namespace ToolkitGUI.Services
             {
                 sections.Add(new FormattedResultSection
                 {
-                    Title = reviewItems.Count > 0 ? "Verified entries" : "Startup entries",
-                    Items = okItems
+                    Title = okItems.Count == 1
+                        ? "Verified (1)"
+                        : $"Verified ({okItems.Count})",
+                    Items = okItems,
+                    UseCompactItems = true,
+                    // Keep the inventory out of the way when something needs attention.
+                    StartsCollapsed = reviewItems.Count > 0
                 });
             }
 
@@ -842,11 +849,12 @@ namespace ToolkitGUI.Services
             item = new FormattedResultItem
             {
                 Status = isReview ? FormattedItemStatus.Review : FormattedItemStatus.Ok,
-                StatusLabel = isReview ? "Needs review" : "Verified OK",
+                StatusLabel = isReview ? "Needs review" : "Verified",
                 Title = name,
                 Location = FormatRegistryLocation(location),
                 Path = path,
-                Notes = notes.Count > 0 ? string.Join(" · ", notes) : null
+                Notes = notes.Count > 0 ? string.Join(" · ", notes) : null,
+                Compact = !isReview
             };
             return true;
         }
@@ -1078,7 +1086,7 @@ namespace ToolkitGUI.Services
                 return line;
             }
 
-            return $"Total entries: {match.Groups["total"].Value} · Needs review: {match.Groups["review"].Value} · Verified OK: {match.Groups["ok"].Value}";
+            return $"{match.Groups["total"].Value} audited · {match.Groups["review"].Value} need review · {match.Groups["ok"].Value} verified";
         }
 
         private static string TranslateGenericCount(string line)

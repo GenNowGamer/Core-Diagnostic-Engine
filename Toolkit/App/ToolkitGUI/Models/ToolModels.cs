@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Collections.ObjectModel;
@@ -108,17 +109,58 @@ namespace ToolkitGUI.Models
 
     public class InstalledProgram
     {
-        public string Name         { get; set; } = string.Empty;
-        public string Publisher    { get; set; } = string.Empty;
-        public string Version      { get; set; } = string.Empty;
-        public string InstallDate  { get; set; } = string.Empty;
-        public string SizeDisplay  { get; set; } = string.Empty;
-        public string UninstallKey { get; set; } = string.Empty;
-        public string UninstallStr { get; set; } = string.Empty;
-        public string Arch         { get; set; } = string.Empty;
+        public string Name                   { get; set; } = string.Empty;
+        public string Publisher              { get; set; } = string.Empty;
+        public string Version                { get; set; } = string.Empty;
+        public string InstallDate            { get; set; } = string.Empty;
+        public string SizeDisplay            { get; set; } = string.Empty;
+        public string UninstallKey           { get; set; } = string.Empty;
+        public string UninstallStr           { get; set; } = string.Empty;
+        public string QuietUninstallStr      { get; set; } = string.Empty;
+        public string InstallLocation        { get; set; } = string.Empty;
+        public string ProductCode            { get; set; } = string.Empty;
+        public string PreferredUninstallStr  { get; set; } = string.Empty;
+        public string UninstallMethod        { get; set; } = string.Empty;
+        public bool IsMsi                    { get; set; }
+        public bool HasQuietUninstall        { get; set; }
+        public string Arch                   { get; set; } = string.Empty;
 
-        /// <summary>True when the registry entry has a non-empty UninstallString (standard Uninstall can run).</summary>
-        public bool HasUninstaller => !string.IsNullOrWhiteSpace(UninstallStr);
+        /// <summary>True when a vendor uninstall command (quiet, MSI, or standard) can run.</summary>
+        public bool HasUninstaller =>
+            !string.IsNullOrWhiteSpace(PreferredUninstallStr) ||
+            !string.IsNullOrWhiteSpace(QuietUninstallStr) ||
+            !string.IsNullOrWhiteSpace(UninstallStr) ||
+            !string.IsNullOrWhiteSpace(ProductCode);
+    }
+
+    public class UninstallLeftoverFolder
+    {
+        public string Path { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public bool Safe { get; set; }
+    }
+
+    public class UninstallLeftoverReport
+    {
+        public bool ArpKeyStillPresent { get; set; }
+        public string InstallFolder { get; set; } = string.Empty;
+        public bool InstallFolderExists { get; set; }
+        public List<UninstallLeftoverFolder> LeftoverFolders { get; set; } = new();
+        public string DisplayName { get; set; } = string.Empty;
+        public string Publisher { get; set; } = string.Empty;
+    }
+
+    public class UninstallActionResult
+    {
+        public string Status { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+        public string Method { get; set; } = string.Empty;
+        public int ExitCode { get; set; }
+        public bool Success { get; set; } = true;
+        public bool ArpKeyRemoved { get; set; }
+        public bool InstallFolderRemoved { get; set; }
+        public string FolderDetail { get; set; } = string.Empty;
+        public string Path { get; set; } = string.Empty;
     }
 
     public class FastFix

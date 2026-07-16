@@ -40,6 +40,13 @@ namespace ToolkitGUI.Services
             string? detail,
             string? status)
         {
+            // Startup Entry Audit already lists review items under "Needs review" in Detailed Results.
+            // Skip the parallel Items-to-address list so each entry card appears once.
+            if (IsStartupAuditStep(stepName, checkId))
+            {
+                return Array.Empty<StructuredResultItemViewModel>();
+            }
+
             if (!IsIssueStatus(status))
                 return Array.Empty<StructuredResultItemViewModel>();
 
@@ -246,6 +253,16 @@ namespace ToolkitGUI.Services
             };
         }
 
+        private static bool IsStartupAuditStep(string? stepName, string? checkId)
+        {
+            if (string.Equals(stepName, "StartupAudit", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return string.Equals(checkId, "audit_startup", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool IsUsbSmartLimitation(string? detail)
         {
             return IsUsbSmartLimitationDetail(detail);
@@ -296,7 +313,8 @@ namespace ToolkitGUI.Services
                     match.Groups["name"].Value.Trim(),
                     match.Groups["loc"].Value.Trim(),
                     match.Groups["band"].Value.Trim(),
-                    match.Groups["reasons"].Success ? match.Groups["reasons"].Value.Trim() : null);
+                    match.Groups["reasons"].Success ? match.Groups["reasons"].Value.Trim() : null,
+                    match.Groups["path"].Success ? match.Groups["path"].Value.Trim() : null);
             }
 
             return new StructuredResultItemViewModel

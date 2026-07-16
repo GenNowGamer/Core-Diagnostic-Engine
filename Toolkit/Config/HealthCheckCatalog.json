@@ -29,7 +29,6 @@
       "id": "system_audit",
       "label": "System Audit",
       "checks": [
-        { "id": "audit_system_info", "label": "System Information (audit)", "description": "Formatted OS, CPU, RAM, and board details.", "estimatedMinutes": 0.3, "winPe": "available" },
         { "id": "audit_installed_software", "label": "Installed Software", "description": "Applications from registry uninstall keys.", "estimatedMinutes": 1.0, "winPe": "available" },
         { "id": "audit_drivers", "label": "Drivers (state/start mode)", "description": "System drivers; flags stopped auto-start drivers.", "estimatedMinutes": 0.5, "winPe": "available" },
         { "id": "audit_pnp_devices", "label": "PnP Devices", "description": "Plug-and-play devices with driver problems.", "estimatedMinutes": 1.0, "winPe": "unavailable" },
@@ -79,7 +78,6 @@
       "critical_events_7d"
     ],
     "full_audit": [
-      "audit_system_info",
       "audit_installed_software",
       "audit_drivers",
       "audit_pnp_devices",
@@ -125,11 +123,41 @@
     ],
     "wont_boot": [
       "os_version",
-      "audit_system_info",
+      "system_info",
       "disk_space",
       "audit_partition_table"
     ]
   },
+  "findingsDisplayOrder": [
+    "activation",
+    "os_version",
+    "system_info",
+    "gpu_info",
+    "cpu_load",
+    "ram",
+    "disk_space",
+    "network_adapters",
+    "audit_network_config",
+    "windows_update_service",
+    "event_errors_24h",
+    "critical_events_7d",
+    "audit_event_logs",
+    "driver_signature_audit",
+    "audit_drivers",
+    "audit_pnp_devices",
+    "audit_services",
+    "audit_startup",
+    "sec_autoruns",
+    "audit_partition_table",
+    "sec_hosts",
+    "sec_browser_extensions",
+    "sec_scheduled_tasks",
+    "sec_browser_hijack",
+    "sec_network_hijack",
+    "audit_installed_software",
+    "sec_security_tampering",
+    "sec_remote_access"
+  ],
   "recommendations": [
     {
       "whenCheckId": "disk_space",

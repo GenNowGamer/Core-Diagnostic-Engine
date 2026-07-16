@@ -100,7 +100,7 @@ if ($IncludeWorkflowSmoke) {
     Invoke-WorkflowSmoke -Name 'TempFileCleaner Scan' -Script (Join-Path $workflowsRoot 'TempFileCleaner.ps1') -ArgumentList @{ Action = 'Scan' }
     Invoke-WorkflowSmoke -Name 'SystemHealthCheck quick_vitals' -Script (Join-Path $workflowsRoot 'SystemHealthCheck.ps1') -ArgumentList @{ Preset = 'quick_vitals' }
     Invoke-WorkflowSmoke -Name 'SystemHealthCheck deep_system' -Script (Join-Path $workflowsRoot 'SystemHealthCheck.ps1') -ArgumentList @{ Preset = 'deep_system' }
-    Invoke-WorkflowSmoke -Name 'SystemHealthCheck audit_system_info' -Script (Join-Path $workflowsRoot 'SystemHealthCheck.ps1') -ArgumentList @{ SelectedChecks = 'audit_system_info' }
+    Invoke-WorkflowSmoke -Name 'SystemHealthCheck system_info' -Script (Join-Path $workflowsRoot 'SystemHealthCheck.ps1') -ArgumentList @{ SelectedChecks = 'system_info' }
     Invoke-WorkflowSmoke -Name 'SmartAnalyzer Query' -Script (Join-Path $workflowsRoot 'SmartAnalyzer.ps1') -ArgumentList @{ Mode = 'Query' }
 }
 

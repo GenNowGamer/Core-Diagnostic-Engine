@@ -207,10 +207,21 @@ function New-StartupRow {
         [string]$CorrelationGroupId = '',
         [string]$CorrelationSummary = '',
         [string]$ActionStatePayload = '',
-        [string]$MsixTaskId = ''
+        [string]$MsixTaskId = '',
+        [string]$TaskActionKind = '',
+        [bool]$ComServerExists = $false
     )
 
     $analysisPath = if (-not [string]::IsNullOrWhiteSpace($AnalysisFilePath)) { $AnalysisFilePath } else { $FilePath }
+    if ([string]::IsNullOrWhiteSpace($TaskActionKind) -and $RowType -eq 'ScheduledTask') {
+        if (-not [string]::IsNullOrWhiteSpace($Clsid)) {
+            $TaskActionKind = 'Com'
+        } elseif ($FilePath -match '\(COM\b' -or $FilePath -match '\(no executable path\)') {
+            $TaskActionKind = 'Com'
+        } elseif (-not [string]::IsNullOrWhiteSpace($AnalysisFilePath)) {
+            $TaskActionKind = 'Exec'
+        }
+    }
 
     if ($RowType -eq 'BrowserExtension') {
         $sigInfo = Get-BrowserExtensionSignatureInfo -AnalysisFilePath $analysisPath
@@ -237,6 +248,64 @@ function New-StartupRow {
             Detail     = 'No module path for this extension entry'
             HasWarning = $false
         }
+    } elseif ($RowType -eq 'DriverService' -and [string]::IsNullOrWhiteSpace($analysisPath)) {
+        # Inbox / kernel-registered drivers often omit ImagePath; treat as Windows plumbing, not a missing file.
+        $sigInfo = [PSCustomObject]@{
+            IsSigned         = $true
+            SignedBy         = 'Microsoft Corporation'
+            SignedDisplay    = 'Windows driver'
+            SignatureStatus  = 'WindowsDriverNoImagePath'
+            ResolutionDetail = 'Driver service has no ImagePath (inbox/registered)'
+        }
+        $IsSigned = $true
+        if ([string]::IsNullOrWhiteSpace($Publisher) -or $Publisher -eq 'Unknown') {
+            $Publisher = 'Microsoft Corporation'
+        }
+        $analysis = [PSCustomObject]@{
+            Level      = 'OK'
+            Detail     = 'Windows driver service with no ImagePath'
+            HasWarning = $false
+        }
+        $PreserveRiskLevel = $true
+        $RiskLevel = 'Safe'
+    } elseif ($SourceGroup -eq 'Boot Execute' -or ($RowType -eq 'RegistryValue' -and $Name -eq 'BootExecute')) {
+        $bootCommand = if (-not [string]::IsNullOrWhiteSpace($analysisPath)) { $analysisPath } else { $FilePath }
+        $bootTarget = Resolve-StartupTarget -Command $bootCommand
+        if ($bootTarget.Exists -and -not [string]::IsNullOrWhiteSpace($bootTarget.ResolvedPath)) {
+            $sigInfo = Get-FileSignatureInfo -FilePath $bootTarget.ResolvedPath
+            if ($sigInfo.SignatureStatus -or $sigInfo.SignedDisplay -eq 'Not found') {
+                $IsSigned = $sigInfo.IsSigned
+            }
+            $analysis = Get-FileAnalysisInfo -FilePath $bootTarget.ResolvedPath
+            if (-not $analysis.HasWarning) {
+                $analysis = [PSCustomObject]@{
+                    Level      = 'OK'
+                    Detail     = "BootExecute → $($bootTarget.ResolvedPath)"
+                    HasWarning = $false
+                }
+            }
+        } else {
+            $sigInfo = [PSCustomObject]@{
+                IsSigned         = $true
+                SignedBy         = 'Microsoft Corporation'
+                SignedDisplay    = 'Windows boot'
+                SignatureStatus  = 'WindowsBootExecute'
+                ResolutionDetail = [string]$bootTarget.Detail
+            }
+            $IsSigned = $true
+            $analysis = [PSCustomObject]@{
+                Level      = 'OK'
+                Detail     = 'Windows BootExecute command (Session Manager)'
+                HasWarning = $false
+            }
+        }
+        $PreserveRiskLevel = $true
+        if ([string]::IsNullOrWhiteSpace($RiskLevel) -or $RiskLevel -eq 'Warning' -or $RiskLevel -eq 'Caution') {
+            $RiskLevel = 'Safe'
+        }
+        if ([string]::IsNullOrWhiteSpace($Publisher) -or $Publisher -eq 'Unknown') {
+            $Publisher = 'Microsoft Corporation'
+        }
     } elseif ($RowType -eq 'MsixStartupTask') {
         $sigInfo = Get-MsixStartupSignatureInfo `
             -PackageFamilyName $ServiceName `
@@ -249,6 +318,63 @@ function New-StartupRow {
             -PackageFamilyName $ServiceName `
             -TaskId $MsixTaskId `
             -Publisher $Publisher
+    } elseif ($RowType -eq 'ScheduledTask' -and $TaskActionKind -in @('Com', 'None')) {
+        $comPath = $AnalysisFilePath
+        if ([string]::IsNullOrWhiteSpace($comPath) -and -not [string]::IsNullOrWhiteSpace($Clsid)) {
+            $comResolved = Resolve-ComHandlerServerPath -ClassId $Clsid
+            if ($comResolved.Exists) {
+                $comPath = $comResolved.ServerPath
+                $ComServerExists = $true
+            }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($comPath)) {
+            $sigInfo = Get-FileSignatureInfo -FilePath $comPath
+            if ($sigInfo.SignatureStatus -or $sigInfo.SignedDisplay -eq 'Not found') {
+                $IsSigned = $sigInfo.IsSigned
+            }
+            $analysis = Get-FileAnalysisInfo -FilePath $comPath
+            if (-not $analysis.HasWarning) {
+                $prefix = if ($Clsid) { "COM handler $Clsid" } else { 'COM handler' }
+                $analysis = [PSCustomObject]@{
+                    Level      = 'OK'
+                    Detail     = "$prefix → $comPath"
+                    HasWarning = $false
+                }
+            }
+        } elseif ($PreserveRiskLevel -or $IsCritical) {
+            $sigInfo = [PSCustomObject]@{
+                IsSigned         = $true
+                SignedBy         = 'Microsoft Corporation'
+                SignedDisplay    = 'Windows COM'
+                SignatureStatus  = 'WindowsComTask'
+                ResolutionDetail = if ($Clsid) { "COM ClassId $Clsid" } else { 'Windows COM scheduled task' }
+            }
+            $IsSigned = $true
+            $analysis = [PSCustomObject]@{
+                Level      = 'OK'
+                Detail     = if ($Clsid) {
+                    "Windows COM handler $Clsid (server image unavailable)"
+                } else {
+                    'Windows COM scheduled task (no file image)'
+                }
+                HasWarning = $false
+            }
+        } else {
+            $sigInfo = [PSCustomObject]@{
+                IsSigned         = $false
+                SignedBy         = ''
+                SignedDisplay    = 'N/A (COM)'
+                SignatureStatus  = 'ComHandler'
+                ResolutionDetail = if ($Clsid) { "COM ClassId $Clsid unresolved" } else { 'COM handler with no executable' }
+            }
+            $IsSigned = $false
+            $analysis = [PSCustomObject]@{
+                Level      = 'NA'
+                Detail     = 'COM handler; server DLL/EXE not resolved'
+                HasWarning = $false
+            }
+        }
     } else {
         $commandForAnalysis = if (-not [string]::IsNullOrWhiteSpace($analysisPath)) { $analysisPath } else { $FilePath }
         $resolvedForAnalysis = Resolve-StartupTarget -Command $commandForAnalysis
@@ -262,6 +388,26 @@ function New-StartupRow {
             $IsSigned = $sigInfo.IsSigned
         }
         $analysis = Get-FileAnalysisInfo -FilePath $pathForAnalysis
+
+        # Optional Windows components may be referenced by plumbing tasks but not installed.
+        if (($PreserveRiskLevel -or $IsCritical) -and
+            $RowType -eq 'ScheduledTask' -and
+            -not $resolvedForAnalysis.Exists -and
+            ($sigInfo.SignedDisplay -eq 'Not found' -or $analysis.HasWarning)) {
+            $sigInfo = [PSCustomObject]@{
+                IsSigned         = $true
+                SignedBy         = 'Microsoft Corporation'
+                SignedDisplay    = 'Windows task'
+                SignatureStatus  = 'WindowsTaskMissingImage'
+                ResolutionDetail = [string]$resolvedForAnalysis.Detail
+            }
+            $IsSigned = $true
+            $analysis = [PSCustomObject]@{
+                Level      = 'OK'
+                Detail     = 'Windows scheduled task image not present (optional/absent component)'
+                HasWarning = $false
+            }
+        }
     }
 
     if ($RowType -eq 'WinlogonValue' -and $Name -in @('Userinit', 'Shell')) {
@@ -305,7 +451,7 @@ function New-StartupRow {
     }
 
     if ([string]::IsNullOrWhiteSpace($Publisher) -or $Publisher -eq 'Unknown') {
-        $publisherPath = if (-not [string]::IsNullOrWhiteSpace($analysisPath)) { $analysisPath } else { $FilePath }
+        $publisherPath = if (-not [string]::IsNullOrWhiteSpace($AnalysisFilePath)) { $AnalysisFilePath } else { $FilePath }
         $target = Resolve-StartupTarget -Command $publisherPath
         if ($target.Exists -and -not [string]::IsNullOrWhiteSpace($target.ResolvedPath)) {
             try {
@@ -315,15 +461,22 @@ function New-StartupRow {
                 }
             } catch {}
         }
+        if (($Publisher -eq 'Unknown' -or [string]::IsNullOrWhiteSpace($Publisher)) -and
+            -not [string]::IsNullOrWhiteSpace($sigInfo.SignedDisplay) -and
+            $sigInfo.SignedDisplay -notin @('N/A', 'Not found', 'Unsigned', 'Unknown', 'N/A (COM)', 'Windows COM', 'Windows task', 'Windows driver', 'Windows boot')) {
+            $Publisher = $sigInfo.SignedDisplay
+        }
     }
 
-    $riskPath = if (-not [string]::IsNullOrWhiteSpace($analysisPath)) { $analysisPath } else { $FilePath }
+    $riskPath = if (-not [string]::IsNullOrWhiteSpace($AnalysisFilePath)) { $AnalysisFilePath } else { $FilePath }
     $risk = Get-EntryRisk -Publisher $Publisher -FilePath $riskPath -IsSigned $IsSigned -IsCritical $IsCritical
     if (-not $PreserveRiskLevel -and -not [string]::IsNullOrWhiteSpace($risk.Band)) {
         $RiskLevel = $risk.Band
     }
 
-    if ($analysis.HasWarning -and $RiskLevel -eq 'Safe' -and -not ($RowType -eq 'WinlogonValue' -and $Name -in @('Userinit', 'Shell'))) {
+    # Do not escalate protected Windows COM tasks to Warning just because there is no Exec image.
+    $skipMissingFileRiskBump = $PreserveRiskLevel -and $RowType -eq 'ScheduledTask' -and $TaskActionKind -in @('Com', 'None')
+    if ($analysis.HasWarning -and $RiskLevel -eq 'Safe' -and -not $skipMissingFileRiskBump -and -not ($RowType -eq 'WinlogonValue' -and $Name -in @('Userinit', 'Shell'))) {
         $RiskLevel = if ($analysis.Level -eq 'Warning') { 'Warning' } else { 'Caution' }
     }
 
@@ -778,7 +931,7 @@ function Get-DriversEntries {
         if ($bootExecute) {
             $commands = @($bootExecute)
             foreach ($command in $commands) {
-                $entries.Add((New-StartupRow -Category 'Drivers' -RowType 'RegistryValue' -SourceGroup 'Boot Execute' -Name 'BootExecute' -Publisher 'Microsoft Corporation' -FilePath ([string]$command) -Source 'HKLM' -RegistryPath 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager' -ValueName 'BootExecute' -RegistryKey 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager' -RiskLevel 'Warning' -IsSigned $false -IsEnabled $true -IsCritical $true -SupportsEnable $false -SupportsDisable $false -SupportsDelete $false))
+                $entries.Add((New-StartupRow -Category 'Drivers' -RowType 'RegistryValue' -SourceGroup 'Boot Execute' -Name 'BootExecute' -Publisher 'Microsoft Corporation' -FilePath ([string]$command) -Source 'HKLM' -RegistryPath 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager' -ValueName 'BootExecute' -RegistryKey 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager' -RiskLevel 'Safe' -PreserveRiskLevel $true -IsSigned $true -IsEnabled $true -IsCritical $true -SupportsEnable $false -SupportsDisable $false -SupportsDelete $false))
             }
         }
     }

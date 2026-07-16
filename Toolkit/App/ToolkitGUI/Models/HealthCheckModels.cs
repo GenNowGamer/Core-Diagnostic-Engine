@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -70,6 +71,17 @@ namespace ToolkitGUI.Models
         public IReadOnlyList<StructuredResultItemViewModel> FormattedItems { get; init; } = new List<StructuredResultItemViewModel>();
         public IReadOnlyList<FormattedResultSectionViewModel> FormattedSections { get; init; } = new List<FormattedResultSectionViewModel>();
         public Brush StatusBrush { get; init; } = Brushes.Gray;
+
+        /// <summary>Original workflow step index; used as a stable tie-breaker when sorting Findings.</summary>
+        public int DisplayOrder { get; init; }
+
+        /// <summary>
+        /// When true, section titles (Needs review / Verified) are the detail headings —
+        /// hide the generic "DETAILED RESULTS" umbrella label.
+        /// </summary>
+        public bool PreferNamedDetailSections =>
+            string.Equals(StepName, "StartupAudit", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(CheckId, "audit_startup", StringComparison.OrdinalIgnoreCase);
     }
 
     public sealed class HealthRecommendationViewModel
@@ -94,6 +106,7 @@ namespace ToolkitGUI.Models
         public int Version { get; set; }
         public List<HealthCheckCategoryDto> Categories { get; set; } = new();
         public Dictionary<string, List<string>> Presets { get; set; } = new();
+        public List<string> FindingsDisplayOrder { get; set; } = new();
         public List<HealthCheckRecommendationDto> Recommendations { get; set; } = new();
     }
 

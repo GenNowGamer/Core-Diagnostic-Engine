@@ -34,6 +34,7 @@ namespace ToolkitGUI.ViewModels
         private string _phaseLabel = string.Empty;
         private readonly Dictionary<string, string> _checkLabels = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _checkCategories = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, int> _findingsDisplayRank = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _recommendationKeys = new(StringComparer.OrdinalIgnoreCase);
 
         public ObservableCollection<HealthCheckCategoryViewModel> Categories { get; } = new();
@@ -73,6 +74,10 @@ namespace ToolkitGUI.ViewModels
         public bool HasSelectedFindingPlainText => !string.IsNullOrWhiteSpace(SelectedFindingPlainText);
 
         public bool HasSelectedFindingDetail => HasSelectedFindingSections || HasSelectedFindingPlainText;
+
+        public bool ShowGenericDetailHeading =>
+            HasSelectedFindingDetail
+            && SelectedFinding is not { PreferNamedDetailSections: true };
 
         public string SelectedFindingPlainText
         {
@@ -176,6 +181,7 @@ namespace ToolkitGUI.ViewModels
             Categories.Clear();
             _checkLabels.Clear();
             _checkCategories.Clear();
+            _findingsDisplayRank.Clear();
             _catalogRecommendations.Clear();
 
             var path = ToolkitPaths.GetHealthCheckCatalogPath();
@@ -188,6 +194,17 @@ namespace ToolkitGUI.ViewModels
             var catalog = JsonSerializer.Deserialize<HealthCheckCatalogDto>(json, JsonOpts);
             if (catalog?.Categories == null)
                 return;
+
+            var order = catalog.FindingsDisplayOrder is { Count: > 0 }
+                ? catalog.FindingsDisplayOrder
+                : DefaultFindingsDisplayOrder;
+            for (var i = 0; i < order.Count; i++)
+            {
+                var id = order[i]?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(id) || _findingsDisplayRank.ContainsKey(id))
+                    continue;
+                _findingsDisplayRank[id] = i;
+            }
 
             var isWinPe = IsWinPeMode();
             foreach (var cat in catalog.Categories)
@@ -230,6 +247,39 @@ namespace ToolkitGUI.ViewModels
             if (catalog.Recommendations is { Count: > 0 })
                 _catalogRecommendations.AddRange(catalog.Recommendations);
         }
+
+        /// <summary>Fallback when catalog omits findingsDisplayOrder.</summary>
+        private static readonly IReadOnlyList<string> DefaultFindingsDisplayOrder = new[]
+        {
+            "activation",
+            "os_version",
+            "system_info",
+            "gpu_info",
+            "cpu_load",
+            "ram",
+            "disk_space",
+            "network_adapters",
+            "audit_network_config",
+            "windows_update_service",
+            "event_errors_24h",
+            "critical_events_7d",
+            "audit_event_logs",
+            "driver_signature_audit",
+            "audit_drivers",
+            "audit_pnp_devices",
+            "audit_services",
+            "audit_startup",
+            "sec_autoruns",
+            "audit_partition_table",
+            "sec_hosts",
+            "sec_browser_extensions",
+            "sec_scheduled_tasks",
+            "sec_browser_hijack",
+            "sec_network_hijack",
+            "audit_installed_software",
+            "sec_security_tampering",
+            "sec_remote_access"
+        };
 
         private static bool IsWinPeMode()
         {
@@ -461,6 +511,8 @@ namespace ToolkitGUI.ViewModels
                 _ => new SolidColorBrush(Color.FromRgb(0x5A, 0x6B, 0x80))
             };
 
+            var built = new List<HealthFindingViewModel>();
+            var originalIndex = 0;
             foreach (var step in ResultSteps)
             {
                 var checkId = !string.IsNullOrWhiteSpace(step.CheckId) ? step.CheckId : (step.Name ?? string.Empty);
@@ -475,7 +527,7 @@ namespace ToolkitGUI.ViewModels
                     .Where(item => !string.IsNullOrWhiteSpace(item.Name))
                     .ToList();
 
-                Findings.Add(new HealthFindingViewModel
+                built.Add(new HealthFindingViewModel
                 {
                     CheckId = checkId,
                     StepName = step.Name ?? string.Empty,
@@ -486,7 +538,8 @@ namespace ToolkitGUI.ViewModels
                     DetailOverview = BuildHealthCheckOverview(formatted, detail, step.Status),
                     FormattedItems = formattedItems,
                     FormattedSections = FormattedResultSectionMapper.MapSections(formatted),
-                    StatusBrush = BrushForStatus(step.Status)
+                    StatusBrush = BrushForStatus(step.Status),
+                    DisplayOrder = originalIndex++
                 });
 
                 if (StructuredResultItemViewModel.IsDiagnosticIssueStatus(step.Status))
@@ -494,6 +547,13 @@ namespace ToolkitGUI.ViewModels
                     AddStructuredResultItem(() =>
                         StructuredResultItemViewModel.FromDiagnosticFinding(step.Name, detail, step.Status));
                 }
+            }
+
+            foreach (var finding in built
+                         .OrderBy(f => GetFindingsDisplayRank(f.CheckId))
+                         .ThenBy(f => f.DisplayOrder))
+            {
+                Findings.Add(finding);
             }
 
             if (Findings.Count == 0)
@@ -510,6 +570,24 @@ namespace ToolkitGUI.ViewModels
             }
 
             SelectedFinding = Findings.FirstOrDefault();
+        }
+
+        private int GetFindingsDisplayRank(string? checkId)
+        {
+            if (string.IsNullOrWhiteSpace(checkId))
+                return int.MaxValue;
+
+            if (_findingsDisplayRank.TryGetValue(checkId, out var rank))
+                return rank;
+
+            // Legacy alias folded into system_info.
+            if (string.Equals(checkId, "audit_system_info", StringComparison.OrdinalIgnoreCase)
+                && _findingsDisplayRank.TryGetValue("system_info", out var systemInfoRank))
+            {
+                return systemInfoRank;
+            }
+
+            return int.MaxValue - 1000;
         }
 
         private static string BuildHealthCheckOverview(FormattedWorkflowOutput formatted, string? detail, string? status)
@@ -601,6 +679,7 @@ namespace ToolkitGUI.ViewModels
 
             OnPropertyChanged(nameof(HasSelectedFindingSections));
             OnPropertyChanged(nameof(HasSelectedFindingDetail));
+            OnPropertyChanged(nameof(ShowGenericDetailHeading));
 
             foreach (var item in SystemHealthReviewHelper.BuildAttentionItems(
                 SelectedFinding.StepName,

@@ -226,128 +226,173 @@
             </Style>
 
             <DataTemplate x:Key="FormattedResultItemTemplate">
-                <Border Margin="0,0,0,10"
-                        Padding="12"
-                        CornerRadius="6"
+                <Border CornerRadius="6"
                         BorderThickness="1"
                         BorderBrush="{StaticResource BorderBrush}"
                         Background="#FAFBFD">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Padding" Value="12"/>
+                            <Setter Property="Margin" Value="0,0,0,10"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowCompactStartupRow}" Value="True">
+                                    <Setter Property="Padding" Value="10,8"/>
+                                    <Setter Property="Margin" Value="0,0,0,6"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <StackPanel>
-                        <StackPanel Orientation="Horizontal">
-                            <Border Margin="0,0,10,0"
+                        <!-- Compact verified startup row: name · location | risk band -->
+                        <Grid Visibility="{Binding ShowCompactStartupRow, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding CompactStartupSummary}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,12,0"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <Border Grid.Column="1"
                                     Padding="8,3"
                                     CornerRadius="4"
-                                    Background="{Binding StatusLabelBrush}"
-                                    VerticalAlignment="Top"
-                                    Visibility="{Binding ShowStatusLabel, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <TextBlock Text="{Binding StatusLabelText}"
-                                           FontSize="11"
-                                           FontWeight="SemiBold"
-                                           Foreground="White"/>
-                            </Border>
-                            <TextBlock Text="{Binding Name}"
-                                       FontWeight="SemiBold"
-                                       FontSize="13"
-                                       TextWrapping="Wrap"
-                                       Foreground="{StaticResource TextPrimaryBrush}"/>
-                        </StackPanel>
-
-                        <StackPanel Margin="0,8,0,0"
-                                    Visibility="{Binding ShowCompactFilePath, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="FILE PATH"
-                                       FontSize="10"
-                                       FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       Margin="0,0,0,4"/>
-                            <TextBlock Text="{Binding EntryPath}"
-                                       FontSize="11"
-                                       FontFamily="Consolas, Courier New"
-                                       Foreground="{StaticResource TextPrimaryBrush}"
-                                       TextWrapping="Wrap"/>
-                        </StackPanel>
-
-                        <StackPanel Margin="0,10,0,0"
-                                    Visibility="{Binding ShowStartupReviewDetails, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="WHY FLAGGED FOR REVIEW" FontSize="10" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                            <Border Padding="8,4" CornerRadius="4"
-                                    HorizontalAlignment="Left"
-                                    Background="{Binding SeverityBrush}">
-                                <TextBlock Text="{Binding ReviewReason}" Foreground="White"
-                                           FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                            </Border>
-                            <TextBlock Text="STARTUP LOCATION" FontSize="10" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       Margin="0,10,0,4"/>
-                            <TextBlock Text="{Binding StartupLocation}" FontSize="12"
-                                       Foreground="{StaticResource TextPrimaryBrush}"
-                                       TextWrapping="Wrap"/>
-                            <TextBlock Text="RISK BAND" FontSize="10" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       Margin="0,10,0,4"
-                                       Visibility="{Binding ShowRiskBand, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            <Border Padding="8,4" CornerRadius="4"
-                                    HorizontalAlignment="Left"
                                     Background="{Binding RiskBandBrush}"
+                                    VerticalAlignment="Center"
                                     Visibility="{Binding ShowRiskBand, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <TextBlock Text="{Binding RiskBand}" Foreground="White"
                                            FontSize="11" FontWeight="SemiBold"/>
                             </Border>
-                        </StackPanel>
+                        </Grid>
 
-                        <StackPanel Margin="0,10,0,0"
-                                    Visibility="{Binding ShowRichEntry, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ShowStartupReviewDetails}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            <TextBlock Text="LOCATION" FontSize="10" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"
-                                       Visibility="{Binding ShowEntryLocation, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            <TextBlock Text="{Binding EntryLocation}" FontSize="12" TextWrapping="Wrap"
-                                       Margin="0,0,0,8"
-                                       Visibility="{Binding ShowEntryLocation, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            <TextBlock Text="TARGET PATH" FontSize="10" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"
-                                       Visibility="{Binding ShowEntryPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            <TextBlock Text="{Binding EntryPath}" FontSize="11" FontFamily="Consolas, Courier New"
-                                       TextWrapping="Wrap" Margin="0,0,0,8"
-                                       Visibility="{Binding ShowEntryPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            <TextBlock Text="{Binding DetailNotes}" FontSize="12"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       TextWrapping="Wrap"
-                                       Visibility="{Binding ShowDetailNotes, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                        </StackPanel>
+                        <StackPanel Visibility="{Binding ShowCompactStartupRow, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal">
+                                <Border Margin="0,0,10,0"
+                                        Padding="8,3"
+                                        CornerRadius="4"
+                                        Background="{Binding StatusLabelBrush}"
+                                        VerticalAlignment="Top"
+                                        Visibility="{Binding ShowStatusLabel, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock Text="{Binding StatusLabelText}"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="White"/>
+                                </Border>
+                                <TextBlock Text="{Binding Name}"
+                                           FontWeight="SemiBold"
+                                           FontSize="13"
+                                           TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                            </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ShowStartupReviewDetails}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding ShowRichEntry}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            <Border Margin="0,0,8,0" Padding="6,2" CornerRadius="3"
-                                    Background="{Binding SeverityBrush}"
-                                    Visibility="{Binding ShowSeverity, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <TextBlock Text="{Binding Severity}" Foreground="White"
-                                           FontSize="10" FontWeight="SemiBold"/>
-                            </Border>
-                            <TextBlock Text="{Binding Classification}" FontSize="12"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       TextWrapping="Wrap" VerticalAlignment="Center"
-                                       Visibility="{Binding ShowClassification, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            <StackPanel Margin="0,8,0,0"
+                                        Visibility="{Binding ShowCompactFilePath, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <TextBlock Text="FILE PATH"
+                                           FontSize="10"
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,0,0,4"/>
+                                <TextBlock Text="{Binding EntryPath}"
+                                           FontSize="11"
+                                           FontFamily="Consolas, Courier New"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <StackPanel Margin="0,10,0,0"
+                                        Visibility="{Binding ShowStartupReviewDetails, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <TextBlock Text="WHY FLAGGED FOR REVIEW" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                                <Border Padding="8,4" CornerRadius="4"
+                                        HorizontalAlignment="Left"
+                                        Background="{Binding SeverityBrush}">
+                                    <TextBlock Text="{Binding ReviewReason}" Foreground="White"
+                                               FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                </Border>
+                                <TextBlock Text="STARTUP LOCATION" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,10,0,4"/>
+                                <TextBlock Text="{Binding StartupLocation}" FontSize="12"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="TARGET PATH" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,10,0,4"
+                                           Visibility="{Binding ShowStartupTargetPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBlock Text="{Binding EntryPath}" FontSize="11"
+                                           FontFamily="Consolas, Courier New"
+                                           TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           Visibility="{Binding ShowStartupTargetPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBlock Text="RISK BAND" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,10,0,4"
+                                           Visibility="{Binding ShowRiskBand, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <Border Padding="8,4" CornerRadius="4"
+                                        HorizontalAlignment="Left"
+                                        Background="{Binding RiskBandBrush}"
+                                        Visibility="{Binding ShowRiskBand, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock Text="{Binding RiskBand}" Foreground="White"
+                                               FontSize="11" FontWeight="SemiBold"/>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Margin="0,10,0,0"
+                                        Visibility="{Binding ShowRichEntry, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowStartupReviewDetails}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <TextBlock Text="LOCATION" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"
+                                           Visibility="{Binding ShowEntryLocation, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBlock Text="{Binding EntryLocation}" FontSize="12" TextWrapping="Wrap"
+                                           Margin="0,0,0,8"
+                                           Visibility="{Binding ShowEntryLocation, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBlock Text="TARGET PATH" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"
+                                           Visibility="{Binding ShowEntryPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBlock Text="{Binding EntryPath}" FontSize="11" FontFamily="Consolas, Courier New"
+                                           TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Visibility="{Binding ShowEntryPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBlock Text="{Binding DetailNotes}" FontSize="12"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap"
+                                           Visibility="{Binding ShowDetailNotes, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowStartupReviewDetails}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ShowRichEntry}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <Border Margin="0,0,8,0" Padding="6,2" CornerRadius="3"
+                                        Background="{Binding SeverityBrush}"
+                                        Visibility="{Binding ShowSeverity, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock Text="{Binding Severity}" Foreground="White"
+                                               FontSize="10" FontWeight="SemiBold"/>
+                                </Border>
+                                <TextBlock Text="{Binding Classification}" FontSize="12"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap" VerticalAlignment="Center"
+                                           Visibility="{Binding ShowClassification, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            </StackPanel>
                         </StackPanel>
                     </StackPanel>
                 </Border>

@@ -365,7 +365,12 @@ function Invoke-HealthCheck_gpu_info {
     param($r)
     Write-Log 'Reading GPU information...'
     try {
-        $gpus = @(Get-CimInstance -ClassName Win32_VideoController)
+        # AdapterRAM from Win32_VideoController is uint32 and saturates near 4 GB.
+        # Enrich with registry QWORD (HardwareInformation.qwMemorySize) when available.
+        $gpus = @(Get-CimInstance -ClassName Win32_VideoController | ForEach-Object {
+            $vramBytes = Get-GpuDedicatedVideoRamBytes -Gpu $_
+            $_ | Add-Member -NotePropertyName DedicatedVideoRAM -NotePropertyValue $vramBytes -Force -PassThru
+        })
         $output = Format-GpuInfo -Gpus $gpus
         $names = ($gpus | ForEach-Object { $_.Caption }) -join '; '
         Add-HealthCheckStep $r @{
@@ -373,7 +378,11 @@ function Invoke-HealthCheck_gpu_info {
             Status  = 'Pass'
             Detail  = if ($gpus.Count -gt 0) { $names } else { 'No video controllers reported' }
             Output  = $output
-            GPUs    = $gpus | Select-Object Caption, DriverVersion, DriverDate, VideoRAM, VideoProcessor, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate, VideoModeDescription, Status, PNPDeviceID
+            GPUs    = $gpus | Select-Object Caption, DriverVersion, DriverDate,
+                @{ Name = 'VideoRAM'; Expression = { $_.DedicatedVideoRAM } },
+                @{ Name = 'AdapterRAM'; Expression = { $_.DedicatedVideoRAM } },
+                VideoProcessor, CurrentHorizontalResolution, CurrentVerticalResolution,
+                CurrentRefreshRate, VideoModeDescription, Status, PNPDeviceID
             CheckId = 'gpu_info'
         }
     } catch {

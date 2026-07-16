@@ -271,7 +271,7 @@
                                 <TextBlock Text="DETAILED RESULTS" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
                                            Margin="0,0,0,8"
-                                           Visibility="{Binding HasSelectedFindingDetail, Converter={StaticResource BoolToVis}}"/>
+                                           Visibility="{Binding ShowGenericDetailHeading, Converter={StaticResource BoolToVis}}"/>
                                 <Border Margin="0,0,0,16"
                                         Padding="12"
                                         Background="White"
@@ -309,7 +309,7 @@
                                 <TextBlock Text="DETAILED RESULTS" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
                                            Margin="0,0,0,8"
-                                           Visibility="{Binding HasSelectedFindingSections, Converter={StaticResource BoolToVis}}"/>
+                                           Visibility="{Binding ShowGenericDetailHeading, Converter={StaticResource BoolToVis}}"/>
                                 <ItemsControl ItemsSource="{Binding SelectedFindingSections}" Margin="0,0,0,16">
                                     <ItemsControl.Style>
                                         <Style TargetType="ItemsControl">
@@ -330,34 +330,73 @@
                                                     Padding="12"
                                                     Margin="0,0,0,12">
                                                 <StackPanel>
-                                                    <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
-                                                               Foreground="{StaticResource TextPrimaryBrush}"
-                                                               Margin="0,0,0,8"
-                                                               Visibility="{Binding HasTitle, Converter={StaticResource BoolToVis}}"/>
-                                                    <ItemsControl ItemsSource="{Binding Items}"
-                                                                  ItemTemplate="{StaticResource FormattedResultItemTemplate}"/>
-                                                    <ItemsControl ItemsSource="{Binding PropertyLines}">
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate>
-                                                                <Grid Margin="0,0,0,4">
-                                                                    <Grid.ColumnDefinitions>
-                                                                        <ColumnDefinition Width="150"/>
-                                                                        <ColumnDefinition Width="*"/>
-                                                                    </Grid.ColumnDefinitions>
-                                                                    <TextBlock Grid.Column="0"
-                                                                               Text="{Binding Label}"
-                                                                               FontSize="12"
-                                                                               FontWeight="SemiBold"
-                                                                               Foreground="{StaticResource TextSecondaryBrush}"/>
-                                                                    <TextBlock Grid.Column="1"
-                                                                               Text="{Binding Value}"
-                                                                               FontSize="12"
-                                                                               TextWrapping="Wrap"
-                                                                               Foreground="{StaticResource TextPrimaryBrush}"/>
-                                                                </Grid>
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
+                                                    <!-- Collapsible section (e.g. Verified when review items exist) -->
+                                                    <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                                                              Margin="0,0,0,0"
+                                                              Visibility="{Binding ShowAsExpander, Converter={StaticResource BoolToVis}}">
+                                                        <Expander.Header>
+                                                            <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
+                                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                        </Expander.Header>
+                                                        <StackPanel Margin="0,8,0,0">
+                                                            <ItemsControl ItemsSource="{Binding Items}"
+                                                                          ItemTemplate="{StaticResource FormattedResultItemTemplate}"/>
+                                                            <ItemsControl ItemsSource="{Binding PropertyLines}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Grid Margin="0,0,0,4">
+                                                                            <Grid.ColumnDefinitions>
+                                                                                <ColumnDefinition Width="150"/>
+                                                                                <ColumnDefinition Width="*"/>
+                                                                            </Grid.ColumnDefinitions>
+                                                                            <TextBlock Grid.Column="0"
+                                                                                       Text="{Binding Label}"
+                                                                                       FontSize="12"
+                                                                                       FontWeight="SemiBold"
+                                                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                                            <TextBlock Grid.Column="1"
+                                                                                       Text="{Binding Value}"
+                                                                                       FontSize="12"
+                                                                                       TextWrapping="Wrap"
+                                                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </Expander>
+
+                                                    <!-- Plain section (Needs review, or Verified when alone) -->
+                                                    <StackPanel Visibility="{Binding ShowAsPlainSection, Converter={StaticResource BoolToVis}}">
+                                                        <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                                   Margin="0,0,0,8"
+                                                                   Visibility="{Binding HasTitle, Converter={StaticResource BoolToVis}}"/>
+                                                        <ItemsControl ItemsSource="{Binding Items}"
+                                                                      ItemTemplate="{StaticResource FormattedResultItemTemplate}"/>
+                                                        <ItemsControl ItemsSource="{Binding PropertyLines}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid Margin="0,0,0,4">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="150"/>
+                                                                            <ColumnDefinition Width="*"/>
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <TextBlock Grid.Column="0"
+                                                                                   Text="{Binding Label}"
+                                                                                   FontSize="12"
+                                                                                   FontWeight="SemiBold"
+                                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                                        <TextBlock Grid.Column="1"
+                                                                                   Text="{Binding Value}"
+                                                                                   FontSize="12"
+                                                                                   TextWrapping="Wrap"
+                                                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>

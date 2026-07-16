@@ -85,7 +85,7 @@ When you **Delete** a Run/Startup/**non-Microsoft scheduled task** entry whose t
 
 Services tab offers the same file/CST/copy/details jumps (plus **Copy service name**).
 
-> **Tip:** Use **System Health Check → Scheduled Tasks** (security audit) to review non-Microsoft scheduled tasks for persistence risk. The default Startup Manager view focuses on user-facing startup mechanisms like Task Manager.
+> **Tip:** Use **System Health Check → Scheduled Tasks** (security audit) to review non-Microsoft scheduled tasks for persistence risk. Flagged rows include a **Review Reason**; COM-only actions show the resolved handler path (not “unknown action”). Microsoft-signed tasks under AppData (e.g. OneDrive) are not flagged solely for path location. The default Startup Manager view focuses on user-facing startup mechanisms like Task Manager.
 
 ### Winlogon reset
 
@@ -184,6 +184,8 @@ When only these expected skips occur, the workflow reports **Completed** / **Pas
 
 ## Uninstall Manager
 
-**What this does:** Lists installed programs from registry uninstall keys. Run the vendor uninstaller or force-remove broken entries.
+**What this does:** Lists installed programs from registry uninstall keys. Run a preferred uninstaller or force-remove broken ARP entries.
 
-Use force-remove only when the normal uninstaller is missing or corrupted.
+**Uninstall:** Prefers `QuietUninstallString` when present; otherwise normalizes MSI product codes to `msiexec /x {GUID} /qn`; otherwise runs `UninstallString`. After the uninstaller exits, CDE checks whether the ARP key and install folder remain and can offer safe leftover-folder cleanup (Program Files / ProgramData only).
+
+**Force Remove:** Deletes the uninstall registry (ARP) key so the entry disappears from Programs and Features. Optionally deletes the recorded install folder, then offers a confirmed leftover-folder scan. This is not a full product wipe by itself — use it for broken or spoofed entries when no real uninstaller exists.

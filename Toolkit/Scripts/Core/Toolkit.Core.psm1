@@ -1534,6 +1534,84 @@ function Format-NetworkAdapters {
     return $output
 }
 
+function Get-GpuDedicatedVideoRamBytes {
+    <#
+    .SYNOPSIS
+        Resolve dedicated GPU memory in bytes.
+
+    .DESCRIPTION
+        Win32_VideoController.AdapterRAM is a 32-bit field that saturates near 4 GB.
+        Prefer the display-class registry QWORD HardwareInformation.qwMemorySize when
+        available, then fall back to AdapterRAM (unsigned).
+    #>
+    param(
+        [Parameter(Mandatory)]$Gpu
+    )
+
+    $displayClass = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}'
+    $pnpId = [string]$Gpu.PNPDeviceID
+    $caption = [string]$(if ($Gpu.Name) { $Gpu.Name } elseif ($Gpu.Caption) { $Gpu.Caption } else { '' })
+
+    # Enumerate numbered adapter keys only. Get-ChildItem on the class key can throw
+    # SecurityException on the locked "Properties" subkey and abort the lookup.
+    for ($i = 0; $i -lt 64; $i++) {
+        $subPath = Join-Path $displayClass ('{0:D4}' -f $i)
+        if (-not (Test-Path -LiteralPath $subPath)) {
+            continue
+        }
+
+        $props = Get-ItemProperty -LiteralPath $subPath -ErrorAction SilentlyContinue
+        if (-not $props) { continue }
+
+        $qw = $props.'HardwareInformation.qwMemorySize'
+        if ($null -eq $qw) { continue }
+
+        try {
+            $qwBytes = [long]$qw
+        } catch {
+            continue
+        }
+        if ($qwBytes -le 0) { continue }
+
+        $matched = $false
+        $matchId = [string]$props.MatchingDeviceId
+        if ($matchId -and $pnpId -and $pnpId.StartsWith($matchId, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $matched = $true
+        }
+        elseif ($props.DriverDesc -and $caption -and
+                [string]::Equals([string]$props.DriverDesc, $caption, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $matched = $true
+        }
+
+        if ($matched) {
+            return $qwBytes
+        }
+    }
+
+    if ($null -eq $Gpu.AdapterRAM) {
+        return $null
+    }
+
+    try {
+        # AdapterRAM is uint32 in WMI; PowerShell may surface it as signed Int32.
+        $raw = $Gpu.AdapterRAM
+        if ($raw -is [int] -or $raw -is [int32]) {
+            return [long]([uint32]$raw)
+        }
+        $asLong = [long]$raw
+        if ($asLong -lt 0) {
+            return [long]([uint32]$asLong)
+        }
+        if ($asLong -gt 0) {
+            return $asLong
+        }
+    } catch {
+        return $null
+    }
+
+    return $null
+}
+
 function Format-GpuInfo {
     param([Parameter(Mandatory)]$Gpus)
     $gpuList = @($Gpus)
@@ -1552,8 +1630,14 @@ function Format-GpuInfo {
         if ($gpu.VideoProcessor) {
             $output += "{0,-24}: {1}`n" -f 'Video Processor', $gpu.VideoProcessor
         }
-        if ($gpu.AdapterRAM -and [long]$gpu.AdapterRAM -gt 0) {
-            $output += "{0,-24}: {1}`n" -f 'Dedicated Video RAM', (Format-SizeHuman -Bytes ([long]$gpu.AdapterRAM))
+        $vramBytes = $null
+        if ($null -ne $gpu.DedicatedVideoRAM -and [long]$gpu.DedicatedVideoRAM -gt 0) {
+            $vramBytes = [long]$gpu.DedicatedVideoRAM
+        } else {
+            $vramBytes = Get-GpuDedicatedVideoRamBytes -Gpu $gpu
+        }
+        if ($vramBytes -and $vramBytes -gt 0) {
+            $output += "{0,-24}: {1}`n" -f 'Dedicated Video RAM', (Format-SizeHuman -Bytes $vramBytes)
         }
         if ($gpu.DriverVersion) {
             $output += "{0,-24}: {1}`n" -f 'Driver Version', $gpu.DriverVersion
@@ -1770,27 +1854,53 @@ function Get-WindowsUpdateStackStatus {
         }
     }
 
-    $wuauserv = $present | Where-Object { $_.Name -eq 'wuauserv' } | Select-Object -First 1
-    if ($wuauserv -and $wuauserv.StartType -eq 'Manual') {
+    $uso = $present | Where-Object { $_.Name -eq 'UsoSvc' } | Select-Object -First 1
+    if (-not $uso) {
         return [PSCustomObject]@{
             Status  = 'Warn'
-            Summary = 'wuauserv is Manual instead of Automatic; update orchestration may be delayed'
+            Summary = 'UsoSvc (Update Orchestrator) is missing; Windows Update may not run reliably'
         }
     }
 
-    $stoppedCore = @($present | Where-Object {
+    # Modern Windows defaults: UsoSvc Automatic; wuauserv Manual (on-demand) or Automatic.
+    # Do not Warn solely because wuauserv is Manual — that is normal on Win10/11.
+    if ($uso.StartType -ne 'Automatic') {
+        return [PSCustomObject]@{
+            Status  = 'Warn'
+            Summary = "UsoSvc start type is $($uso.StartType) (expected Automatic)"
+        }
+    }
+
+    $wuauserv = $present | Where-Object { $_.Name -eq 'wuauserv' } | Select-Object -First 1
+    if ($wuauserv -and $wuauserv.StartType -notin @('Manual', 'Automatic')) {
+        return [PSCustomObject]@{
+            Status  = 'Warn'
+            Summary = "wuauserv start type is $($wuauserv.StartType) (expected Manual or Automatic)"
+        }
+    }
+
+    $bits = $present | Where-Object { $_.Name -eq 'bits' } | Select-Object -First 1
+    if ($bits -and $bits.StartType -notin @('Manual', 'Automatic')) {
+        return [PSCustomObject]@{
+            Status  = 'Warn'
+            Summary = "bits start type is $($bits.StartType) (expected Manual or Automatic)"
+        }
+    }
+
+    $idleCore = @($present | Where-Object {
             $_.Name -in @('wuauserv', 'UsoSvc') -and $_.Status -ne 'Running'
-        }).Count
-    if ($stoppedCore -eq @($present | Where-Object { $_.Name -in @('wuauserv', 'UsoSvc') }).Count) {
+        })
+    $corePresent = @($present | Where-Object { $_.Name -in @('wuauserv', 'UsoSvc') })
+    if ($corePresent.Count -gt 0 -and $idleCore.Count -eq $corePresent.Count) {
         return [PSCustomObject]@{
             Status  = 'Pass'
-            Summary = 'Core update services are idle; startup types look healthy'
+            Summary = 'Core update services are idle; startup types match Windows defaults'
         }
     }
 
     return [PSCustomObject]@{
         Status  = 'Pass'
-        Summary = 'Windows Update stack looks healthy'
+        Summary = 'Windows Update stack matches expected defaults'
     }
 }
 
@@ -2039,6 +2149,48 @@ function Get-ScheduledTaskActionArguments {
     return ''
 }
 
+function Get-ScheduledTaskActionClassId {
+    param($Action)
+
+    if (-not $Action) { return '' }
+    $prop = $Action.PSObject.Properties['ClassId']
+    if ($prop -and -not [string]::IsNullOrWhiteSpace([string]$prop.Value)) {
+        return [string]$prop.Value
+    }
+    return ''
+}
+
+function Get-ScheduledTaskActionDisplay {
+    <#
+    .SYNOPSIS Human-readable action line for Exec or COM scheduled-task actions.
+    #>
+    param($Action)
+
+    if (-not $Action) { return 'Unknown' }
+
+    $exe = Get-ScheduledTaskActionExecute -Action $Action
+    if (-not [string]::IsNullOrWhiteSpace($exe)) {
+        return $exe
+    }
+
+    $classId = Get-ScheduledTaskActionClassId -Action $Action
+    if ([string]::IsNullOrWhiteSpace($classId)) {
+        return 'Unknown'
+    }
+
+    if (Get-Command -Name Resolve-ComHandlerServerPath -ErrorAction SilentlyContinue) {
+        try {
+            $com = Resolve-ComHandlerServerPath -ClassId $classId
+            if ($com -and -not [string]::IsNullOrWhiteSpace([string]$com.ServerPath)) {
+                return "COM $classId -> $($com.ServerPath)"
+            }
+        }
+        catch { }
+    }
+
+    return "COM $classId"
+}
+
 function Format-ScheduledTasksList {
     <#
     .SYNOPSIS Format scheduled tasks with suspicious items highlighted.
@@ -2068,15 +2220,24 @@ function Format-ScheduledTasksList {
             $output += ('-' * [Math]::Min(72, 7 + $taskTitle.Length)) + "`n"
             $output += "{0,-24}: {1}`n" -f 'Task Path', ([string]$task.TaskPath)
             $actionObj = Get-ScheduledTaskPrimaryAction -Task $task
-            $action = Get-ScheduledTaskActionExecute -Action $actionObj
-            if ([string]::IsNullOrWhiteSpace($action)) { $action = 'Unknown' }
+            $action = Get-ScheduledTaskActionDisplay -Action $actionObj
             $output += "{0,-24}: {1}`n" -f 'Action', $action
             $arguments = Get-ScheduledTaskActionArguments -Action $actionObj
             if (-not [string]::IsNullOrWhiteSpace($arguments)) {
                 $output += "{0,-24}: {1}`n" -f 'Arguments', $arguments
             }
             $output += "{0,-24}: {1}`n" -f 'State', ([string]$task.State)
-            $output += "{0,-24}: {1}`n" -f 'Flagged', ($(if ($isSuspicious) { 'Yes - review recommended' } else { 'No' }))
+            $flaggedLabel = if ($isSuspicious) { 'Yes - review recommended' } else { 'No' }
+            $output += "{0,-24}: {1}`n" -f 'Flagged', $flaggedLabel
+            if ($isSuspicious) {
+                $reasonProp = $task.PSObject.Properties['SuspiciousReasons']
+                if ($reasonProp -and $reasonProp.Value) {
+                    $reasonText = (@($reasonProp.Value) | Where-Object { $_ } | Select-Object -Unique) -join '; '
+                    if (-not [string]::IsNullOrWhiteSpace($reasonText)) {
+                        $output += "{0,-24}: {1}`n" -f 'Review Reason', $reasonText
+                    }
+                }
+            }
             $output += "`n"
         }
     } else {
@@ -2332,6 +2493,7 @@ Export-ModuleMember -Function @(
     'Format-HealthCheckActivation',
     'Format-HealthCheckEventErrors',
     'Format-NetworkAdapters',
+    'Get-GpuDedicatedVideoRamBytes',
     'Format-GpuInfo',
     'Format-DriverSignatureAudit',
     'Format-EventLogDetail',
@@ -2345,5 +2507,6 @@ Export-ModuleMember -Function @(
     'Format-HostsFileDetail',
     'Format-BrowserExtensionList',
     'Format-ScheduledTasksList',
+    'Get-ScheduledTaskActionDisplay',
     'Resolve-ToolPath'
 )

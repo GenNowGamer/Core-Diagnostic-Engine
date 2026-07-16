@@ -101,25 +101,32 @@ function Expand-WindowsImagePath {
     $candidate = [string]$Path
     $candidate = $candidate.Trim().Trim('"')
 
-    if ($candidate -match '^\?\?\\') {
+    # NT object-manager / Win32 device prefixes used by service ImagePath values.
+    # Real driver paths are typically "\??\C:\Windows\..." (leading backslash before ??).
+    if ($candidate.StartsWith('\??\')) {
+        $candidate = $candidate.Substring(4)
+    } elseif ($candidate -match '^\?\?\\') {
         $candidate = $candidate.Substring(3)
     }
+
     if ($candidate.StartsWith('\\?\')) {
         $candidate = $candidate.Substring(4)
     } elseif ($candidate.StartsWith('\\.\')) {
         $candidate = $candidate.Substring(4)
     }
 
-    if ($candidate -match '^\\SystemRoot\\') {
-        $candidate = Join-Path $systemRoot ($candidate.Substring(12))
-    } elseif ($candidate -match '^\\SystemRoot$') {
+    if ($candidate -match '(?i)^\\+SystemRoot\\') {
+        $candidate = Join-Path $systemRoot ($candidate -replace '(?i)^\\+SystemRoot\\', '')
+    } elseif ($candidate -match '(?i)^\\+SystemRoot$') {
         $candidate = $systemRoot
     }
 
     $candidate = Expand-StartupEnvironmentVariables -Text $candidate
 
-    if ($candidate -match '^system32\\' -and $candidate -notmatch '^[A-Za-z]:') {
+    if ($candidate -match '(?i)^system32\\' -and $candidate -notmatch '^[A-Za-z]:') {
         $candidate = Join-Path $systemRoot $candidate
+    } elseif ($candidate -match '(?i)^drivers\\' -and $candidate -notmatch '^[A-Za-z]:') {
+        $candidate = Join-Path (Join-Path $systemRoot 'system32') $candidate
     }
 
     return $candidate
@@ -293,6 +300,73 @@ function New-StartupTargetResult {
     }
 }
 
+function Resolve-OneDriveStaleInstallPath {
+    <#
+    .SYNOPSIS
+        Remap versioned OneDrive install paths to a currently installed launcher/binary.
+    #>
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $null
+    }
+
+    # C:\Program Files\Microsoft OneDrive\<version>\OneDriveLauncher.exe
+    # C:\Users\...\AppData\Local\Microsoft\OneDrive\<version>\...
+    if ($Path -notmatch '(?i)^(.*?\\Microsoft OneDrive)\\([^\\]+)\\(.+)$') {
+        return $null
+    }
+
+    $root = $Matches[1]
+    $relative = $Matches[3]
+    $leaf = Split-Path -Path $relative -Leaf
+
+    $roots = [System.Collections.Generic.List[string]]::new()
+    foreach ($candidateRoot in @(
+            $root,
+            (Join-Path ${env:ProgramFiles} 'Microsoft OneDrive'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft OneDrive'),
+            (Join-Path $env:LOCALAPPDATA 'Microsoft OneDrive')
+        )) {
+        if (-not [string]::IsNullOrWhiteSpace($candidateRoot) -and (Test-Path -LiteralPath $candidateRoot -PathType Container -ErrorAction SilentlyContinue)) {
+            if ($roots -notcontains $candidateRoot) {
+                $roots.Add($candidateRoot) | Out-Null
+            }
+        }
+    }
+
+    foreach ($candidateRoot in $roots) {
+        $direct = Join-Path $candidateRoot $relative
+        if (Test-Path -LiteralPath $direct -PathType Leaf -ErrorAction SilentlyContinue) {
+            try { return (Get-Item -LiteralPath $direct -ErrorAction Stop).FullName } catch { return $direct }
+        }
+
+        # Prefer same leaf under newest version folder.
+        $versionDirs = @(Get-ChildItem -LiteralPath $candidateRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^\d' } |
+            Sort-Object { $_.Name } -Descending)
+        foreach ($dir in $versionDirs) {
+            $hit = Join-Path $dir.FullName $leaf
+            if (Test-Path -LiteralPath $hit -PathType Leaf -ErrorAction SilentlyContinue) {
+                try { return (Get-Item -LiteralPath $hit -ErrorAction Stop).FullName } catch { return $hit }
+            }
+            if ($relative -ne $leaf) {
+                $hitRel = Join-Path $dir.FullName $relative
+                if (Test-Path -LiteralPath $hitRel -PathType Leaf -ErrorAction SilentlyContinue) {
+                    try { return (Get-Item -LiteralPath $hitRel -ErrorAction Stop).FullName } catch { return $hitRel }
+                }
+            }
+        }
+
+        $rootLeaf = Join-Path $candidateRoot $leaf
+        if (Test-Path -LiteralPath $rootLeaf -PathType Leaf -ErrorAction SilentlyContinue) {
+            try { return (Get-Item -LiteralPath $rootLeaf -ErrorAction Stop).FullName } catch { return $rootLeaf }
+        }
+    }
+
+    return $null
+}
+
 function Resolve-StartupTarget {
     param([string]$Command)
 
@@ -302,12 +376,36 @@ function Resolve-StartupTarget {
 
     $rawInput = $Command.Trim()
 
-    if (($rawInput -match '^[A-Za-z]:\\' -or $rawInput.StartsWith('\\')) -and $rawInput -notmatch '\.lnk$') {
-        $directPath = Expand-WindowsImagePath -Path $rawInput
+    # Synthetic COM display strings are not filesystem paths.
+    if ($rawInput -match '\(COM\b' -or $rawInput -match '\(no executable path\)') {
+        return (New-StartupTargetResult -RawInput $rawInput -ExecutablePath '' -Arguments '' -ResolvedPath '' -Exists $false -ResolutionMethod 'Unresolved' -Detail 'COM or non-file scheduled task action')
+    }
+
+    # Session Manager BootExecute values (e.g. "autocheck autochk *") are not file paths.
+    if ($rawInput -match '(?i)^\s*autocheck\b') {
+        $systemRoot = Get-StartupResolutionSystemRoot
+        $autochk = Join-Path $systemRoot 'System32\autochk.exe'
+        if (Test-Path -LiteralPath $autochk -PathType Leaf -ErrorAction SilentlyContinue) {
+            $resolvedAutochk = $autochk
+            try { $resolvedAutochk = (Get-Item -LiteralPath $autochk -ErrorAction Stop).FullName } catch { }
+            return (New-StartupTargetResult -RawInput $rawInput -ExecutablePath $autochk -Arguments '' -ResolvedPath $resolvedAutochk -Exists $true -ResolutionMethod 'BootExecute' -Detail 'Mapped BootExecute autochk to System32\autochk.exe')
+        }
+
+        return (New-StartupTargetResult -RawInput $rawInput -ExecutablePath '' -Arguments '' -ResolvedPath '' -Exists $false -ResolutionMethod 'BootExecute' -Detail 'Windows BootExecute command (no file image)')
+    }
+
+    # Expand NT prefixes (\??\, \SystemRoot\, etc.) before absolute-path classification.
+    $directPath = Expand-WindowsImagePath -Path $rawInput
+    if (($directPath -match '^[A-Za-z]:\\' -or $directPath.StartsWith('\\')) -and $directPath -notmatch '\.lnk$') {
         if (Test-Path -LiteralPath $directPath -PathType Leaf -ErrorAction SilentlyContinue) {
             $resolvedDirect = $directPath
             try { $resolvedDirect = (Get-Item -LiteralPath $directPath -ErrorAction Stop).FullName } catch { }
             return (New-StartupTargetResult -RawInput $rawInput -ExecutablePath $rawInput -Arguments '' -ResolvedPath $resolvedDirect -Exists $true -ResolutionMethod 'Absolute' -Detail '')
+        }
+
+        $oneDriveHit = Resolve-OneDriveStaleInstallPath -Path $directPath
+        if (-not [string]::IsNullOrWhiteSpace($oneDriveHit)) {
+            return (New-StartupTargetResult -RawInput $rawInput -ExecutablePath $rawInput -Arguments '' -ResolvedPath $oneDriveHit -Exists $true -ResolutionMethod 'OneDriveRemap' -Detail 'Remapped stale OneDrive version path')
         }
     }
 
@@ -340,6 +438,15 @@ function Resolve-StartupTarget {
         try { $resolved = (Get-Item -LiteralPath $normalized -ErrorAction Stop).FullName } catch { }
         if ($method -eq 'Unresolved') { $method = 'Absolute' }
         return (New-StartupTargetResult -RawInput $rawInput -ExecutablePath $exePath -Arguments $arguments -ResolvedPath $resolved -Exists $true -ResolutionMethod $method -Detail $detail)
+    }
+
+    $oneDriveRemap = Resolve-OneDriveStaleInstallPath -Path $normalized
+    if (-not [string]::IsNullOrWhiteSpace($oneDriveRemap)) {
+        $remapDetail = 'Remapped stale OneDrive version path'
+        if (-not [string]::IsNullOrWhiteSpace($detail)) {
+            $remapDetail = "$detail; $remapDetail"
+        }
+        return (New-StartupTargetResult -RawInput $rawInput -ExecutablePath $exePath -Arguments $arguments -ResolvedPath $oneDriveRemap -Exists $true -ResolutionMethod 'OneDriveRemap' -Detail $remapDetail)
     }
 
     $offline = Invoke-StartupOfflinePathRemap -Path $normalized
@@ -687,19 +794,27 @@ function Test-PostOpStartupSuspicious {
     if ($IsRunOnce) {
         $reasons.Add('RunOnce key') | Out-Null
     }
-    if (-not $TargetExists -and -not [string]::IsNullOrWhiteSpace($ResolvedPath)) {
-        $reasons.Add('target missing') | Out-Null
+
+    # Trusted MSIX package identity: WindowsApps EXE may be ACL-inaccessible — not a missing target.
+    $msixPackageTrusted = ($EntryType -eq 'MsixStartupTask' -and $IsSigned)
+    # Non-deviant Winlogon Shell/Userinit is Windows plumbing, not an unsigned 3rd-party binary.
+    $winlogonTrustedDefault = ($EntryType -eq 'Winlogon' -and -not $IsWinlogonDeviated)
+
+    if (-not $TargetExists -and -not $msixPackageTrusted) {
+        if (-not [string]::IsNullOrWhiteSpace($ResolvedPath)) {
+            $reasons.Add('target missing') | Out-Null
+        } else {
+            $reasons.Add('unresolved target') | Out-Null
+        }
     }
-    elseif (-not $TargetExists) {
-        $reasons.Add('unresolved target') | Out-Null
-    }
+
     if ($RiskBand -eq 'Warning') {
         $reasons.Add("risk:$RiskBand") | Out-Null
     }
     if ($ResolvedPath -match '\\Temp\\|\\Downloads\\|AppData\\Local\\Temp') {
         $reasons.Add('risky path') | Out-Null
     }
-    if (-not $IsSigned -and $ResolvedPath -and $ResolvedPath -notmatch '\\Windows\\') {
+    if (-not $IsSigned -and -not $winlogonTrustedDefault -and $ResolvedPath -and $ResolvedPath -notmatch '\\Windows\\') {
         $reasons.Add('unsigned') | Out-Null
     }
     if ($Name -cmatch '^[0-9a-fA-F]{8,}$' -or $Name -cmatch '^[A-Z0-9]{16,}$') {
@@ -862,16 +977,76 @@ function Get-PostOpStartupEntries {
             $valueText = Get-WinlogonRegistryValueText -Path $winlogonContext.PsPath -Name $name
             $deviation = Test-WinlogonValueDeviation -ValueName $name -CurrentValue $valueText
             $displayValue = if ([string]::IsNullOrWhiteSpace($valueText)) { '(missing or empty)' } else { $valueText }
+
+            $resolvedPath = $displayValue
+            $publisher = ''
+            $isSigned = $false
+            $targetExists = -not [string]::IsNullOrWhiteSpace($valueText)
+
+            if (-not [string]::IsNullOrWhiteSpace($valueText)) {
+                $probeCommand = $valueText.Trim()
+                if ($name -eq 'Userinit') {
+                    $probeCommand = ($probeCommand -split ',')[0].Trim().Trim('"')
+                }
+
+                # Default Shell is a bare name; resolve to %SystemRoot%\explorer.exe for signing.
+                if ($name -eq 'Shell' -and ($probeCommand -ieq 'explorer.exe')) {
+                    if (Test-OfflineRegistrySessionActive) {
+                        $driveRoot = Get-WinlogonEvaluationSystemRoot
+                        $probeCommand = Join-Path $driveRoot 'Windows\explorer.exe'
+                    } else {
+                        $probeCommand = Join-Path $env:SystemRoot 'explorer.exe'
+                    }
+                }
+
+                $target = Resolve-StartupTarget -Command $probeCommand
+                if ($target.Exists -and -not [string]::IsNullOrWhiteSpace($target.ResolvedPath)) {
+                    $resolvedPath = [string]$target.ResolvedPath
+                    $targetExists = $true
+                    $sigInfo = Get-FileSignatureInfo -FilePath $resolvedPath
+                    $isSigned = [bool]$sigInfo.IsSigned
+                    try {
+                        $publisher = [string](Get-Item -LiteralPath $resolvedPath -ErrorAction SilentlyContinue).VersionInfo.CompanyName
+                    } catch { }
+                    if ([string]::IsNullOrWhiteSpace($publisher) -and
+                        -not [string]::IsNullOrWhiteSpace($sigInfo.SignedDisplay) -and
+                        $sigInfo.SignedDisplay -notin @('N/A', 'Not found', 'Unsigned', 'Unknown')) {
+                        $publisher = [string]$sigInfo.SignedDisplay
+                    }
+                } elseif (-not $deviation.IsDeviated) {
+                    # Trusted Windows default even when bare-name resolution is quirky.
+                    $targetExists = $true
+                    $isSigned = $true
+                    $publisher = 'Microsoft Corporation'
+                    if ($name -eq 'Shell') {
+                        if (Test-OfflineRegistrySessionActive) {
+                            $driveRoot = Get-WinlogonEvaluationSystemRoot
+                            $resolvedPath = Join-Path $driveRoot 'Windows\explorer.exe'
+                        } else {
+                            $resolvedPath = Join-Path $env:SystemRoot 'explorer.exe'
+                        }
+                    }
+                }
+            }
+
+            # Non-deviant Winlogon defaults are Windows plumbing for audit purposes.
+            if (-not $deviation.IsDeviated) {
+                $isSigned = $true
+                if ([string]::IsNullOrWhiteSpace($publisher)) {
+                    $publisher = 'Microsoft Corporation'
+                }
+            }
+
             $entries.Add([PSCustomObject]@{
                 Name                    = $name
                 SourceGroup             = $winlogonContext.SourceGroup
                 Command                 = $displayValue
-                ResolvedPath            = $displayValue
-                Publisher               = ''
-                IsSigned                = $false
+                ResolvedPath            = $resolvedPath
+                Publisher               = $publisher
+                IsSigned                = $isSigned
                 RiskBand                = if ($deviation.IsDeviated) { 'Warning' } else { 'Safe' }
                 IsRunOnce               = $false
-                TargetExists            = -not [string]::IsNullOrWhiteSpace($valueText)
+                TargetExists            = $targetExists
                 EntryType               = 'Winlogon'
                 IsDeviated              = [bool]$deviation.IsDeviated
                 DeviationReason         = [string]$deviation.Reason
@@ -891,9 +1066,20 @@ function Get-PostOpStartupEntries {
             $taskId = [string]$row.MsixTaskId
             $publisher = [string]$row.Publisher
             $resolved = Resolve-MsixStartupExecutablePath -PackageFamilyName $packageFamily -TaskId $taskId
-            $resolvedPath = if ($resolved.Exists -and $resolved.ResolvedPath) { $resolved.ResolvedPath } elseif ($resolved.ResolvedPath) { $resolved.ResolvedPath } else { $command }
+            $resolvedPath = if ($resolved.Exists -and $resolved.ResolvedPath) {
+                $resolved.ResolvedPath
+            } elseif ($resolved.ResolvedPath) {
+                $resolved.ResolvedPath
+            } else {
+                $command
+            }
             $sigInfo = Get-MsixStartupSignatureInfo -PackageFamilyName $packageFamily -TaskId $taskId -Publisher $publisher
             $isSigned = [bool]$sigInfo.IsSigned
+            # Package publisher / known install: treat ACL-locked WindowsApps paths as present for audit.
+            $targetExists = [bool]$resolved.Exists
+            if (-not $targetExists -and $isSigned -and -not [string]::IsNullOrWhiteSpace($resolvedPath)) {
+                $targetExists = $true
+            }
             $risk = Get-EntryRisk -Publisher $publisher -FilePath $resolvedPath -IsSigned $isSigned -IsCritical:$false
             $entries.Add([PSCustomObject]@{
                 Name         = [string]$row.Name
@@ -904,26 +1090,93 @@ function Get-PostOpStartupEntries {
                 IsSigned     = $isSigned
                 RiskBand     = $risk.Band
                 IsRunOnce    = $false
-                TargetExists = [bool]$resolved.Exists
+                TargetExists = $targetExists
                 EntryType    = 'MsixStartupTask'
             }) | Out-Null
         }
 
         foreach ($row in @(Get-StartupScheduledTaskRows -IncludeWindowsScheduledTasks:$false)) {
             $command = [string]$row.FilePath
-            $target = Resolve-StartupTarget -Command $command
-            $resolved = $target.ResolvedPath
-            $risk = Get-EntryRisk -Publisher '' -FilePath $resolved -IsSigned:$false -IsCritical:$false
+            $analysisPath = if (-not [string]::IsNullOrWhiteSpace([string]$row.AnalysisFilePath)) {
+                [string]$row.AnalysisFilePath
+            } else {
+                ''
+            }
+            $actionKind = if ($row.ContainsKey('TaskActionKind')) { [string]$row.TaskActionKind } else { '' }
+            $comClassId = [string]$row.Clsid
+
+            if ([string]::IsNullOrWhiteSpace($analysisPath) -and $actionKind -eq 'Com' -and -not [string]::IsNullOrWhiteSpace($comClassId)) {
+                $comResolved = Resolve-ComHandlerServerPath -ClassId $comClassId
+                if ($comResolved.Exists) {
+                    $analysisPath = [string]$comResolved.ServerPath
+                }
+            }
+
+            if ([string]::IsNullOrWhiteSpace($analysisPath)) {
+                $analysisPath = $command
+            }
+
+            # Prefer the task Execute / COM server path for signature checks; fall back to the full command line.
+            $target = Resolve-StartupTarget -Command $analysisPath
+            if (-not $target.Exists -and -not [string]::IsNullOrWhiteSpace($command) -and $command -ne $analysisPath) {
+                $target = Resolve-StartupTarget -Command $command
+            }
+
+            $resolved = [string]$target.ResolvedPath
+            $sigProbe = if ($target.Exists -and -not [string]::IsNullOrWhiteSpace($resolved)) {
+                $resolved
+            } else {
+                $analysisPath
+            }
+
+            $isWindowsPlumbing = Test-IsWindowsPlumbingScheduledTaskPath -TaskPath ([string]$row.ActionStatePayload)
+            $isComOrNone = $actionKind -in @('Com', 'None') -or $command -match '\(COM\b'
+
+            if (-not $target.Exists -and $isComOrNone -and $isWindowsPlumbing) {
+                $isSigned = $true
+                $publisher = 'Microsoft Corporation'
+                $risk = Get-EntryRisk -Publisher $publisher -FilePath 'C:\Windows\System32\' -IsSigned $true -IsCritical:$true
+                $entries.Add([PSCustomObject]@{
+                    Name         = [string]$row.Name
+                    SourceGroup  = 'Scheduled Task (logon/boot)'
+                    Command      = $command
+                    ResolvedPath = if (-not [string]::IsNullOrWhiteSpace($comClassId)) { "COM $comClassId" } else { $command }
+                    Publisher    = $publisher
+                    IsSigned     = $isSigned
+                    RiskBand     = 'Safe'
+                    IsRunOnce    = $false
+                    TargetExists = $true
+                    EntryType    = 'ScheduledTask'
+                }) | Out-Null
+                continue
+            }
+
+            $sigInfo = Get-FileSignatureInfo -FilePath $sigProbe
+            $isSigned = [bool]$sigInfo.IsSigned
+
+            $publisher = ''
+            if ($target.Exists -and -not [string]::IsNullOrWhiteSpace($resolved)) {
+                try {
+                    $publisher = [string](Get-Item -LiteralPath $resolved -ErrorAction SilentlyContinue).VersionInfo.CompanyName
+                } catch { }
+            }
+            if ([string]::IsNullOrWhiteSpace($publisher) -and
+                -not [string]::IsNullOrWhiteSpace($sigInfo.SignedDisplay) -and
+                $sigInfo.SignedDisplay -notin @('N/A', 'Not found', 'Unsigned', 'Unknown', 'Hash mismatch', 'N/A (COM)', 'Windows COM')) {
+                $publisher = [string]$sigInfo.SignedDisplay
+            }
+
+            $risk = Get-EntryRisk -Publisher $publisher -FilePath $resolved -IsSigned $isSigned -IsCritical:$false
             $entries.Add([PSCustomObject]@{
                 Name         = [string]$row.Name
                 SourceGroup  = 'Scheduled Task (logon/boot)'
                 Command      = $command
-                ResolvedPath = if ($resolved) { $resolved } else { $command }
-                Publisher    = ''
-                IsSigned     = $false
+                ResolvedPath = if (-not [string]::IsNullOrWhiteSpace($resolved)) { $resolved } else { $command }
+                Publisher    = $publisher
+                IsSigned     = $isSigned
                 RiskBand     = $risk.Band
                 IsRunOnce    = $false
-                TargetExists = $target.Exists
+                TargetExists = [bool]$target.Exists
                 EntryType    = 'ScheduledTask'
             }) | Out-Null
         }

@@ -1,6 +1,49 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-15
+**Last updated:** 2026-07-16
+
+## 2026-07-16 — System Health Check UX, audit tuning, lab ops
+
+### System Health Check — findings order + startup audit layout
+
+- **Findings sort** — `Config/HealthCheckCatalog.json` adds `findingsDisplayOrder`; GUI (`SystemHealthCheckViewModel`) sorts the results Findings list by that rank (only selected checks appear, in catalog order).
+- **Catalog trim** — Removed duplicate `audit_system_info` from System Audit category and presets; use Quick Vitals `system_info` instead. `wont_boot` preset uses `system_info`.
+- **Startup Entry Audit panel** — Deduped presentation: summary counts (`N audited · M need review · K verified`), **NEEDS REVIEW** full cards, **VERIFIED** compact lines; no duplicate “Items to address” + “Detailed Results” stacks. `Test-StartupAuditReviewUx.ps1`.
+
+### Scheduled Tasks Audit — false-positive reduction + COM handlers
+
+- **Problem** — Microsoft OneDrive under AppData flagged as suspicious; COM-only actions (e.g. SoftLanding) showed “unknown action” and Warn.
+- **Fix** — `SecurityAuditChecks.ps1`: `Test-ScheduledTaskExecuteSuspicious`, `Test-ScheduledTaskComActionSuspicious`, `Test-ScheduledTaskSuspicious`; dot-sources `StartupScheduledTask.ps1` for COM resolution. Microsoft-signed paths under AppData (OneDrive) pass. COM actions display `COM {guid} -> path` via `Get-ScheduledTaskActionDisplay` in `Toolkit.Core.psm1`. Output adds **Review Reason** column.
+- **Verify** — System Health Check → Scheduled Tasks Audit: OneDrive tasks not flagged; SoftLanding COM tasks show resolved handler path.
+- **Tests** — `Scripts/Tests/Test-ScheduledTasksAuditSuspicion.ps1` (25 assertions).
+
+### Windows Update stack — Manual wuauserv is healthy
+
+- **Problem** — Default Win10/11 has `wuauserv` **Manual** + idle **Stopped**; health check always **Warn**.
+- **Fix** — `Get-WindowsUpdateStackStatus` in `Toolkit.Core.psm1`: **Pass** when no service is **Disabled**, `UsoSvc` is **Automatic**, and `wuauserv` is **Manual** or **Automatic** (idle Stopped OK). **Warn** if `UsoSvc` not Automatic or `wuauserv` has unexpected start type. Post-Op **Restore Default Services** still sets `wuauserv` to **Automatic** when operators want that posture.
+- **Tests** — `Scripts/Tests/Test-WindowsUpdateStackStatus.ps1`.
+- **Supersedes** — 2026-06-16 note below that Warned on Manual `wuauserv`.
+
+### Startup Manager — Drivers tab signature paths
+
+- **Problem** — Drivers tab showed **Not Found** / bad **Signed** for registry ImagePath values like `\??\C:\WINDOWS\system32\...` and relative `system32\drivers\...`.
+- **Fix** — `StartupRisk.ps1` / `StartupManager.ps1` normalize driver ImagePath before existence and Authenticode checks (same normalization family as User logon targets).
+
+### Uninstall Manager — quieter uninstall + leftover cleanup
+
+- **Uninstall** — Prefers `QuietUninstallString`; normalizes MSI product codes to `msiexec /x {GUID} /qn`; post-exit ARP/folder check with optional safe leftover cleanup.
+- **Force Remove** — Optional install-folder delete + confirmed leftover scan under Program Files / ProgramData.
+- **Tests** — `Scripts/Tests/Test-UninstallManager.ps1` (SelfTest action). User guide updated.
+
+### Hyper-V infect lab — push + C06 inject
+
+- **Push** — `D:\Hyper-V\w11-infect-lab\Push-CDE-Toolkit.ps1` stages runtime-only toolkit (~250 MB zip; excludes Deploy/WinPE/App trees), copies to guest `C:\CDE`, creates Public Desktop `CDE.lnk`. Hyper-V needs elevation: `-StageOnly` from normal shell, then elevated `-SkipStage` (or `_Run-PushElevated.ps1`). Success: log `HV_CDE_PUSH_OK`, `cde-push-exit.txt` = `0`.
+- **Inject C06** — `Inject-C06.ps1` runs guest `Invoke-CdeBenchComplexPack.ps1 -Action Inject -ScenarioId C06 -SafeOnly` via PowerShell Direct. Success: `HV_C06_INJECT_OK` in `c06-inject-log.txt`.
+- **Cursor rule** — `.cursor/rules/push-cde-w11-infect-lab.mdc` (mandatory push workflow for agents).
+
+### Publish
+
+- Multiple canonical publishes this session after script/GUI changes. Launch `Toolkit\CDE.exe` (not `App\ToolkitGUI\bin\...`) for field validation.
 
 ## 2026-07-15 — CDE toolkit code review (Pass 1–3)
 
@@ -889,7 +932,7 @@ Operators reported Windows Update appearing **disabled** after reboot/cold start
 
 ### What changed
 
-- **`Scripts/Core/HealthChecks.ps1`** — `Invoke-HealthCheck_windows_update_service` now collects the full update stack via `Get-WindowsUpdateStackSnapshot`, evaluates with `Get-WindowsUpdateStackStatus`, and writes a formatted table to step `Output` (`Format-WindowsUpdateStack`). **Pass** when startup types are healthy even if core services are idle **Stopped**; **Fail** only when a service **StartType** is **Disabled**; **Warn** if `wuauserv` is **Manual**.
+- **`Scripts/Core/HealthChecks.ps1`** — `Invoke-HealthCheck_windows_update_service` now collects the full update stack via `Get-WindowsUpdateStackSnapshot`, evaluates with `Get-WindowsUpdateStackStatus`, and writes a formatted table to step `Output` (`Format-WindowsUpdateStack`). **Pass** when startup types are healthy even if core services are idle **Stopped**; **Fail** only when a service **StartType** is **Disabled**. *(2026-07-16: **Warn** on Manual `wuauserv` removed — Manual is a healthy default; see top section.)*
 - **`Scripts/Core/Toolkit.Core.psm1`** — New helpers: `Get-WindowsUpdateStackSnapshot`, `Get-WindowsUpdateStackNote`, `Get-WindowsUpdateStackStatus`, `Format-WindowsUpdateStack` (exported from module).
 - **`Scripts/Workflows/PostOp.ps1`** — `RestoreDefaultServices` sets `wuauserv` to **Automatic** (was **Manual**, which could demote the service after running Post-Op cleanup).
 - **`Config/HealthCheckCatalog.json`** — `windows_update_service` description lists all four services; recommendation title/actions include **Windows Update Repair**.

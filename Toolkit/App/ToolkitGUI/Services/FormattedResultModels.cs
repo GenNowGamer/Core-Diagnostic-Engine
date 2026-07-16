@@ -21,6 +21,8 @@ namespace ToolkitGUI.Services
         public string? Location { get; init; }
         public string? Path { get; init; }
         public string? Notes { get; init; }
+        /// <summary>When true, render as a single compact row instead of a full card.</summary>
+        public bool Compact { get; init; }
     }
 
     internal sealed class FormattedResultSection
@@ -28,6 +30,10 @@ namespace ToolkitGUI.Services
         public string Title { get; init; } = string.Empty;
         public IReadOnlyList<FormattedResultItem> Items { get; init; } = new List<FormattedResultItem>();
         public IReadOnlyList<string> Lines { get; init; } = new List<string>();
+        /// <summary>Prefer compact item rows (e.g. verified startup entries).</summary>
+        public bool UseCompactItems { get; init; }
+        /// <summary>Start collapsed (e.g. verified list when review items exist).</summary>
+        public bool StartsCollapsed { get; init; }
     }
 
     internal sealed class FormattedWorkflowOutput

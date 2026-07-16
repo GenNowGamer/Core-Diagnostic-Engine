@@ -14,6 +14,16 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-07-16)
+
+- **System Health Check** — Findings list sorts by `findingsDisplayOrder` in `Config/HealthCheckCatalog.json`. Removed duplicate `audit_system_info` (use `system_info`). Startup Entry Audit review panel shows each entry once (Needs review cards + compact Verified).
+- **Scheduled Tasks Audit** — Smarter suspicion heuristics (Microsoft-signed AppData paths OK); COM handler resolution for ClassId actions; **Review Reason** column. `Test-ScheduledTasksAuditSuspicion.ps1`.
+- **Windows Update stack** — **Pass** when `wuauserv` is **Manual** or **Automatic** and `UsoSvc` is **Automatic**; idle **Stopped** is normal. `Test-WindowsUpdateStackStatus.ps1`.
+- **Startup Manager** — Drivers tab ImagePath normalization for `\??\` and relative system32 paths before signature lookup.
+- **Uninstall Manager** — Quiet/MSI uninstall preference, leftover detection, optional folder cleanup. `Test-UninstallManager.ps1`.
+- **Hyper-V lab** — Push via `D:\Hyper-V\w11-infect-lab\Push-CDE-Toolkit.ps1`; C06 inject via `Inject-C06.ps1`. Details — `Toolkit\session_handoff.md`.
+- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` after GUI/script changes.
+
 ## Session Update (2026-07-15)
 
 - **Code review Pass 1 & 2 — shipped** — Correctness/security/UX fixes across Startup Manager, CST/Malware glue, workflow elevation, Hijack repair, OS Repair/Fast Fixes, File Manager/Robocopy, Diag & Repair/hardware tests, and work orders/logging. Regression helpers: `Test-StartupManagerCoverage.ps1`, `Test-ToolkitElevation.ps1`, `Test-HijackRepairHelpers.ps1` (also in `Invoke-CdeRegressionSuite.ps1` where wired).
@@ -104,8 +114,8 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 ## Session Update (2026-06-16)
 
 - **Diag & Repair (HW + CST)** — Sidebar **Diag & Repair** (nav `DiagAndRepair`; alias `HardwareDiagnostics`) replaces **Hardware Diagnostics**. **Run All Tests** = CPU → Memory → Storage → CST (`ScanOnly`; Quick = ThreatScan, Extended = FullScan). Separate **CST Scan** toolbar button. Static **Security Scan → Core Security Tool** row in the results table; live CST file path updates in one streaming line via `[CST:PROGRESS]` (no per-file log scroll). Post-scan remediation via shared `CstRemediationService` + `CstFindingsOperatorDialog`. Workflow script filename unchanged: `Scripts/Workflows/HardwareDiagnostics.ps1` (`-ToolName All|CpuTests|MemoryTests|StorageTests|CstScan`). GUI: `DiagAndRepairView`, `DiagAndRepairViewModel`. Regression: `Scripts/Tests/Test-HardwareDiagnosticsCst.ps1`.
-- **Windows Update stack diagnostics** — System Health Check `windows_update_service` (`HealthChecks.ps1`) now reports **`wuauserv`**, **`UsoSvc`**, **`bits`**, and **`WaaSMedicSvc`** with **Status** and **Start Type** in a formatted table (`Format-WindowsUpdateStack` in `Toolkit.Core.psm1`). **Stopped** while idle is **Pass** when startup type is healthy; only **Disabled** startup type fails the check. Clarifies the common confusion between **Stopped** (runtime) and **Disabled** (startup type).
-- **Post-Op Cleanup** — **Restore Default Services** (`PostOp.ps1`) sets `wuauserv` to **Automatic** (was incorrectly **Manual**).
+- **Windows Update stack diagnostics** — System Health Check `windows_update_service` (`HealthChecks.ps1`) now reports **`wuauserv`**, **`UsoSvc`**, **`bits`**, and **`WaaSMedicSvc`** with **Status** and **Start Type** in a formatted table (`Format-WindowsUpdateStack` in `Toolkit.Core.psm1`). **Stopped** while idle is **Pass** when startup type is healthy; only **Disabled** startup type fails the check. Clarifies the common confusion between **Stopped** (runtime) and **Disabled** (startup type). *(2026-07-16: **Manual** `wuauserv` is **Pass** — normal Win10/11 default; `UsoSvc` must be **Automatic**.)*
+- **Post-Op Cleanup** — **Restore Default Services** (`PostOp.ps1`) sets `wuauserv` to **Automatic** (optional operator posture; health check no longer Warns solely because Manual was left in place).
 - **Health check catalog** — `Config/HealthCheckCatalog.json`: System Health Check categories (Quick Vitals, Deep System, System Audit, Security Audits), check ids/labels, presets, recommendations. *(2026-06-18: hardware/Diag & Repair, Storage SMART analyzer, Defender, and CST scan-only removed from catalog — use dedicated sidebar workflows.)* `windows_update_service` lists full WU stack.
 - **Operator** — GUI + script changes: canonical publish `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; relaunch after publish.
 

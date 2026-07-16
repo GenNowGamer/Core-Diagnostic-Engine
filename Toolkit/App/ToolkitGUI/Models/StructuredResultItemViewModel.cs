@@ -29,24 +29,33 @@ namespace ToolkitGUI.Models
     public string DetailNotes { get; init; } = string.Empty;
     public string StatusLabelText { get; init; } = string.Empty;
     public Brush StatusLabelBrush { get; init; } = Brushes.SteelBlue;
+    public bool IsCompactStartupVerified { get; init; }
+    public bool ShowCompactStartupRow => IsCompactStartupVerified;
     public bool ShowRichEntry =>
-      !string.IsNullOrWhiteSpace(EntryLocation)
-      || !string.IsNullOrWhiteSpace(DetailNotes);
+      !IsCompactStartupVerified
+      && (!string.IsNullOrWhiteSpace(EntryLocation) || !string.IsNullOrWhiteSpace(DetailNotes));
     public bool ShowCompactFilePath =>
       !IsStartupReviewItem
+      && !IsCompactStartupVerified
       && !string.IsNullOrWhiteSpace(EntryPath)
       && !ShowRichEntry;
-    public bool ShowStatusLabel => !string.IsNullOrWhiteSpace(StatusLabelText);
+    public bool ShowStatusLabel => !IsCompactStartupVerified && !string.IsNullOrWhiteSpace(StatusLabelText);
     public bool ShowEntryLocation => !string.IsNullOrWhiteSpace(EntryLocation);
     public bool ShowEntryPath => !string.IsNullOrWhiteSpace(EntryPath);
     public bool ShowDetailNotes => !string.IsNullOrWhiteSpace(DetailNotes);
     public Brush SeverityBrush { get; init; } = Brushes.SteelBlue;
     public Brush ClassificationBrush { get; init; } = Brushes.SteelBlue;
     public Brush RiskBandBrush { get; init; } = Brushes.SteelBlue;
-    public bool ShowSeverity => !IsStartupReviewItem && !string.IsNullOrWhiteSpace(Severity);
-    public bool ShowClassification => !IsStartupReviewItem && !string.IsNullOrWhiteSpace(Classification);
-    public bool ShowStartupReviewDetails => IsStartupReviewItem;
-    public bool ShowRiskBand => IsStartupReviewItem && !string.IsNullOrWhiteSpace(RiskBand);
+    public bool ShowSeverity => !IsStartupReviewItem && !IsCompactStartupVerified && !string.IsNullOrWhiteSpace(Severity);
+    public bool ShowClassification => !IsStartupReviewItem && !IsCompactStartupVerified && !string.IsNullOrWhiteSpace(Classification);
+    public bool ShowStartupReviewDetails => IsStartupReviewItem && !IsCompactStartupVerified;
+    public bool ShowRiskBand =>
+      !string.IsNullOrWhiteSpace(RiskBand)
+      && (IsStartupReviewItem || IsCompactStartupVerified);
+    public bool ShowStartupTargetPath =>
+      IsStartupReviewItem && !IsCompactStartupVerified && !string.IsNullOrWhiteSpace(EntryPath);
+    public string CompactStartupSummary =>
+      string.IsNullOrWhiteSpace(StartupLocation) ? Name : $"{Name} · {StartupLocation}";
 
     public string DedupKey =>
       $"{Name}|{Severity}|{Classification}|{EntryPath}".ToLowerInvariant();
@@ -86,7 +95,13 @@ namespace ToolkitGUI.Models
           item.Title,
           item.Location ?? string.Empty,
           ExtractRiskBand(item.Notes),
-          ExtractReviewReason(item.Notes));
+          ExtractReviewReason(item.Notes),
+          item.Path);
+      }
+
+      if (item.Compact && item.Status == FormattedItemStatus.Ok)
+      {
+        return FromStartupVerifiedCompact(item);
       }
 
       var subtitle = item.Subtitle ?? string.Empty;
@@ -117,6 +132,28 @@ namespace ToolkitGUI.Models
         },
         Classification = subtitle,
         SeverityBrush = GetFormattedStatusBrush(item.Status),
+        ClassificationBrush = new SolidColorBrush(Color.FromRgb(0x37, 0x47, 0x5F))
+      };
+    }
+
+    private static StructuredResultItemViewModel FromStartupVerifiedCompact(FormattedResultItem item)
+    {
+      var band = ExtractRiskBand(item.Notes) ?? "Safe";
+      var loc = string.IsNullOrWhiteSpace(item.Location) ? "Unknown location" : item.Location.Trim();
+
+      return new StructuredResultItemViewModel
+      {
+        Name = NormalizeName(item.Title),
+        IsCompactStartupVerified = true,
+        StartupLocation = loc,
+        RiskBand = band,
+        EntryPath = item.Path ?? string.Empty,
+        StatusLabelText = string.IsNullOrWhiteSpace(item.StatusLabel) ? "Verified" : item.StatusLabel,
+        StatusLabelBrush = GetFormattedStatusBrush(FormattedItemStatus.Ok),
+        RiskBandBrush = GetStartupRiskBrush(band),
+        Severity = "OK",
+        Classification = $"{loc}{StartupRiskBandSuffix}{band}",
+        SeverityBrush = GetFormattedStatusBrush(FormattedItemStatus.Ok),
         ClassificationBrush = new SolidColorBrush(Color.FromRgb(0x37, 0x47, 0x5F))
       };
     }
@@ -259,7 +296,8 @@ namespace ToolkitGUI.Models
       string? name,
       string? location,
       string? riskBand,
-      string? reasons = null)
+      string? reasons = null,
+      string? path = null)
     {
       var normalizedName = NormalizeName(name);
       if (string.IsNullOrWhiteSpace(normalizedName))
@@ -270,6 +308,7 @@ namespace ToolkitGUI.Models
       var band = string.IsNullOrWhiteSpace(riskBand) ? "Caution" : riskBand.Trim();
       var loc = string.IsNullOrWhiteSpace(location) ? "Unknown location" : location.Trim();
       var reviewReason = FormatStartupReviewSeverity(reasons);
+      var entryPath = string.IsNullOrWhiteSpace(path) ? string.Empty : path.Trim();
 
       return new StructuredResultItemViewModel
       {
@@ -278,6 +317,9 @@ namespace ToolkitGUI.Models
         ReviewReason = reviewReason,
         StartupLocation = loc,
         RiskBand = band,
+        EntryPath = entryPath,
+        StatusLabelText = "Needs review",
+        StatusLabelBrush = GetFormattedStatusBrush(FormattedItemStatus.Review),
         Severity = string.Empty,
         Classification = $"{loc}{StartupRiskBandSuffix}{band}",
         SeverityBrush = GetStartupReviewSeverityBrush(reasons, band),

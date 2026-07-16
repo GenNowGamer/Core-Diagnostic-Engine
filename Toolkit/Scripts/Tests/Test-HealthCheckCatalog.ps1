@@ -115,6 +115,23 @@ foreach ($presetName in @($catalog.presets.PSObject.Properties.Name)) {
     }
 }
 
+$displayOrder = @($catalog.findingsDisplayOrder)
+if ($displayOrder.Count -eq 0) {
+    Write-Error 'Catalog findingsDisplayOrder is missing or empty'
+    exit 1
+}
+foreach ($id in $displayOrder) {
+    if (-not $catalogIds.Contains([string]$id)) {
+        Write-Error "findingsDisplayOrder references unknown id: $id"
+        exit 1
+    }
+}
+$missingFromOrder = @($catalogIds | Where-Object { $displayOrder -notcontains $_ })
+if ($missingFromOrder.Count -gt 0) {
+    Write-Error ("Catalog check ids missing from findingsDisplayOrder: {0}" -f ($missingFromOrder -join ', '))
+    exit 1
+}
+
 $requiredSymptomPresets = @('slow_pc', 'suspected_malware', 'tech_support_scam', 'network_issues', 'wont_boot')
 foreach ($presetName in $requiredSymptomPresets) {
     if (-not $catalog.presets.PSObject.Properties[$presetName]) {

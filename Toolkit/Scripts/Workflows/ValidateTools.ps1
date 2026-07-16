@@ -21,7 +21,7 @@ if ([string]::IsNullOrWhiteSpace($DataRoot)) {
 }
 
 $saChecks = @(
-    @{ CheckId = 'audit_system_info'; StepName = 'SystemInfo' }
+    @{ CheckId = 'system_info'; StepName = 'SystemInfo' }
     @{ CheckId = 'audit_installed_software'; StepName = 'InstalledSoftware' }
     @{ CheckId = 'audit_drivers'; StepName = 'Drivers' }
     @{ CheckId = 'audit_pnp_devices'; StepName = 'PnPDevices' }

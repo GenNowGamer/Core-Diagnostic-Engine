@@ -1,7 +1,17 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-15  
+**Last updated:** 2026-07-16  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-16 update — Health-check UX, audit false positives, lab push/inject
+
+- **System Health Check** — Findings list sorts by catalog `findingsDisplayOrder` (Activation → Remote Access). Removed duplicate `audit_system_info` check (use Quick Vitals `system_info`). Startup Entry Audit review panel deduped (Needs review cards + compact Verified list; no triple-stacked entries).
+- **Scheduled Tasks Audit** — Replaced blunt AppData/ProgramData regex with path/signing heuristics; COM actions resolve CLSID → server path (SoftLanding-style handlers no longer “unknown action”). **Review Reason** column in output. Tests: `Test-ScheduledTasksAuditSuspicion.ps1`.
+- **Windows Update stack** — `wuauserv` **Manual** is **Pass** on Win10/11 (on-demand default); **Warn** only when `UsoSvc` is not Automatic or `wuauserv` has an unexpected start type. **Fail** when any service is **Disabled**. Tests: `Test-WindowsUpdateStackStatus.ps1`.
+- **Startup Manager** — Drivers tab normalizes `\??\` and relative `system32\...` ImagePath values before signature lookup (same class of fix as User logon).
+- **Uninstall Manager** — Quiet/MSI uninstall preference, post-uninstall leftover detection, optional install-folder cleanup on Force Remove. User guide `07_Maintenance_Utilities.md`.
+- **Hyper-V infect lab** — Canonical toolkit push: `D:\Hyper-V\w11-infect-lab\Push-CDE-Toolkit.ps1` → guest `C:\CDE` (+ Desktop `CDE.lnk`). BenchLab C06 safe inject: `Inject-C06.ps1`. Cursor rule: `.cursor\rules\push-cde-w11-infect-lab.mdc`.
+- **Full notes** — `Toolkit\session_handoff.md`; lab `D:\Hyper-V\w11-infect-lab\README.md`.
 
 ## 2026-07-15 update — Code review Pass 1–2 shipped; Pass 3 deferred
 

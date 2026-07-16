@@ -305,8 +305,10 @@ function Get-MsixPackagePublisherSignatureInfo {
     $publisherKnown = -not [string]::IsNullOrWhiteSpace($Publisher) -and $Publisher -ne 'Unknown'
     $signedDisplay = if ($publisherKnown) { "Package ($Publisher)" } else { 'Not found' }
 
+    # Appx package identity is a verified trust signal when the package EXE is inaccessible
+    # (common under locked WindowsApps). Treat known publishers as signed for audit/risk.
     return [PSCustomObject]@{
-        IsSigned         = $false
+        IsSigned         = $publisherKnown
         SignedBy         = if ($publisherKnown) { $Publisher } else { '' }
         SignedDisplay    = $signedDisplay
         SignatureStatus  = if ($publisherKnown) { 'PackagePublisher' } else { '' }

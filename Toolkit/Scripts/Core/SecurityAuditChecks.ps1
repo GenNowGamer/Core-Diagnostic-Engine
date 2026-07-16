@@ -7,8 +7,10 @@
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $MyInvocation.MyCommand.Path }
 $WorkflowsDir = Join-Path $ScriptDir '..\Workflows'
 $StartupRiskScript = Join-Path $ScriptDir 'StartupRisk.ps1'
+$StartupScheduledTaskScript = Join-Path $ScriptDir 'StartupScheduledTask.ps1'
 $HijackHelpersScript = Join-Path $ScriptDir 'HijackRepairHelpers.ps1'
 if (Test-Path $StartupRiskScript) { . $StartupRiskScript }
+if (Test-Path $StartupScheduledTaskScript) { . $StartupScheduledTaskScript }
 if (Test-Path $HijackHelpersScript) { . $HijackHelpersScript }
 function Resolve-CoreSecurityToolPath {
     $candidates = @()
@@ -946,6 +948,349 @@ function Invoke-CstRulesUpdate {
     }
 }
 
+function Test-IsTrustedScheduledTaskPublisher {
+    <#
+    .SYNOPSIS True when Authenticode subject is a well-known OS/browser vendor.
+    #>
+    param([string]$SignedBy)
+
+    if ([string]::IsNullOrWhiteSpace($SignedBy)) { return $false }
+    return [bool]($SignedBy -match '(?i)(Microsoft Corporation|Microsoft Windows|Microsoft OneDrive|Google LLC|Google Inc|Mozilla Corporation)')
+}
+
+function Test-IsScheduledTaskScriptExecute {
+    param([string]$Execute)
+
+    if ([string]::IsNullOrWhiteSpace($Execute)) { return $false }
+    return [bool]($Execute -match '(?i)\.(cmd|bat|vbs|js|jse|wsf|wsh|ps1|psc1|scr|hta)(\s|"|$)')
+}
+
+function Test-IsHighRiskScheduledTaskPath {
+    <#
+    .SYNOPSIS Temp/Downloads/Public — always review-worthy regardless of publisher.
+    #>
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    return [bool]($Path -match '(?i)(\\Temp\\|\\Tmp\\|\\Downloads\\|AppData\\Local\\Temp\\|\\Users\\Public\\)')
+}
+
+function Test-IsUserWritableScheduledTaskPath {
+    <#
+    .SYNOPSIS AppData / ProgramData / per-user profile paths (not Program Files).
+    #>
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    if ($Path -match '(?i)\\(Program Files|Program Files \(x86\)|Windows)\\') { return $false }
+    return [bool]($Path -match '(?i)(\\AppData\\|\\ProgramData\\|\\Users\\[^\\]+\\)')
+}
+
+function Test-ScheduledTaskExecuteSuspicious {
+    <#
+    .SYNOPSIS
+      Decide whether a scheduled-task Execute path warrants review.
+      Pass ResolvedPath / TargetExists / IsSigned / SignedBy to inject resolution (unit tests).
+    #>
+    param(
+        [string]$Execute,
+        [string]$Arguments = '',
+        [string]$TaskName = '',
+        [string]$ResolvedPath,
+        [bool]$TargetExists,
+        [bool]$IsSigned,
+        [string]$SignedBy
+    )
+
+    $reasons = [System.Collections.Generic.List[string]]::new()
+
+    if ([string]::IsNullOrWhiteSpace($Execute)) {
+        $reasons.Add('unknown action') | Out-Null
+        return [PSCustomObject]@{
+            IsSuspicious = $true
+            Reasons      = @($reasons)
+            ResolvedPath = ''
+        }
+    }
+
+    $expanded = [Environment]::ExpandEnvironmentVariables($Execute.Trim().Trim('"'))
+    $pathForChecks = $expanded
+
+    $exists = $false
+    $signed = $false
+    $signedByValue = ''
+
+    $useInjected = $PSBoundParameters.ContainsKey('ResolvedPath') `
+        -or $PSBoundParameters.ContainsKey('TargetExists') `
+        -or $PSBoundParameters.ContainsKey('IsSigned') `
+        -or $PSBoundParameters.ContainsKey('SignedBy')
+
+    if ($useInjected) {
+        if ($PSBoundParameters.ContainsKey('ResolvedPath') -and -not [string]::IsNullOrWhiteSpace($ResolvedPath)) {
+            $pathForChecks = $ResolvedPath
+        }
+        $exists = if ($PSBoundParameters.ContainsKey('TargetExists')) { $TargetExists } else { $true }
+        $signed = if ($PSBoundParameters.ContainsKey('IsSigned')) { $IsSigned } else { $false }
+        $signedByValue = if ($PSBoundParameters.ContainsKey('SignedBy')) { [string]$SignedBy } else { '' }
+    }
+    else {
+        try {
+            if (Get-Command -Name Resolve-StartupTarget -ErrorAction SilentlyContinue) {
+                $target = Resolve-StartupTarget -Command $expanded
+                if (-not [string]::IsNullOrWhiteSpace([string]$target.ResolvedPath)) {
+                    $pathForChecks = [string]$target.ResolvedPath
+                }
+                $exists = [bool]$target.Exists
+            }
+            else {
+                $exists = Test-Path -LiteralPath $expanded -PathType Leaf -ErrorAction SilentlyContinue
+                if ($exists) { $pathForChecks = $expanded }
+            }
+
+            if ($exists -and (Get-Command -Name Get-FileSignatureInfo -ErrorAction SilentlyContinue)) {
+                $sig = Get-FileSignatureInfo -FilePath $pathForChecks
+                $signed = [bool]$sig.IsSigned
+                $signedByValue = if (-not [string]::IsNullOrWhiteSpace([string]$sig.SignedBy)) {
+                    [string]$sig.SignedBy
+                } else {
+                    [string]$sig.SignedDisplay
+                }
+            }
+        }
+        catch {
+            # Fall through with best-effort path string
+        }
+    }
+
+    if (Test-IsScheduledTaskScriptExecute -Execute $expanded) {
+        $reasons.Add('script action') | Out-Null
+    }
+
+    if (Test-IsHighRiskScheduledTaskPath -Path $pathForChecks) {
+        $reasons.Add('risky path') | Out-Null
+    }
+    elseif (Test-IsUserWritableScheduledTaskPath -Path $pathForChecks) {
+        if (-not $exists) {
+            $reasons.Add('missing target in user-writable path') | Out-Null
+        }
+        elseif (-not $signed) {
+            $reasons.Add('unsigned in user-writable path') | Out-Null
+        }
+        elseif (-not (Test-IsTrustedScheduledTaskPublisher -SignedBy $signedByValue)) {
+            $reasons.Add('untrusted publisher in user-writable path') | Out-Null
+        }
+        # else: Microsoft/Google/Mozilla-signed under AppData (e.g. OneDrive) - not suspicious
+    }
+
+    return [PSCustomObject]@{
+        IsSuspicious = ($reasons.Count -gt 0)
+        Reasons      = @($reasons)
+        ResolvedPath = $pathForChecks
+    }
+}
+
+function Test-ScheduledTaskComActionSuspicious {
+    <#
+    .SYNOPSIS
+      Evaluate a COM-handler scheduled-task action (ClassId -> Inproc/LocalServer32).
+      Inject ResolvedServerPath / TargetExists / IsSigned / SignedBy for unit tests.
+    #>
+    param(
+        [string]$ClassId,
+        [string]$ResolvedServerPath,
+        [bool]$TargetExists,
+        [bool]$IsSigned,
+        [string]$SignedBy
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ClassId)) {
+        return [PSCustomObject]@{
+            IsSuspicious = $true
+            Reasons      = @('unknown action')
+            ResolvedPath = ''
+            ClassId      = ''
+        }
+    }
+
+    $serverPath = ''
+    $exists = $false
+    $signed = $false
+    $signedByValue = ''
+
+    $useInjected = $PSBoundParameters.ContainsKey('ResolvedServerPath') `
+        -or $PSBoundParameters.ContainsKey('TargetExists') `
+        -or $PSBoundParameters.ContainsKey('IsSigned') `
+        -or $PSBoundParameters.ContainsKey('SignedBy')
+
+    if ($useInjected) {
+        $serverPath = if ($PSBoundParameters.ContainsKey('ResolvedServerPath')) { [string]$ResolvedServerPath } else { '' }
+        $exists = if ($PSBoundParameters.ContainsKey('TargetExists')) { $TargetExists } else { $false }
+        $signed = if ($PSBoundParameters.ContainsKey('IsSigned')) { $IsSigned } else { $false }
+        $signedByValue = if ($PSBoundParameters.ContainsKey('SignedBy')) { [string]$SignedBy } else { '' }
+    }
+    else {
+        if (-not (Get-Command -Name Resolve-ComHandlerServerPath -ErrorAction SilentlyContinue)) {
+            return [PSCustomObject]@{
+                IsSuspicious = $true
+                Reasons      = @('unresolved COM handler')
+                ResolvedPath = ''
+                ClassId      = $ClassId
+            }
+        }
+
+        $com = Resolve-ComHandlerServerPath -ClassId $ClassId
+        $serverPath = if ($com) { [string]$com.ServerPath } else { '' }
+        $exists = if ($com) { [bool]$com.Exists } else { $false }
+
+        if ($exists -and -not [string]::IsNullOrWhiteSpace($serverPath) `
+                -and (Get-Command -Name Get-FileSignatureInfo -ErrorAction SilentlyContinue)) {
+            try {
+                $sig = Get-FileSignatureInfo -FilePath $serverPath
+                $signed = [bool]$sig.IsSigned
+                $signedByValue = if (-not [string]::IsNullOrWhiteSpace([string]$sig.SignedBy)) {
+                    [string]$sig.SignedBy
+                } else {
+                    [string]$sig.SignedDisplay
+                }
+            }
+            catch { }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($serverPath)) {
+        return [PSCustomObject]@{
+            IsSuspicious = $true
+            Reasons      = @('unresolved COM handler')
+            ResolvedPath = ''
+            ClassId      = $ClassId
+        }
+    }
+
+    # Reuse Exec path heuristics against the COM server binary/DLL.
+    $execArgs = @{
+        Execute      = $serverPath
+        ResolvedPath = $serverPath
+        TargetExists = $exists
+        IsSigned     = $signed
+        SignedBy     = $signedByValue
+    }
+    $assessment = Test-ScheduledTaskExecuteSuspicious @execArgs
+
+    return [PSCustomObject]@{
+        IsSuspicious = [bool]$assessment.IsSuspicious
+        Reasons      = @($assessment.Reasons)
+        ResolvedPath = [string]$assessment.ResolvedPath
+        ClassId      = $ClassId
+    }
+}
+
+function Test-ScheduledTaskSuspicious {
+    <#
+    .SYNOPSIS Evaluate all actions on a scheduled task object (Exec + COM).
+    #>
+    param(
+        [Parameter(Mandatory)]$Task
+    )
+
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    $actions = @()
+    try {
+        $actions = @($Task.Actions)
+    }
+    catch {
+        return [PSCustomObject]@{
+            IsSuspicious = $true
+            Reasons      = @('unreadable actions')
+        }
+    }
+
+    if ($actions.Count -eq 0) {
+        return [PSCustomObject]@{
+            IsSuspicious = $true
+            Reasons      = @('no actions')
+        }
+    }
+
+    foreach ($action in $actions) {
+        try {
+            $actionKind = 'Exec'
+            if (Get-Command -Name Get-ScheduledTaskActionKind -ErrorAction SilentlyContinue) {
+                $actionKind = Get-ScheduledTaskActionKind -Action $action
+            }
+            else {
+                $exeProbe = ''
+                try {
+                    $exeProp = $action.PSObject.Properties['Execute']
+                    $exeProbe = if ($exeProp) { [string]$exeProp.Value } else { '' }
+                } catch { }
+                $classProbe = ''
+                try {
+                    $cidProp = $action.PSObject.Properties['ClassId']
+                    $classProbe = if ($cidProp) { [string]$cidProp.Value } else { '' }
+                } catch { }
+                if ([string]::IsNullOrWhiteSpace($exeProbe) -and -not [string]::IsNullOrWhiteSpace($classProbe)) {
+                    $actionKind = 'Com'
+                }
+                elseif ([string]::IsNullOrWhiteSpace($exeProbe) -and [string]::IsNullOrWhiteSpace($classProbe)) {
+                    $actionKind = 'None'
+                }
+            }
+
+            if ($actionKind -eq 'Com') {
+                $classId = ''
+                if (Get-Command -Name Get-ScheduledTaskComClassId -ErrorAction SilentlyContinue) {
+                    $classId = Get-ScheduledTaskComClassId -Action $action
+                }
+                else {
+                    $cidProp = $action.PSObject.Properties['ClassId']
+                    $classId = if ($cidProp) { [string]$cidProp.Value } else { '' }
+                }
+
+                $assessment = Test-ScheduledTaskComActionSuspicious -ClassId $classId
+            }
+            elseif ($actionKind -eq 'None') {
+                $assessment = [PSCustomObject]@{
+                    IsSuspicious = $true
+                    Reasons      = @('unknown action')
+                }
+            }
+            else {
+                $exe = ''
+                $args = ''
+                if (Get-Command -Name Get-ScheduledTaskActionExecute -ErrorAction SilentlyContinue) {
+                    $exe = Get-ScheduledTaskActionExecute -Action $action
+                    $args = Get-ScheduledTaskActionArguments -Action $action
+                }
+                else {
+                    $exeProp = $action.PSObject.Properties['Execute']
+                    $exe = if ($exeProp) { [string]$exeProp.Value } else { '' }
+                    $argProp = $action.PSObject.Properties['Arguments']
+                    $args = if ($argProp) { [string]$argProp.Value } else { '' }
+                }
+
+                $assessment = Test-ScheduledTaskExecuteSuspicious `
+                    -Execute $exe `
+                    -Arguments $args `
+                    -TaskName ([string]$Task.TaskName)
+            }
+
+            foreach ($reason in @($assessment.Reasons)) {
+                if (-not [string]::IsNullOrWhiteSpace($reason) -and -not $reasons.Contains($reason)) {
+                    $reasons.Add($reason) | Out-Null
+                }
+            }
+        }
+        catch {
+            $reasons.Add('unreadable action') | Out-Null
+        }
+    }
+
+    return [PSCustomObject]@{
+        IsSuspicious = ($reasons.Count -gt 0)
+        Reasons      = @($reasons)
+    }
+}
+
 function Invoke-ScheduledTasksAudit {
     param($r)
     if ((Get-EnvironmentMode) -ne 'Windows') {
@@ -966,28 +1311,24 @@ function Invoke-ScheduledTasksAudit {
             }
         }
 
-        $suspect = @($tasks | Where-Object {
-            $flagged = $false
+        $suspect = [System.Collections.Generic.List[object]]::new()
+        foreach ($task in $tasks) {
             try {
-                foreach ($action in @($_.Actions)) {
-                    $exeProp = $action.PSObject.Properties['Execute']
-                    $exe = if ($exeProp) { [string]$exeProp.Value } else { '' }
-                    if ($exe -match '(?i)(temp|appdata|roaming|programdata)' -or $exe -match '(?i)\.(cmd|bat|vbs|ps1|scr)(\s|$)') {
-                        $flagged = $true
-                        break
-                    }
+                $assessment = Test-ScheduledTaskSuspicious -Task $task
+                if ($assessment.IsSuspicious) {
+                    $task | Add-Member -NotePropertyName SuspiciousReasons -NotePropertyValue @($assessment.Reasons) -Force
+                    $suspect.Add($task) | Out-Null
                 }
             }
             catch {
-                Write-Log "Skipping scheduled task action review '$($_.TaskName)': $($_.Exception.Message)" -Level Verbose
+                Write-Log "Skipping scheduled task action review '$($task.TaskName)': $($_.Exception.Message)" -Level Verbose
             }
-            $flagged
-        })
-        
-        $formatted = Format-ScheduledTasksList -CustomTasks @($tasks) -SuspiciousTasks $suspect
+        }
+
+        $formatted = Format-ScheduledTasksList -CustomTasks @($tasks) -SuspiciousTasks @($suspect)
         Write-Log $formatted
-        
-        $status = if (@($suspect).Count -gt 0) { 'Warn' } else { 'Pass' }
+
+        $status = if ($suspect.Count -gt 0) { 'Warn' } else { 'Pass' }
         $r.Steps.Add([PSCustomObject]@{ Name='ScheduledTasksAudit'; Status=$status; Output=$formatted })
     } catch {
         $r.Steps.Add([PSCustomObject]@{ Name='ScheduledTasksAudit'; Status='Skip'; Output=$_.Exception.Message })

@@ -1619,49 +1619,277 @@ namespace ToolkitGUI.ViewModels
         {
             if (p == null) return;
 
-            if (string.IsNullOrWhiteSpace(p.UninstallStr))
+            if (!p.HasUninstaller)
             {
                 StatusText = $"No uninstaller registered for {p.Name}. Use Force Remove for orphaned/mask entries.";
                 return;
             }
 
-            StatusText = $"Launching uninstaller for {p.Name}...";
-            var escaped = p.UninstallStr.Replace("'", "''");
-            var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' -Action Uninstall -UninstallStr '{escaped}'");
-            if (!result.Success)
+            var methodHint = string.IsNullOrWhiteSpace(p.UninstallMethod)
+                ? "vendor uninstaller"
+                : p.UninstallMethod;
+            if (!DestructiveActionDialog.Confirm(
+                    "Uninstall Manager",
+                    $"Uninstall \"{p.Name}\"?",
+                    "Runs the preferred uninstall command (QuietUninstallString when available, otherwise quiet MSI, otherwise UninstallString).\n\nMethod: "
+                    + methodHint
+                    + "\n\nAfter it finishes, CDE will check for leftover ARP keys and folders.",
+                    defaultNo: false))
             {
-                StatusText = $"Uninstall failed: {FormatExecError(result)}";
+                StatusText = "Uninstall cancelled";
                 return;
             }
 
-            StatusText = $"Uninstaller launched: {p.Name}";
+            StatusText = $"Uninstalling {p.Name} ({methodHint})...";
+            var uninstallArgs = BuildUninstallArgs(p, "Uninstall", preferQuiet: true, removeInstallFolder: false);
+            var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {uninstallArgs}");
+            if (!result.Success)
+            {
+                StatusText = $"Uninstall failed: {FormatExecError(result)}";
+                await PromptLeftoverCleanupAsync(p, afterFailedUninstall: true);
+                await LoadAsync();
+                return;
+            }
+
+            var action = TryParseUninstallActionResult(result.Output);
+            StatusText = action?.Message ?? $"Uninstaller finished: {p.Name}";
+
+            await PromptLeftoverCleanupAsync(p, afterFailedUninstall: false);
+            await LoadAsync();
         }
 
         private async Task ForceRemoveAsync(InstalledProgram? p)
         {
             if (p == null) return;
 
+            var hasInstallFolder = !string.IsNullOrWhiteSpace(p.InstallLocation)
+                && Directory.Exists(p.InstallLocation);
+
+            var impact = "Default: deletes the uninstall registry (ARP) key only so the entry disappears from Programs and Features.\n\n"
+                + "This is not a full product wipe. Program files, services, and other registry data may remain.";
+            if (hasInstallFolder)
+            {
+                impact += "\n\nInstall folder on disk:\n" + p.InstallLocation
+                    + "\n\nAfter ARP removal you can optionally delete that folder and review other leftover matches.";
+            }
+
             if (!DestructiveActionDialog.Confirm(
-                    "Uninstall Manager",
+                    "Uninstall Manager — Force Remove",
                     $"Force remove registry entry for \"{p.Name}\"?",
-                    "This deletes the uninstall registry key only. Program files may remain on disk.",
+                    impact,
                     defaultNo: true))
             {
                 StatusText = "Force remove cancelled";
                 return;
             }
 
-            var escaped = p.UninstallKey.Replace("'", "''");
-            var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' -Action ForceRemove -UninstallKey '{escaped}'");
+            var removeFolder = false;
+            if (hasInstallFolder)
+            {
+                var folderChoice = MessageBox.Show(
+                    "ARP key will be removed.\n\nAlso delete the install folder?\n\n"
+                    + p.InstallLocation
+                    + "\n\nYes = ARP key + install folder (deep clean for this path)\n"
+                    + "No = ARP key only\n"
+                    + "Cancel = abort",
+                    "Uninstall Manager — install folder?",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question,
+                    MessageBoxResult.No);
+
+                if (folderChoice == MessageBoxResult.Cancel)
+                {
+                    StatusText = "Force remove cancelled";
+                    return;
+                }
+
+                removeFolder = folderChoice == MessageBoxResult.Yes;
+            }
+
+            StatusText = removeFolder
+                ? $"Force removing {p.Name} (ARP + install folder)..."
+                : $"Force removing ARP entry for {p.Name}...";
+
+            var forceArgs = BuildUninstallArgs(p, "ForceRemove", preferQuiet: false, removeInstallFolder: removeFolder);
+            var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {forceArgs}");
             if (!result.Success)
             {
                 StatusText = $"Force remove failed: {FormatExecError(result)}";
                 return;
             }
 
-            Programs.Remove(p);
-            FilteredPrograms.Remove(p);
-            StatusText = $"Force removed: {p.Name}";
+            var action = TryParseUninstallActionResult(result.Output);
+            StatusText = action?.Message ?? $"Force removed: {p.Name}";
+
+            // Light leftover scan (name matches) — confirm before deleting anything else.
+            await PromptLeftoverCleanupAsync(p, afterFailedUninstall: false, skipInstallFolderAlreadyRemoved: removeFolder);
+            await LoadAsync();
+        }
+
+        private static string BuildUninstallArgs(
+            InstalledProgram p,
+            string action,
+            bool preferQuiet,
+            bool removeInstallFolder)
+        {
+            var parts = new List<string>
+            {
+                $"-Action {action}",
+                $"-UninstallKey '{EscapePs(p.UninstallKey)}'",
+                $"-UninstallStr '{EscapePs(p.UninstallStr)}'",
+                $"-QuietUninstallStr '{EscapePs(p.QuietUninstallStr)}'",
+                $"-InstallLocation '{EscapePs(p.InstallLocation)}'",
+                $"-DisplayName '{EscapePs(p.Name)}'",
+                $"-Publisher '{EscapePs(p.Publisher)}'"
+            };
+            if (preferQuiet) parts.Add("-PreferQuiet");
+            if (removeInstallFolder) parts.Add("-RemoveInstallFolder");
+            return string.Join(" ", parts);
+        }
+
+        private static string EscapePs(string? value)
+            => (value ?? string.Empty).Replace("'", "''");
+
+        private static UninstallActionResult? TryParseUninstallActionResult(string? output)
+        {
+            if (string.IsNullOrWhiteSpace(output)) return null;
+            try
+            {
+                var json = ExtractJsonObject(output);
+                if (json == null) return null;
+                return JsonConvert.DeserializeObject<UninstallActionResult>(json);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static UninstallLeftoverReport? TryParseLeftoverReport(string? output)
+        {
+            if (string.IsNullOrWhiteSpace(output)) return null;
+            try
+            {
+                var json = ExtractJsonObject(output) ?? ExtractJsonArrayWrapped(output);
+                if (json == null) return null;
+                return JsonConvert.DeserializeObject<UninstallLeftoverReport>(json);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string? ExtractJsonObject(string output)
+        {
+            var trimmed = output.Trim();
+            var start = trimmed.IndexOf('{');
+            var end = trimmed.LastIndexOf('}');
+            if (start < 0 || end <= start) return null;
+            return trimmed.Substring(start, end - start + 1);
+        }
+
+        private static string? ExtractJsonArrayWrapped(string output)
+        {
+            // Leftover report is an object; keep helper for resilience.
+            return ExtractJsonObject(output);
+        }
+
+        private async Task PromptLeftoverCleanupAsync(
+            InstalledProgram p,
+            bool afterFailedUninstall,
+            bool skipInstallFolderAlreadyRemoved = false)
+        {
+            var inspectArgs =
+                $"-Action InspectLeftovers -UninstallKey '{EscapePs(p.UninstallKey)}' "
+                + $"-InstallLocation '{EscapePs(p.InstallLocation)}' "
+                + $"-DisplayName '{EscapePs(p.Name)}' "
+                + $"-Publisher '{EscapePs(p.Publisher)}'";
+
+            var (json, err) = await PowerShellService.QueryAsync($"& '{ScriptPath}' {inspectArgs}");
+            if (!string.IsNullOrEmpty(err) && string.IsNullOrWhiteSpace(json))
+            {
+                StatusText = $"{StatusText} Leftover check failed: {err}";
+                return;
+            }
+
+            var report = TryParseLeftoverReport(json);
+            if (report == null)
+            {
+                return;
+            }
+
+            var folders = (report.LeftoverFolders ?? new List<UninstallLeftoverFolder>())
+                .Where(f => f != null && !string.IsNullOrWhiteSpace(f.Path) && f.Safe)
+                .Where(f => !skipInstallFolderAlreadyRemoved
+                    || !string.Equals(f.Path, p.InstallLocation, StringComparison.OrdinalIgnoreCase))
+                .Where(f => Directory.Exists(f.Path))
+                .GroupBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+
+            if (!report.ArpKeyStillPresent && folders.Count == 0)
+            {
+                StatusText = afterFailedUninstall
+                    ? $"{StatusText} No ARP key or leftover folders found."
+                    : $"Clean uninstall verified for {p.Name} (no ARP key / leftover folders detected).";
+                return;
+            }
+
+            var sb = new StringBuilder();
+            if (afterFailedUninstall)
+                sb.AppendLine("Uninstall did not complete cleanly. Leftover check:");
+            else
+                sb.AppendLine("Leftover check:");
+
+            sb.AppendLine(report.ArpKeyStillPresent
+                ? "• ARP uninstall key is still present"
+                : "• ARP uninstall key is gone");
+
+            if (folders.Count == 0)
+            {
+                sb.AppendLine("• No safe leftover folders matched.");
+                MessageBox.Show(sb.ToString().Trim(), "Uninstall Manager — leftovers",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            sb.AppendLine("• Possible leftover folders:");
+            foreach (var folder in folders.Take(8))
+                sb.AppendLine("  - " + folder.Path + " (" + folder.Reason + ")");
+            if (folders.Count > 8)
+                sb.AppendLine($"  … and {folders.Count - 8} more");
+
+            sb.AppendLine();
+            sb.AppendLine("Delete these leftover folders now?");
+            sb.AppendLine("Only paths under Program Files / Program Files (x86) / ProgramData are eligible.");
+
+            var choice = MessageBox.Show(
+                sb.ToString(),
+                "Uninstall Manager — remove leftovers?",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question,
+                MessageBoxResult.No);
+
+            if (choice != MessageBoxResult.Yes)
+            {
+                StatusText = $"{StatusText} Leftovers left on disk ({folders.Count} folder(s)).";
+                return;
+            }
+
+            var removed = 0;
+            var failed = 0;
+            foreach (var folder in folders)
+            {
+                var removeArgs = $"-Action RemoveFolder -FolderPath '{EscapePs(folder.Path)}'";
+                var removeResult = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {removeArgs}");
+                if (removeResult.Success) removed++;
+                else failed++;
+            }
+
+            StatusText = failed == 0
+                ? $"{StatusText} Removed {removed} leftover folder(s)."
+                : $"{StatusText} Removed {removed} leftover folder(s); {failed} failed.";
         }
 
         private static string FormatExecError(PowerShellExecutionResult result)

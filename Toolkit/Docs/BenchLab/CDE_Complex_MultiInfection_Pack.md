@@ -19,6 +19,7 @@ This pack does **not** ship or execute real malware.
 ## Safety
 
 - Isolated lab VM only (current host lab: local **Hyper-V** `w11-infect-lab` under `D:\Hyper-V\w11-infect-lab\` — Azure `rg-w11-infect-lab` retired 2026-07-14)
+- On the Hyper-V host, **`Inject-C06.ps1`** (same folder as `Push-CDE-Toolkit.ps1`) runs C06 inject on the guest via PowerShell Direct; toolkit must already be at `C:\CDE`
 - Inject requires `-SafeOnly`
 - Prefer admin PowerShell for hosts/service scenarios (C01, C05, C06, C08)
 - Revert snapshot / Hyper-V **checkpoint** after each campaign
