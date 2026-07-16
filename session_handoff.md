@@ -3,7 +3,11 @@
 **Last updated:** 2026-07-16  
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
 
-## 2026-07-16 update — Health-check UX, audit false positives, lab push/inject
+## 2026-07-16 update — Startup services, Post-Op hosts, health checks, lab
+
+- **Startup Manager Services** — Added service-specific risk/suspicion analysis and **RISK** display; **Suspicious only** now filters Services. Eligible suspicious or unprotected third-party services support confirmed **Delete** (`sc.exe delete` after stop); protected Windows hosts/services, drivers, Windows-folder services, and offline sessions remain blocked. Registry metadata fallback works without `CimCmdlets`; blank WPF add-row removed. Tests: `Test-StartupManagerCoverage.ps1` (**64/64**).
+- **Post-Op Restore Hosts File** — Live `%SystemRoot%` targeting, read-only clearing, direct write, elevation environment propagation, and useful failed-step output. Tests: `Test-PostOpCleanup.ps1` (**15/15**).
+- **C06 lab verification** — All injected infection artifacts were removed on `w11-infect-lab`; only inert BenchLab state metadata (`state\complex\C06.json`) remained. Latest service/grid build was canonically published and pushed (`HV_CDE_PUSH_OK`).
 
 - **System Health Check** — Findings list sorts by catalog `findingsDisplayOrder` (Activation → Remote Access). Removed duplicate `audit_system_info` check (use Quick Vitals `system_info`). Startup Entry Audit review panel deduped (Needs review cards + compact Verified list; no triple-stacked entries).
 - **Scheduled Tasks Audit** — Replaced blunt AppData/ProgramData regex with path/signing heuristics; COM actions resolve CLSID → server path (SoftLanding-style handlers no longer “unknown action”). **Review Reason** column in output. Tests: `Test-ScheduledTasksAuditSuspicion.ps1`.

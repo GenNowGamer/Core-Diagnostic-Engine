@@ -54,9 +54,18 @@ function Invoke-ToolkitElevatedRelay {
     $escapedTranscript = $transcriptFile.Replace("'", "''")
     $argSuffix = if ([string]::IsNullOrWhiteSpace($ArgumentString)) { '' } else { " $ArgumentString" }
 
+    $envLines = [System.Collections.Generic.List[string]]::new()
+    foreach ($envName in @('TOOLKIT_ROOT', 'OFFLINE_WINDOWS_ROOT', 'OFFLINE_REGISTRY_LOADED', 'OFFLINE_DRIVERS_LOADED', 'CDE_ELEV_PID_DIR')) {
+        $envValue = [Environment]::GetEnvironmentVariable($envName)
+        if ([string]::IsNullOrWhiteSpace($envValue)) { continue }
+        $escapedValue = $envValue.Replace("'", "''")
+        $envLines.Add("`$env:$envName = '$escapedValue'") | Out-Null
+    }
+    $envPrefix = if ($envLines.Count -gt 0) { ($envLines -join "`n") + "`n" } else { '' }
+
     $inner = @"
 `$ErrorActionPreference = 'Continue'
-`$env:CDE_ELEVATED_PID_FILE = '$escapedPidFile'
+$envPrefix`$env:CDE_ELEVATED_PID_FILE = '$escapedPidFile'
 Start-Transcript -LiteralPath '$escapedTranscript' -Force | Out-Null
 try {
     & '$escapedScript'$argSuffix

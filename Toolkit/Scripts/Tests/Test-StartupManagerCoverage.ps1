@@ -381,6 +381,84 @@ if (-not [string]::IsNullOrWhiteSpace($driversJson)) {
     Assert-True -Name 'No present \SystemRoot\ driver ImagePaths remain Signed=Not found' -Condition ($falseSysRoot.Count -eq 0)
 }
 
+$benchLauncher = Test-ServiceSuspicious `
+    -ServiceName 'CDEBENCHX_C06_CacheSvc' `
+    -DisplayName 'Vendor Cache Host' `
+    -ImagePath 'cmd.exe /c exit 0' `
+    -ResolvedPath (Join-Path $env:SystemRoot 'System32\cmd.exe') `
+    -TargetExists $true `
+    -Publisher 'Microsoft Corporation' `
+    -IsSigned $true `
+    -RiskBand 'Safe' `
+    -HasAnalysisWarning $false `
+    -StartupType 'Manual'
+Assert-True -Name 'Bench launcher service is suspicious' -Condition ([bool]$benchLauncher.IsSuspicious)
+Assert-True -Name 'Bench launcher cites launcher binary' -Condition (
+    ($benchLauncher.Reasons -join '; ') -match 'launcher'
+)
+
+$svchost = Test-ServiceSuspicious `
+    -ServiceName 'wuauserv' `
+    -DisplayName 'Windows Update' `
+    -ImagePath "$env:SystemRoot\System32\svchost.exe -k netsvcs -p" `
+    -ResolvedPath (Join-Path $env:SystemRoot 'System32\svchost.exe') `
+    -TargetExists $true `
+    -Publisher 'Microsoft Corporation' `
+    -IsSigned $true `
+    -RiskBand 'Safe' `
+    -HasAnalysisWarning $false `
+    -StartupType 'Manual'
+Assert-True -Name 'svchost service host is not suspicious' -Condition (-not [bool]$svchost.IsSuspicious)
+
+$tempSvc = Test-ServiceSuspicious `
+    -ServiceName 'DropperSvc' `
+    -DisplayName 'Helper' `
+    -ImagePath "$env:TEMP\dropper.exe" `
+    -ResolvedPath "$env:TEMP\dropper.exe" `
+    -TargetExists $false `
+    -Publisher '' `
+    -IsSigned $false `
+    -RiskBand 'Warning' `
+    -HasAnalysisWarning $false `
+    -StartupType 'Automatic'
+Assert-True -Name 'Missing temp service binary is suspicious' -Condition ([bool]$tempSvc.IsSuspicious)
+
+$benchDelete = Test-ServiceDeletionSupported `
+    -ServiceName 'CDEBENCHX_C06_CacheSvc' `
+    -ImagePath 'cmd.exe /c exit 0' `
+    -ResolvedPath (Join-Path $env:SystemRoot 'System32\cmd.exe') `
+    -Publisher 'Microsoft Corporation' `
+    -IsSigned $true `
+    -IsSuspicious $true `
+    -ServiceType 'Win32OwnProcess'
+Assert-True -Name 'Suspicious bench launcher service can be deleted' -Condition ([bool]$benchDelete.Supported)
+
+$svchostDelete = Test-ServiceDeletionSupported `
+    -ServiceName 'wuauserv' `
+    -ImagePath "$env:SystemRoot\System32\svchost.exe -k netsvcs -p" `
+    -ResolvedPath (Join-Path $env:SystemRoot 'System32\svchost.exe') `
+    -Publisher 'Microsoft Corporation' `
+    -IsSigned $true `
+    -IsSuspicious $false `
+    -ServiceType 'Win32ShareProcess'
+Assert-True -Name 'svchost Windows service cannot be deleted' -Condition (-not [bool]$svchostDelete.Supported)
+
+$thirdPartyDelete = Test-ServiceDeletionSupported `
+    -ServiceName 'VendorHelper' `
+    -ImagePath 'C:\Program Files\Vendor\helper.exe' `
+    -ResolvedPath 'C:\Program Files\Vendor\helper.exe' `
+    -Publisher 'Vendor Inc' `
+    -IsSigned $true `
+    -IsSuspicious $false `
+    -ServiceType 'Win32OwnProcess'
+Assert-True -Name 'Third-party Program Files service can be deleted' -Condition ([bool]$thirdPartyDelete.Supported)
+
+$spoolerKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\Spooler'
+if (Test-Path -LiteralPath $spoolerKey) {
+    $spoolerImage = [string](Get-ItemProperty -LiteralPath $spoolerKey -ErrorAction SilentlyContinue).ImagePath
+    Assert-True -Name 'Registry service ImagePath readable without CIM' -Condition (-not [string]::IsNullOrWhiteSpace($spoolerImage))
+}
+
 Write-Host ''
 Write-Host "Passed: $passed"
 Write-Host "Failed: $($failures.Count)"

@@ -35,6 +35,34 @@ Assert-True -Name 'Hosts restore requires confirmation' -Condition ($unconfirmed
 $hostsPath = Get-PostOpHostsFilePath
 Assert-True -Name 'Hosts path targets system drivers etc' -Condition ($hostsPath -match 'drivers\\etc\\hosts$')
 
+$expectedLiveHosts = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+$previousOffline = $env:OFFLINE_WINDOWS_ROOT
+$coreModule = Join-Path $coreRoot 'Toolkit.Core.psm1'
+try {
+    Import-Module $coreModule -Force -DisableNameChecking
+    $env:OFFLINE_WINDOWS_ROOT = 'C:\'
+    $livePath = Get-PostOpHostsFilePath
+    Assert-True -Name 'Live Windows hosts restore ignores offline attach' -Condition ($livePath -eq $expectedLiveHosts)
+} finally {
+    if ($null -eq $previousOffline) {
+        Remove-Item Env:OFFLINE_WINDOWS_ROOT -ErrorAction SilentlyContinue
+    } else {
+        $env:OFFLINE_WINDOWS_ROOT = $previousOffline
+    }
+}
+
+$readOnlyDir = Join-Path ([IO.Path]::GetTempPath()) ("cde-hosts-ro-" + [Guid]::NewGuid().ToString('N'))
+$readOnlyFile = Join-Path $readOnlyDir 'hosts'
+try {
+    New-Item -ItemType Directory -Path $readOnlyDir -Force | Out-Null
+    Set-Content -LiteralPath $readOnlyFile -Value '127.0.0.1 localhost' -Encoding ASCII
+    (Get-Item -LiteralPath $readOnlyFile).IsReadOnly = $true
+    Clear-ToolkitFileReadOnlyAttribute -Path $readOnlyFile
+    Assert-True -Name 'Read-only hosts attribute can be cleared' -Condition (-not (Get-Item -LiteralPath $readOnlyFile).IsReadOnly)
+} finally {
+    Remove-Item -LiteralPath $readOnlyDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $postOpScript = Join-Path (Split-Path $MyInvocation.MyCommand.Path) '..\Workflows\PostOp.ps1'
 $postOpText = Get-Content -LiteralPath $postOpScript -Raw
 Assert-True -Name 'PostOp wires icon/thumb cache tool' -Condition ($postOpText -match 'IconThumbCacheClear')

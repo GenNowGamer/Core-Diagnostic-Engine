@@ -85,7 +85,7 @@ Use **Show scan log** in the detail toolbar if you need the raw workflow output.
 
 - **Startup Manager** toolbar button opens Startup Manager with **Suspicious only** enabled
 - **Manage** on a startup finding jumps to Startup Manager filtered to that entry
-- Startup Manager **Suspicious only** checkbox uses the same heuristics as the hijack scanner
+- Startup Manager **Suspicious only** uses hijack-scanner heuristics for startup entries and service-specific risk heuristics on the Services tab
 
 ### Quick Repairs drawer
 

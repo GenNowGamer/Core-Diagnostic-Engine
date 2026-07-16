@@ -19,10 +19,13 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 - **System Health Check** — Findings list sorts by `findingsDisplayOrder` in `Config/HealthCheckCatalog.json`. Removed duplicate `audit_system_info` (use `system_info`). Startup Entry Audit review panel shows each entry once (Needs review cards + compact Verified).
 - **Scheduled Tasks Audit** — Smarter suspicion heuristics (Microsoft-signed AppData paths OK); COM handler resolution for ClassId actions; **Review Reason** column. `Test-ScheduledTasksAuditSuspicion.ps1`.
 - **Windows Update stack** — **Pass** when `wuauserv` is **Manual** or **Automatic** and `UsoSvc` is **Automatic**; idle **Stopped** is normal. `Test-WindowsUpdateStackStatus.ps1`.
-- **Startup Manager** — Drivers tab ImagePath normalization for `\??\` and relative system32 paths before signature lookup.
+- **Startup Manager — Services** — Service-specific risk/suspicion analysis with **RISK** display; **Suspicious only** filters Services; eligible suspicious or unprotected third-party services support confirmed **Delete** (`sc.exe delete`, binary retained). Protected Windows service hosts/services, drivers, Windows-folder services, and offline sessions remain blocked. Registry metadata fallback avoids an embedded-runspace `CimCmdlets` dependency; the blank WPF new-item row is disabled. `Test-StartupManagerCoverage.ps1` (**64/64**).
+- **Startup Manager — Drivers** — ImagePath normalization for `\??\` and relative system32 paths before signature lookup.
+- **Post-Op Restore Hosts File** — Uses live `%SystemRoot%`, clears read-only, writes defaults directly, carries toolkit/offline context through elevation, and records failed-step output. `Test-PostOpCleanup.ps1` (**15/15**).
 - **Uninstall Manager** — Quiet/MSI uninstall preference, leftover detection, optional folder cleanup. `Test-UninstallManager.ps1`.
 - **Hyper-V lab** — Push via `D:\Hyper-V\w11-infect-lab\Push-CDE-Toolkit.ps1`; C06 inject via `Inject-C06.ps1`. Details — `Toolkit\session_handoff.md`.
-- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` after GUI/script changes.
+- **C06 verification** — All injected infection artifacts removed on `w11-infect-lab`; only inert BenchLab scenario-state JSON remained. Latest GUI/service build pushed successfully (`HV_CDE_PUSH_OK`).
+- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` after GUI/script changes; latest GUI payload from this update: **2026-07-16 1:38 PM**.
 
 ## Session Update (2026-07-15)
 

@@ -26,7 +26,7 @@ $Script:StartupMutatingActions = @(
     'Enable', 'Disable', 'Delete',
     'EnableEntry', 'DisableEntry', 'DeleteEntry',
     'ResetWinlogonEntry', 'UndoWinlogonEntry',
-    'StartService', 'StopService', 'SetStartType', 'RestartService'
+    'StartService', 'StopService', 'SetStartType', 'RestartService', 'DeleteService'
 )
 
 function Get-StartupManagerRelayArgumentString {
@@ -148,6 +148,41 @@ function Test-ServiceExists {
         return $true
     } catch {
         return $false
+    }
+}
+
+function Get-ServiceDetailFromRegistry {
+    param([string]$ServiceName)
+
+    if ([string]::IsNullOrWhiteSpace($ServiceName)) {
+        return $null
+    }
+
+    $keyPath = Join-Path 'HKLM:\SYSTEM\CurrentControlSet\Services' $ServiceName
+    if (-not (Test-Path -LiteralPath $keyPath)) {
+        return $null
+    }
+
+    $props = Get-ItemProperty -LiteralPath $keyPath -ErrorAction Stop
+    $startDword = 3
+    try { $startDword = [int]$props.Start } catch {}
+
+    $startMode = switch ($startDword) {
+        0 { 'Boot' }
+        1 { 'System' }
+        2 { 'Auto' }
+        3 { 'Manual' }
+        4 { 'Disabled' }
+        default { 'Manual' }
+    }
+
+    return [PSCustomObject]@{
+        ServiceName = $ServiceName
+        DisplayName = if ($props.DisplayName) { [string]$props.DisplayName } else { $ServiceName }
+        ImagePath   = if ($props.ImagePath) { [string]$props.ImagePath } else { '' }
+        StartName   = if ($props.ObjectName) { [string]$props.ObjectName } else { '' }
+        StartMode   = $startMode
+        Description = if ($props.Description) { [string]$props.Description } else { '' }
     }
 }
 
@@ -567,9 +602,26 @@ function New-ServiceRow {
         [string]$StartName = ''
     )
 
-    $sigInfo = Get-FileSignatureInfo -FilePath $PathName
-    $analysis = Get-FileAnalysisInfo -FilePath $PathName
+    $serviceType = ''
+    try {
+        $serviceType = (Get-Service -Name $ServiceName -ErrorAction Stop).ServiceType.ToString()
+    } catch {}
+
+    $assessment = Get-ServiceRiskAssessment `
+        -ServiceName $ServiceName `
+        -DisplayName $DisplayName `
+        -ImagePath $PathName `
+        -StartupType $StartupType `
+        -ServiceType $serviceType
     $user = Get-EntryUserDisplay -ServiceStartName $StartName -RowType 'Service'
+    $analysisDetail = [string]$assessment.AnalysisDetail
+    if ($assessment.IsSuspicious -and -not [string]::IsNullOrWhiteSpace($assessment.SuspicionSummary)) {
+        $analysisDetail = if ([string]::IsNullOrWhiteSpace($analysisDetail) -or $analysisDetail -eq 'No inconsistencies detected') {
+            "Suspicious: $($assessment.SuspicionSummary)"
+        } else {
+            "$analysisDetail; Suspicious: $($assessment.SuspicionSummary)"
+        }
+    }
 
     return [PSCustomObject]@{
         ServiceName        = $ServiceName
@@ -579,13 +631,21 @@ function New-ServiceRow {
         Description        = $Description
         FilePath           = $PathName
         User               = $user
-        SignedBy           = $sigInfo.SignedBy
-        SignedDisplay      = $sigInfo.SignedDisplay
-        SignatureStatus    = $sigInfo.SignatureStatus
-        IsSigned           = $sigInfo.IsSigned
-        AnalysisLevel      = $analysis.Level
-        AnalysisDetail     = $analysis.Detail
-        HasAnalysisWarning = $analysis.HasWarning
+        Publisher          = $assessment.Publisher
+        RiskLevel          = $assessment.RiskLevel
+        ReputationScore    = $assessment.ReputationScore
+        ReputationBand     = $assessment.ReputationBand
+        IsSuspicious       = $assessment.IsSuspicious
+        SuspicionSummary   = $assessment.SuspicionSummary
+        SupportsDelete     = $assessment.SupportsDelete
+        DeletionBlockDetail = $assessment.DeletionBlockDetail
+        SignedBy           = $assessment.SignedBy
+        SignedDisplay      = $assessment.SignedDisplay
+        SignatureStatus    = $assessment.SignatureStatus
+        IsSigned           = $assessment.IsSigned
+        AnalysisLevel      = $assessment.AnalysisLevel
+        AnalysisDetail     = $analysisDetail
+        HasAnalysisWarning = $assessment.HasAnalysisWarning
     }
 }
 
@@ -1232,10 +1292,10 @@ function Get-Services {
         try { $status = [string]$svc.Status } catch {}
         try { $startup = Resolve-ServiceStartType -Value ([string]$svc.StartType) } catch {}
         try {
-            $cim = Get-CimInstance -ClassName Win32_Service -Filter ("Name='{0}'" -f ($svc.Name -replace "'", "''")) -ErrorAction SilentlyContinue
-            if ($cim) {
-                $pathName = [string]$cim.PathName
-                $startName = [string]$cim.StartName
+            $regDetail = Get-ServiceDetailFromRegistry -ServiceName ([string]$svc.Name)
+            if ($regDetail) {
+                $pathName = [string]$regDetail.ImagePath
+                $startName = [string]$regDetail.StartName
             }
         } catch {}
 
@@ -1723,6 +1783,66 @@ switch ($Action) {
             Write-Output "Restarted: $ServiceName"
         } catch {
             Write-Error (Get-ServiceActionFailure -Action 'RestartService' -ServiceName $ServiceName -ErrorRecord $_)
+        }
+    }
+    'DeleteService' {
+        try {
+            if (-not (Test-ServiceExists -ServiceName $ServiceName)) {
+                throw "SERVICE_NOT_FOUND: Service '$ServiceName' was not found"
+            }
+
+            $regDetail = Get-ServiceDetailFromRegistry -ServiceName $ServiceName
+            if (-not $regDetail) {
+                throw "SERVICE_NOT_FOUND: Service '$ServiceName' registry record was not found"
+            }
+
+            $pathName = [string]$regDetail.ImagePath
+            $displayName = [string]$regDetail.DisplayName
+            $startupType = Resolve-ServiceStartType -Value ([string]$regDetail.StartMode)
+            $serviceType = ''
+            try {
+                $serviceType = (Get-Service -Name $ServiceName -ErrorAction Stop).ServiceType.ToString()
+            } catch {}
+
+            $assessment = Get-ServiceRiskAssessment `
+                -ServiceName $ServiceName `
+                -DisplayName $displayName `
+                -ImagePath $pathName `
+                -StartupType $startupType `
+                -ServiceType $serviceType
+            if (-not $assessment.SupportsDelete) {
+                $detail = if ([string]::IsNullOrWhiteSpace($assessment.DeletionBlockDetail)) {
+                    'This service is protected or not eligible for delete.'
+                } else {
+                    [string]$assessment.DeletionBlockDetail
+                }
+                throw "PROTECTED_OR_UNSUPPORTED: $detail"
+            }
+
+            $current = Get-Service -Name $ServiceName -ErrorAction Stop
+            if ($current.Status -ne 'Stopped') {
+                Stop-Service -Name $ServiceName -Force -ErrorAction Stop
+                $status = (Get-Service -Name $ServiceName -ErrorAction Stop).Status
+                if ($status -ne 'Stopped') { throw "Service status is $status" }
+            }
+
+            $scOutput = & sc.exe delete $ServiceName 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                $scText = ($scOutput | Out-String).Trim()
+                if ($scText -match 'access is denied|ACCESS_DENIED') {
+                    throw "ACCESS_DENIED: $scText"
+                }
+                throw "Delete failed: $scText"
+            }
+
+            Start-Sleep -Milliseconds 400
+            if (Test-ServiceExists -ServiceName $ServiceName) {
+                throw "Delete verification failed: service '$ServiceName' still exists"
+            }
+
+            Write-Output "Deleted: $ServiceName"
+        } catch {
+            Write-Error (Get-ServiceActionFailure -Action 'DeleteService' -ServiceName $ServiceName -ErrorRecord $_)
         }
     }
 }

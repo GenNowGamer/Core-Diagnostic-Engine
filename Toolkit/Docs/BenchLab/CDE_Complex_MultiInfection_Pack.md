@@ -74,3 +74,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Scripts\BenchLab\Invoke-Cd
 
 - State: `%ProgramData%\CDE\BenchLab\state\complex\`
 - Artifacts: `%ProgramData%\CDE\BenchLab\artifacts\complex\`
+- A scenario state JSON (for example `state\complex\C06.json`) is BenchLab bookkeeping, not infection persistence. CDE remediation may remove every injected artifact while leaving this inert record. Use `Invoke-CdeBenchComplexPack.ps1 -Action Clean -ScenarioId C06` (or the matching scenario id) to reset both scenario artifacts and state before another injection.

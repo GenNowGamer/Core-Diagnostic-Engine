@@ -188,7 +188,7 @@
                           VerticalAlignment="Center"
                           FontSize="12"
                           Foreground="{StaticResource TextSecondaryBrush}"
-                          ToolTip="Show only entries that match Hijack &amp; Scam Repair startup heuristics."/>
+                          ToolTip="On Startup items: Hijack &amp; Scam Repair heuristics. On Services: suspicious service ImagePath, path, and signature heuristics."/>
                 <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" FontSize="13" Margin="0,0,0,6"
                            Foreground="{StaticResource AccentBlueBrush}" FontWeight="SemiBold"/>
             </controls:ResponsiveToolbar>
@@ -312,6 +312,8 @@
                   HorizontalGridLinesBrush="{StaticResource BorderBrush}"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  CanUserAddRows="False"
+                  CanUserDeleteRows="False"
                   CanUserResizeRows="False"
                   PreviewMouseRightButtonUp="ServicesGrid_PreviewMouseRightButtonUp">
             <DataGrid.ColumnHeaderStyle>
@@ -327,7 +329,8 @@
             <DataGrid.Columns>
                 <DataGridTextColumn Header="STATUS"       Binding="{Binding Status}"      Width="90"/>
                 <DataGridTextColumn Header="NAME"         Binding="{Binding ServiceName}" Width="160"/>
-                <DataGridTextColumn Header="DISPLAY NAME" Binding="{Binding DisplayName}" Width="200"/>
+                <DataGridTextColumn Header="DISPLAY NAME" Binding="{Binding DisplayName}" Width="180"/>
+                <DataGridTextColumn Header="RISK"         Binding="{Binding RiskLevel}"   Width="72"/>
                 <DataGridTemplateColumn Header="ANALYSIS" Width="82" MinWidth="82">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -359,7 +362,7 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <DataGridTextColumn Header="DESCRIPTION"  Binding="{Binding Description}" Width="*"/>
-                <DataGridTemplateColumn Header="ACTIONS" Width="210">
+                <DataGridTemplateColumn Header="ACTIONS" Width="270">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <StackPanel Orientation="Horizontal" Margin="4,2">
@@ -375,6 +378,12 @@
                                     Padding="8,4" Margin="0,0,4,0" FontSize="11"
                                         Background="{StaticResource AccentYellowBrush}" Foreground="White"
                                         BorderThickness="0" Cursor="Hand"/>
+                                <Button Content="Delete" Tag="{Binding}" Click="DeleteSvc_Click"
+                                        Padding="8,4" FontSize="11"
+                                        Background="{StaticResource AccentRedBrush}" Foreground="White"
+                                        BorderThickness="0" Cursor="Hand"
+                                        IsEnabled="{Binding SupportsDelete}"
+                                        Visibility="{Binding SupportsDelete, Converter={StaticResource BoolToVis}}"/>
                             </StackPanel>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>

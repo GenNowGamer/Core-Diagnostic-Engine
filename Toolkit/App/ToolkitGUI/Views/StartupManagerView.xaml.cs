@@ -148,6 +148,12 @@ namespace ToolkitGUI.Views
                 _vm.RestartSvcCommand.Execute(svc);
         }
 
+        private void DeleteSvc_Click(object sender, RoutedEventArgs e)
+        {
+            if ((sender as Button)?.Tag is ServiceEntry svc)
+                _vm.DeleteSvcCommand.Execute(svc);
+        }
+
         private void StartupGrid_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
         {
             if (FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject)?.Item is not StartupEntry entry)
@@ -207,6 +213,7 @@ namespace ToolkitGUI.Views
             menu.Items.Add(CreateMenuItem("Copy file path", () => _vm.CopyServiceFilePath(service), hasFile || hasPath));
             menu.Items.Add(CreateMenuItem("Copy service name", () => _vm.CopyServiceName(service), hasName));
             menu.Items.Add(CreateMenuItem("Scan with CST", () => _ = _vm.ScanServiceWithCstAsync(service), hasFile));
+            menu.Items.Add(CreateMenuItem("Delete service...", () => _vm.DeleteSvcCommand.Execute(service), service.SupportsDelete));
             menu.Items.Add(new Separator());
             menu.Items.Add(CreateMenuItem("Show service details", () => _vm.ShowServiceDetails(service)));
             menu.Items.Add(CreateMenuItem("Open Malware Cleanup", () => _vm.OpenMalwareCleanup()));

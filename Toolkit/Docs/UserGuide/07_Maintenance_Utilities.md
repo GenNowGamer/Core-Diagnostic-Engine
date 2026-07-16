@@ -14,10 +14,12 @@
 | **Icon + Thumbnail Cache Clear** | Fix broken or stale desktop icons and thumbnails |
 | **DNS Cache Flush** | Clear resolver cache after DNS hijack or VPN issues |
 | **Reset Proxy Settings** | Disable user Internet proxy and reset WinHTTP proxy |
-| **Restore Hosts File** | Replace `hosts` with Windows defaults (backup first; **confirmation required**) |
+| **Restore Hosts File** | Replace the live Windows `hosts` file with defaults (backup first; **confirmation required**) |
 | **Restart Explorer** | Apply shell/cache fixes without a full reboot |
 
 > **Note:** The **Hosts File Check** in System Health Check still **audits** the hosts file; remediation lives here only.
+
+Restore Hosts File targets the active `%SystemRoot%`, clears a read-only attribute when present, and requires elevation to write the protected file. If the operation fails, the result includes the underlying path or permission error instead of only a generic failed-step status.
 
 ### Steps
 
@@ -53,7 +55,7 @@
 | **User logon** | Run keys, GPO Run keys, startup folders, MSIX tasks, scheduled tasks, **Userinit/Shell** reset when hijacked |
 | **Drivers** | Boot-start drivers |
 | **Extensions** | Browser extensions and legacy BHO entries |
-| **Services** | Change startup type, start/stop/restart |
+| **Services** | Review service risk, filter suspicious services, change startup type, start/stop/restart, and delete eligible services |
 
 ### Persistence types (User logon)
 
@@ -83,7 +85,15 @@ Right-click a row for technician jump tools (Enable / Disable / Delete stay on t
 
 When you **Delete** a Run/Startup/**non-Microsoft scheduled task** entry whose target still exists in a remediable path (e.g. `ProgramData\VendorCache\...`), CDE asks whether to **also delete that target file** (and empty parent folders). Prefer Yes for leftover malware droppers after clearing persistence.
 
-Services tab offers the same file/CST/copy/details jumps (plus **Copy service name**).
+### Services risk and delete
+
+The Services tab assigns a **RISK** level and analysis from the service image path, signature/publisher, launcher usage, missing or risky locations, remote-access naming, and other persistence indicators. **Suspicious only** applies to this tab and shows only services that match those service-specific heuristics.
+
+Eligible suspicious or unprotected third-party services show **Delete** on the row and right-click menu. Delete asks for confirmation, stops the service when necessary, and permanently removes its Windows service registration. It **does not delete the service executable**.
+
+CDE does not offer service Delete for Windows service hosts (`svchost.exe` / `services.exe`), protected Windows services, kernel or driver services, ordinary services whose binary is under the Windows folder, or offline Windows sessions. Manage drivers from the **Drivers** tab.
+
+Services also offer the same file/CST/copy/details jumps as other rows, plus **Copy service name**.
 
 > **Tip:** Use **System Health Check → Scheduled Tasks** (security audit) to review non-Microsoft scheduled tasks for persistence risk. Flagged rows include a **Review Reason**; COM-only actions show the resolved handler path (not “unknown action”). Microsoft-signed tasks under AppData (e.g. OneDrive) are not flagged solely for path location. The default Startup Manager view focuses on user-facing startup mechanisms like Task Manager.
 
@@ -93,7 +103,7 @@ If `Userinit` or `Shell` values were changed by malware, they appear highlighted
 
 ### Hijack & Scam Repair integration
 
-- **Suspicious only** filter — shows startup rows that match hijack-scanner heuristics (same logic as **Hijack & Scam Repair**)
+- **Suspicious only** filter — shows startup entries that match hijack-scanner heuristics and Services that match service-specific risk heuristics
 - **Manage** from a hijack finding opens Startup Manager with this filter enabled
 - Review-only startup findings in Hijack & Scam Repair should be disabled or deleted here rather than via **Repair Selected**
 

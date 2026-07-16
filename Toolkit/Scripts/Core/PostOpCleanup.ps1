@@ -43,6 +43,17 @@ function Invoke-PostOpCapturedCommand {
 }
 
 function Get-PostOpHostsFilePath {
+    <#
+    .SYNOPSIS
+        Resolves the hosts file for Post-Op restore.
+        On a live Windows session, always targets the running OS (not an offline attach).
+    #>
+    if (Get-Command Get-EnvironmentMode -ErrorAction SilentlyContinue) {
+        if ((Get-EnvironmentMode) -eq 'Windows') {
+            return Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+        }
+    }
+
     if (Get-Command Get-ToolkitHostsFilePath -ErrorAction SilentlyContinue) {
         return Get-ToolkitHostsFilePath
     }
@@ -53,6 +64,19 @@ function Get-PostOpHostsFilePath {
     }
 
     return Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+}
+
+function Clear-ToolkitFileReadOnlyAttribute {
+    param(
+        [Parameter(Mandatory)][string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.IsReadOnly) {
+        $item.IsReadOnly = $false
+    }
 }
 
 function Get-DefaultHostsFileContent {
@@ -230,7 +254,8 @@ function Invoke-PostOpHostsFileRestore {
     }
 
     $hostsPath = Get-PostOpHostsFilePath
-    if (-not (Test-Path -LiteralPath (Split-Path $hostsPath -Parent))) {
+    $hostsDir = Split-Path $hostsPath -Parent
+    if (-not (Test-Path -LiteralPath $hostsDir)) {
         return [PSCustomObject]@{
             Status  = 'Fail'
             Output  = "Hosts directory not found for: $hostsPath"
@@ -239,27 +264,37 @@ function Invoke-PostOpHostsFileRestore {
     }
 
     $backupPath = "$hostsPath.backup_$(Get-Date -Format 'yyyyMMddHHmmss')"
+    $details = [System.Collections.Generic.List[string]]::new()
+    $details.Add("Hosts path: $hostsPath") | Out-Null
+
     try {
         if (Test-Path -LiteralPath $hostsPath) {
+            Clear-ToolkitFileReadOnlyAttribute -Path $hostsPath
             Copy-Item -LiteralPath $hostsPath -Destination $backupPath -Force -ErrorAction Stop
+            $details.Add("Backup: $backupPath") | Out-Null
         }
 
         $content = Get-DefaultHostsFileContent
-        Set-Content -LiteralPath $hostsPath -Value $content -Encoding ASCII -Force -ErrorAction Stop
+        Clear-ToolkitFileReadOnlyAttribute -Path $hostsPath
+        [System.IO.File]::WriteAllText($hostsPath, $content, [System.Text.Encoding]::ASCII)
 
         return [PSCustomObject]@{
             Status  = 'Pass'
             Output  = 'Hosts file restored to Windows default entries.'
-            Details = @(
-                "Hosts path: $hostsPath",
-                "Backup: $backupPath"
-            )
+            Details = @($details)
         }
     } catch {
+        $message = $_.Exception.Message
+        if (Get-Command Test-ToolkitIsElevated -ErrorAction SilentlyContinue) {
+            if (-not (Test-ToolkitIsElevated)) {
+                $message = "$message (Administrator elevation is required to modify the hosts file.)"
+            }
+        }
+
         return [PSCustomObject]@{
             Status  = 'Fail'
-            Output  = "Hosts file restore failed: $($_.Exception.Message)"
-            Details = @()
+            Output  = "Hosts file restore failed: $message"
+            Details = @($details)
         }
     }
 }

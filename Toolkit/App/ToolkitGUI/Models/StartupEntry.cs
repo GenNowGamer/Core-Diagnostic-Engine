@@ -79,6 +79,14 @@ namespace ToolkitGUI.Models
 
         public string FilePath           { get; set; } = string.Empty;
         public string User               { get; set; } = string.Empty;
+        public string Publisher          { get; set; } = string.Empty;
+        public string RiskLevel          { get; set; } = "Unknown";
+        public int    ReputationScore    { get; set; }
+        public string ReputationBand     { get; set; } = string.Empty;
+        public bool   IsSuspicious       { get; set; }
+        public string SuspicionSummary   { get; set; } = string.Empty;
+        public bool   SupportsDelete     { get; set; }
+        public string DeletionBlockDetail { get; set; } = string.Empty;
         public string SignedBy           { get; set; } = string.Empty;
         public string SignedDisplay      { get; set; } = string.Empty;
         public string SignatureStatus    { get; set; } = string.Empty;

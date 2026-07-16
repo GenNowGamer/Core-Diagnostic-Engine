@@ -769,6 +769,287 @@ function Get-EntryRisk {
     }
 }
 
+function Get-ServiceRiskPathRegex {
+    return '(?i)(\\appdata\\(local\\)?temp\\|\\windows\\temp\\|\\users\\public\\|\\downloads\\|\\desktop\\|\\documents\\|\\programdata\\vendorcache\\)'
+}
+
+function Test-ServiceImageUsesLauncherBinary {
+    param([string]$ImagePath)
+
+    if ([string]::IsNullOrWhiteSpace($ImagePath)) { return $false }
+
+    $parsed = Parse-StartupCommandLine -Command $ImagePath
+    $exeName = [IO.Path]::GetFileName((Expand-WindowsImagePath -Path $parsed.ExecutablePath)).ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($exeName)) { return $false }
+
+    return $exeName -in @(
+        'cmd.exe', 'powershell.exe', 'pwsh.exe', 'wscript.exe', 'cscript.exe',
+        'mshta.exe', 'rundll32.exe', 'regsvr32.exe', 'bitsadmin.exe', 'ftp.exe'
+    )
+}
+
+function Test-ServiceIsWindowsServiceHost {
+    param(
+        [string]$ImagePath,
+        [string]$ResolvedPath
+    )
+
+    foreach ($candidate in @($ResolvedPath, $ImagePath)) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        $expanded = Expand-WindowsImagePath -Path $candidate
+        if ($expanded -match '(?i)\\system32\\svchost\.exe(\s|$)') { return $true }
+        if ($expanded -match '(?i)\\system32\\services\.exe(\s|$)') { return $true }
+    }
+
+    return $false
+}
+
+function Test-ServiceSuspicious {
+    param(
+        [string]$ServiceName,
+        [string]$DisplayName,
+        [string]$ImagePath,
+        [string]$ResolvedPath,
+        [bool]$TargetExists,
+        [string]$Publisher,
+        [bool]$IsSigned,
+        [string]$RiskBand,
+        [bool]$HasAnalysisWarning,
+        [string]$StartupType = ''
+    )
+
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    $name = [string]$ServiceName
+    $display = [string]$DisplayName
+    $pathLower = [string]$ImagePath.ToLowerInvariant()
+    $resolvedLower = [string]$ResolvedPath.ToLowerInvariant()
+    $riskRegex = Get-ServiceRiskPathRegex
+
+    if ($name -match '(?i)CDEBENCHX?') {
+        $reasons.Add('bench lab service tag') | Out-Null
+    }
+
+    foreach ($remote in @('AnyDesk', 'TeamViewer', 'UltraViewer', 'RustDesk', 'ScreenConnect', 'Splashtop', 'LogMeIn', 'GoToAssist')) {
+        if ($name -match [regex]::Escape($remote)) {
+            $reasons.Add("known remote-access service: $remote") | Out-Null
+            break
+        }
+    }
+
+    if (Test-ServiceImageUsesLauncherBinary -ImagePath $ImagePath) {
+        $reasons.Add('launcher service binary') | Out-Null
+    }
+
+    if (-not (Test-ServiceIsWindowsServiceHost -ImagePath $ImagePath -ResolvedPath $ResolvedPath)) {
+        if (-not $TargetExists -and -not [string]::IsNullOrWhiteSpace($ImagePath)) {
+            if ($ImagePath -match '\.exe(\s|$)|\.dll(\s|$)|\.sys(\s|$)' -or $ImagePath -match '^[A-Za-z]:\\') {
+                $reasons.Add('service image missing') | Out-Null
+            }
+        }
+
+        if (($resolvedLower -match $riskRegex) -or ($pathLower -match $riskRegex)) {
+            $reasons.Add('risky service path') | Out-Null
+        }
+
+        if (-not $IsSigned -and $resolvedLower -and
+            $resolvedLower -notmatch '\\windows\\' -and
+            $resolvedLower -notmatch '\\program files') {
+            $reasons.Add('unsigned non-standard path') | Out-Null
+        }
+    }
+
+    if ($name -cmatch '^[0-9a-fA-F]{8,}$' -or $name -cmatch '^[A-Z0-9]{16,}$') {
+        $reasons.Add('opaque service name') | Out-Null
+    }
+
+    if ($RiskBand -eq 'Warning') {
+        $reasons.Add("risk:$RiskBand") | Out-Null
+    }
+
+    if ($HasAnalysisWarning -and $reasons.Count -eq 0) {
+        $reasons.Add('file analysis warning') | Out-Null
+    }
+
+    if ($display -match '(?i)windows|microsoft|defender|update|security' -and
+        (($resolvedLower -match $riskRegex) -or ($pathLower -match $riskRegex) -or (Test-ServiceImageUsesLauncherBinary -ImagePath $ImagePath))) {
+        $reasons.Add('display name mimics Windows component') | Out-Null
+    }
+
+    if ($StartupType -eq 'Automatic' -and $reasons.Count -gt 0) {
+        # Keep reason list; auto-start elevates review priority in the UI only.
+    }
+
+    return [PSCustomObject]@{
+        IsSuspicious = ($reasons.Count -gt 0)
+        Reasons      = @($reasons | Select-Object -Unique)
+        Summary      = if ($reasons.Count -gt 0) { ($reasons | Select-Object -Unique) -join '; ' } else { '' }
+    }
+}
+
+function Get-ProtectedWindowsServiceNames {
+    return @(
+        'WinDefend', 'wuauserv', 'BITS', 'CryptSvc', 'Dnscache', 'Dhcp', 'EventLog', 'LSM',
+        'LanmanServer', 'LanmanWorkstation', 'mpssvc', 'PlugPlay', 'Power', 'ProfSvc',
+        'RpcSs', 'SamSs', 'Schedule', 'SENS', 'ShellHWDetection', 'Spooler', 'StateRepository',
+        'StorSvc', 'SystemEventsBroker', 'Themes', 'TrkWks', 'TrustedInstaller', 'UserManager',
+        'Wcmsvc', 'WdiSystemHost', 'Winmgmt', 'WpnService', 'cbdhsvc', 'CDPSvc', 'BFE', 'nsi'
+    )
+}
+
+function Test-ServiceDeletionSupported {
+    param(
+        [string]$ServiceName,
+        [string]$ImagePath,
+        [string]$ResolvedPath,
+        [string]$Publisher,
+        [bool]$IsSigned,
+        [bool]$IsSuspicious,
+        [string]$ServiceType = ''
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($env:OFFLINE_WINDOWS_ROOT)) {
+        return [PSCustomObject]@{
+            Supported = $false
+            Detail    = 'Service delete is not supported while an offline Windows install is attached.'
+        }
+    }
+
+    $typeLower = [string]$ServiceType.ToLowerInvariant()
+    if ($typeLower -match 'kernel|file system|filesystem|driver') {
+        return [PSCustomObject]@{
+            Supported = $false
+            Detail    = 'Kernel/driver services must be managed from the Drivers tab.'
+        }
+    }
+
+    if (Test-ServiceIsWindowsServiceHost -ImagePath $ImagePath -ResolvedPath $ResolvedPath) {
+        return [PSCustomObject]@{
+            Supported = $false
+            Detail    = 'Protected Windows service host (svchost.exe / services.exe).'
+        }
+    }
+
+    foreach ($protected in @(Get-ProtectedWindowsServiceNames)) {
+        if ([string]$ServiceName -ieq $protected) {
+            return [PSCustomObject]@{
+                Supported = $false
+                Detail    = "Protected Windows service: $protected"
+            }
+        }
+    }
+
+    if ($IsSuspicious) {
+        return [PSCustomObject]@{ Supported = $true; Detail = '' }
+    }
+
+    $resolvedLower = [string]$ResolvedPath.ToLowerInvariant()
+    if ($resolvedLower -match '\\windows\\') {
+        return [PSCustomObject]@{
+            Supported = $false
+            Detail    = 'Service binary is under the Windows folder.'
+        }
+    }
+
+    if ($IsSigned -and [string]$Publisher -match 'Microsoft') {
+        return [PSCustomObject]@{
+            Supported = $false
+            Detail    = 'Signed Microsoft service (not flagged suspicious).'
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($resolvedLower)) {
+        return [PSCustomObject]@{ Supported = $true; Detail = '' }
+    }
+
+    if (Test-ServiceImageUsesLauncherBinary -ImagePath $ImagePath) {
+        return [PSCustomObject]@{ Supported = $true; Detail = '' }
+    }
+
+    return [PSCustomObject]@{
+        Supported = $false
+        Detail    = 'Only unprotected third-party or suspicious services can be deleted here.'
+    }
+}
+
+function Get-ServiceRiskAssessment {
+    param(
+        [string]$ServiceName,
+        [string]$DisplayName,
+        [string]$ImagePath,
+        [string]$StartupType = '',
+        [string]$ServiceType = ''
+    )
+
+    $sigInfo = Get-FileSignatureInfo -FilePath $ImagePath
+    $analysis = Get-FileAnalysisInfo -FilePath $ImagePath
+    $target = Resolve-StartupTarget -Command $ImagePath
+    $resolvedPath = [string]$target.ResolvedPath
+    $targetExists = [bool]$target.Exists
+
+    $publisher = ''
+    if ($targetExists -and -not [string]::IsNullOrWhiteSpace($resolvedPath)) {
+        try {
+            $publisher = (Get-Item -LiteralPath $resolvedPath -ErrorAction Stop).VersionInfo.CompanyName
+        } catch { }
+    }
+    if ([string]::IsNullOrWhiteSpace($publisher) -and
+        -not [string]::IsNullOrWhiteSpace($sigInfo.SignedDisplay) -and
+        $sigInfo.SignedDisplay -notin @('N/A', 'Not found', 'Unsigned', 'Unknown')) {
+        $publisher = [string]$sigInfo.SignedDisplay
+    }
+
+    $riskPath = if ($targetExists -and $resolvedPath) { $resolvedPath } else { $ImagePath }
+    $risk = Get-EntryRisk -Publisher $publisher -FilePath $riskPath -IsSigned ([bool]$sigInfo.IsSigned) -IsCritical:$false
+    $riskLevel = [string]$risk.Band
+    if ($analysis.HasWarning -and $riskLevel -eq 'Safe') {
+        $riskLevel = if ($analysis.Level -eq 'Warning') { 'Warning' } else { 'Caution' }
+    }
+
+    $suspicion = Test-ServiceSuspicious `
+        -ServiceName $ServiceName `
+        -DisplayName $DisplayName `
+        -ImagePath $ImagePath `
+        -ResolvedPath $resolvedPath `
+        -TargetExists $targetExists `
+        -Publisher $publisher `
+        -IsSigned ([bool]$sigInfo.IsSigned) `
+        -RiskBand $riskLevel `
+        -HasAnalysisWarning ([bool]$analysis.HasWarning) `
+        -StartupType $StartupType
+
+    if ($suspicion.IsSuspicious -and $riskLevel -eq 'Safe') {
+        $riskLevel = 'Caution'
+    }
+
+    $deleteSupport = Test-ServiceDeletionSupported `
+        -ServiceName $ServiceName `
+        -ImagePath $ImagePath `
+        -ResolvedPath $resolvedPath `
+        -Publisher $publisher `
+        -IsSigned ([bool]$sigInfo.IsSigned) `
+        -IsSuspicious ([bool]$suspicion.IsSuspicious) `
+        -ServiceType $ServiceType
+
+    return [PSCustomObject]@{
+        Publisher          = if ($publisher) { $publisher } else { 'Unknown' }
+        RiskLevel          = $riskLevel
+        ReputationScore    = $risk.Score
+        ReputationBand     = $risk.Band
+        IsSuspicious       = [bool]$suspicion.IsSuspicious
+        SuspicionSummary   = [string]$suspicion.Summary
+        SupportsDelete     = [bool]$deleteSupport.Supported
+        DeletionBlockDetail = [string]$deleteSupport.Detail
+        SignedBy           = $sigInfo.SignedBy
+        SignedDisplay      = $sigInfo.SignedDisplay
+        SignatureStatus    = $sigInfo.SignatureStatus
+        IsSigned           = [bool]$sigInfo.IsSigned
+        AnalysisLevel      = $analysis.Level
+        AnalysisDetail     = $analysis.Detail
+        HasAnalysisWarning = [bool]$analysis.HasWarning
+        ResolvedPath       = $resolvedPath
+    }
+}
+
 function Test-PostOpStartupSuspicious {
     param(
         [Parameter(Mandatory)][string]$Name,

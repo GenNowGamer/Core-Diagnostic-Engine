@@ -413,6 +413,14 @@ function Invoke-HostsFileRestore {
 
     Write-Log 'Restoring hosts file to Windows defaults (backup first)...'
     $result = Invoke-PostOpHostsFileRestore -Confirmed
+    if (-not [string]::IsNullOrWhiteSpace($result.Output)) {
+        $level = switch ([string]$result.Status) {
+            'Fail' { 'Error' }
+            'Warn' { 'Warning' }
+            default { 'Info' }
+        }
+        Write-Log "  $($result.Output)" -Level $level
+    }
     foreach ($line in @($result.Details)) {
         if (-not [string]::IsNullOrWhiteSpace($line)) {
             Write-Log "  $line"

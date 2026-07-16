@@ -90,6 +90,7 @@ namespace ToolkitGUI.ViewModels
         public ICommand StartSvcCommand  => new RelayCommand<ServiceEntry>(async s => await ServiceActionAsync(s, "StartService"));
         public ICommand StopSvcCommand   => new RelayCommand<ServiceEntry>(async s => await ServiceActionAsync(s, "StopService"));
         public ICommand RestartSvcCommand=> new RelayCommand<ServiceEntry>(async s => await ServiceActionAsync(s, "RestartService"));
+        public ICommand DeleteSvcCommand => new RelayCommand<ServiceEntry>(async s => await DeleteServiceAsync(s));
         public ICommand SetStartTypeCommand => new RelayCommand<ServiceEntry>(async s => await SetStartTypeAsync(s));
 
         public async Task LoadStartupItemsAsync()
@@ -222,17 +223,24 @@ namespace ToolkitGUI.ViewModels
             FilteredServices.Clear();
             foreach (var s in Services)
             {
+                if (ShowSuspiciousOnly && !s.IsSuspicious)
+                    continue;
+
                 var displayName = s.DisplayName ?? string.Empty;
                 var serviceName = s.ServiceName ?? string.Empty;
                 var user = s.User ?? string.Empty;
                 var signed = s.SignedDisplay ?? string.Empty;
                 var analysis = s.AnalysisDetail ?? string.Empty;
                 var filePath = s.FilePath ?? string.Empty;
+                var publisher = s.Publisher ?? string.Empty;
+                var risk = s.RiskLevel ?? string.Empty;
+                var suspicion = s.SuspicionSummary ?? string.Empty;
 
                 if (string.IsNullOrEmpty(q) || displayName.ToLower().Contains(q)
                     || serviceName.ToLower().Contains(q) || user.ToLower().Contains(q)
                     || signed.ToLower().Contains(q) || analysis.ToLower().Contains(q)
-                    || filePath.ToLower().Contains(q))
+                    || filePath.ToLower().Contains(q) || publisher.ToLower().Contains(q)
+                    || risk.ToLower().Contains(q) || suspicion.ToLower().Contains(q))
                     FilteredServices.Add(s);
             }
         }
@@ -613,6 +621,61 @@ namespace ToolkitGUI.ViewModels
             StatusText = $"Done — {s.ServiceName} is now {newStatus}";
         }
 
+        private async Task DeleteServiceAsync(ServiceEntry? s)
+        {
+            if (s == null) return;
+            if (!s.SupportsDelete)
+            {
+                var block = string.IsNullOrWhiteSpace(s.DeletionBlockDetail)
+                    ? "This service is protected or not eligible for delete."
+                    : s.DeletionBlockDetail;
+                StatusText = $"Delete not supported: {s.ServiceName}";
+                MessageBox.Show(
+                    $"Delete is not available for '{s.ServiceName}'.\n\n{block}",
+                    "Delete Service",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            var impact = "This permanently removes the Windows service registration (sc delete). "
+                + "The service binary on disk is not removed automatically.";
+            if (!string.IsNullOrWhiteSpace(s.FilePath))
+            {
+                impact += "\n\nImage path:\n" + s.FilePath;
+            }
+
+            if (!DestructiveActionDialog.Confirm(
+                    "Startup Manager",
+                    $"Delete service \"{s.ServiceName}\"?",
+                    impact,
+                    defaultNo: true))
+            {
+                StatusText = $"Delete cancelled for {s.ServiceName}";
+                return;
+            }
+
+            var escapedServiceName = EscapePs(s.ServiceName);
+            StatusText = $"DeleteService: {s.ServiceName}...";
+            var result = await PowerShellService.ExecuteAsync(
+                $"& '{ScriptPath}' -Action DeleteService -ServiceName '{escapedServiceName}'");
+            if (!result.Success)
+            {
+                var errorText = FormatExecError(result);
+                var (category, message) = ClassifyServiceFailure(errorText);
+                StatusText = $"Delete failed ({category}): {message}";
+                MessageBox.Show(
+                    $"Delete failed for '{s.ServiceName}'.\n\nReason: {message}",
+                    "Delete Service Failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            await LoadServicesAsync();
+            StatusText = $"Deleted service: {s.ServiceName}";
+        }
+
         private async Task SetStartTypeAsync(ServiceEntry? s)
         {
             if (s == null) return;
@@ -906,12 +969,12 @@ namespace ToolkitGUI.ViewModels
                     registryPath = string.Empty,
                     valueName = service.ServiceName,
                     user = service.User,
-                    publisher = string.Empty,
+                    publisher = service.Publisher,
                     isSigned = service.IsSigned,
-                    riskLevel = service.HasAnalysisWarning ? "Warning" : "Unknown",
+                    riskLevel = service.RiskLevel,
                     analysisDetail = service.AnalysisDetail,
-                    isHijackSuspicious = false,
-                    deviationReason = string.Empty,
+                    isHijackSuspicious = service.IsSuspicious,
+                    deviationReason = service.SuspicionSummary,
                     correlationSummary = string.Empty
                 };
             }
@@ -1033,8 +1096,13 @@ namespace ToolkitGUI.ViewModels
             sb.AppendLine($"Display name: {service.DisplayName}");
             sb.AppendLine($"Status: {service.Status}");
             sb.AppendLine($"Startup type: {service.StartupType}");
+            sb.AppendLine($"Risk: {service.RiskLevel}");
             sb.AppendLine($"User: {service.User}");
             sb.AppendLine($"Signed: {service.SignedDisplay}");
+            if (!string.IsNullOrWhiteSpace(service.Publisher))
+                sb.AppendLine($"Publisher: {service.Publisher}");
+            if (service.IsSuspicious && !string.IsNullOrWhiteSpace(service.SuspicionSummary))
+                sb.AppendLine($"Suspicious: {service.SuspicionSummary}");
             if (!string.IsNullOrWhiteSpace(service.AnalysisDetail))
                 sb.AppendLine($"Analysis: {service.AnalysisDetail}");
             if (!string.IsNullOrWhiteSpace(service.Description))

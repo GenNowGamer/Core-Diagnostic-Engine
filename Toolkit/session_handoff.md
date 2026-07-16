@@ -2,7 +2,27 @@
 
 **Last updated:** 2026-07-16
 
-## 2026-07-16 — System Health Check UX, audit tuning, lab ops
+## 2026-07-16 — Startup services, Post-Op hosts, health checks, lab ops
+
+### Startup Manager — service risk, filter, and guarded delete
+
+- **Service risk** — Services now use `Test-ServiceSuspicious` / `Get-ServiceRiskAssessment` in `StartupRisk.ps1`. The grid exposes **RISK**, publisher/signature analysis, and service-specific suspicion reasons (launcher commands, risky/missing paths, unsigned non-standard binaries, remote-access naming, and BenchLab markers). Normal Windows `svchost.exe` services are allowlisted against these signals.
+- **Suspicious only** — The checkbox now filters the **Services** tab as well as startup-entry tabs; text search includes service publisher, risk, and suspicion summary.
+- **Delete service** — Eligible suspicious or unprotected third-party services expose **Delete** (row button and context menu). The action confirms, stops the service, then uses `sc.exe delete`; it does not delete the service binary. Windows service hosts, protected Windows services, kernel/driver services, Windows-folder services, and offline sessions are blocked.
+- **PowerShell Core compatibility** — Delete and the non-CIM listing fallback read service metadata from `HKLM\SYSTEM\CurrentControlSet\Services\<name>` instead of requiring `Get-CimInstance`, which is unavailable in some embedded GUI runspaces.
+- **Grid fix** — `CanUserAddRows=False` / `CanUserDeleteRows=False` removes the blank WPF new-item row that previously appeared at the bottom of Services with action buttons.
+- **Verify** — `Scripts\Tests\Test-StartupManagerCoverage.ps1`: **64/64** assertions. Canonical GUI payload published **2026-07-16 1:38 PM** and pushed to `w11-infect-lab` (`HV_CDE_PUSH_OK`).
+
+### Post-Op Cleanup — hosts restore reliability
+
+- **Live target** — Restore Hosts File resolves the active `%SystemRoot%\System32\drivers\etc\hosts` on live Windows, clears read-only, and writes Windows defaults directly.
+- **Elevation context** — The elevation relay carries `TOOLKIT_ROOT` and offline-environment variables into the child process. Failed Post-Op steps now include command output in the workflow log, making permission/path failures actionable.
+- **Verify** — `Scripts\Tests\Test-PostOpCleanup.ps1`: **15/15** assertions.
+
+### C06 lab remediation verification
+
+- Deep verification on `w11-infect-lab` confirmed all C06 infection artifacts removed: five payloads, `VendorCache`, `CacheHost` Run persistence, `CDEBENCHX_C06_CacheSvc`, hosts markers, hosts backup, and matching CST quarantine files.
+- The only remaining item was `%ProgramData%\CDE\BenchLab\state\complex\C06.json`, which is inert BenchLab scenario metadata, not infection persistence. Use the complex-pack **Clean** action (or remove that JSON) when resetting the lab scenario itself.
 
 ### System Health Check — findings order + startup audit layout
 
@@ -532,7 +552,7 @@ Cross-repo work in **Core Hardware Utility** (`CoreDiag.efi`, `CHUPrep.efi`). CD
 | MSIX + audit | `StartupRisk.ps1` — MSIX startup tasks in `Get-PostOpStartupEntries`; `audit_startup` includes MSIX |
 | Microsoft task filter | `\Microsoft\*` scheduled tasks **hidden by default**; checkbox *Include Windows scheduled tasks*; when shown, read-only (no enable/disable) |
 | GUI | `StartupManagerView.xaml` — SOURCE, RELATED columns; scheduled-task filter checkbox |
-| Tests | `Test-StartupManagerCoverage.ps1`, `Test-MsixStartupTasks.ps1` in `Invoke-CdeRegressionSuite.ps1` |
+| Tests | `Test-StartupManagerCoverage.ps1` (**64/64** current), `Test-MsixStartupTasks.ps1` in `Invoke-CdeRegressionSuite.ps1` |
 
 ### Post-Op Cleanup — five new tools (deduped elsewhere)
 
@@ -547,7 +567,7 @@ Cross-repo work in **Core Hardware Utility** (`CoreDiag.efi`, `CHUPrep.efi`). CD
 - **`Scripts/Workflows/PostOp.ps1`** — eight GUI tools; **Run All** runs all except hosts restore (confirmation required).
 - **Removed duplicates:** `FastFixes.ps1` — `FlushDns`, `ClearIconCache`, `ClearThumbCache`; `OSRepair.ps1` — `ipconfig /flushdns` removed from Network Reset bundle.
 - **GUI:** `PostOpViewModel` — five new tools; hosts restore uses Yes/No `MessageBox` before `-ConfirmHostsRestore`.
-- **Tests:** `Test-PostOpCleanup.ps1` (13/13) in regression suite.
+- **Tests:** `Test-PostOpCleanup.ps1` (**15/15** current) in regression suite.
 - **Publish:** `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`.
 
 ### Key files
