@@ -25,7 +25,7 @@ Restore Hosts File targets the active `%SystemRoot%`, clears a read-only attribu
 
 1. Sidebar → **Post-Op Cleanup**
 2. Click **Run** on each tool you need (eight tools; no single **Run All** button)
-3. Approve UAC if prompted (services and associations need elevation on live Windows)
+3. Approve UAC if prompted (services, associations, and hosts restore need elevation on live Windows)
 
 ---
 

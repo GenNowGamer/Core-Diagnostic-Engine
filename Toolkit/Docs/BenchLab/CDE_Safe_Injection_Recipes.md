@@ -96,20 +96,21 @@ Cleanup:
 
 ### R05 - Service Path Tamper Simulation
 
-Goal: Validate service anomaly detection.
+Goal: Validate service anomaly detection and guarded remediation.
 
 Setup:
 
-1. Create a test service or alter a test service ImagePath to benign placeholder.
+1. Create a test service or alter a test service ImagePath to benign placeholder (prefer BenchLab service markers such as `CDEBENCH_*` / launcher-style ImagePath).
 
 Validation:
 
-1. Run System Health audit_services and CST.
-2. Confirm warning and remediation path.
+1. Open **Startup Manager → Services**; confirm **RISK** / suspicion analysis and that **Suspicious only** surfaces the test service.
+2. Optionally corroborate with System Health `audit_services` and CST.
+3. Confirm **Delete** is offered for eligible unprotected/suspicious services and blocked for Windows service hosts / protected OS services.
 
 Cleanup:
 
-1. Restore original configuration.
+1. Delete the test service from Startup Manager Services (or restore the original ImagePath / configuration).
 
 ### R06 - Hosts Redirect Simulation
 

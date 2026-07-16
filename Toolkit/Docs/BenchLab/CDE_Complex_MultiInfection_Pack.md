@@ -56,7 +56,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Scripts\BenchLab\Invoke-Cd
 1. Snapshot restore (`baseline-pre-infect`)
 2. Inject one campaign (start with **C03** or **C04**)
 3. Run CDE → Malware Cleanup / CST **ThreatScan** or **FullScan** (both now walk **Users\Public**, Desktop, Documents — see CST high-risk roots)
-4. Remediate **content** findings in CST; clear **persistence** via Startup Manager / System Health; clear **proxy / browser policy / hosts** via Hijack & Scam Repair (CST Custom file scans do not replace those)
+4. Remediate **content** findings in CST; clear **persistence** (Run/Startup/tasks **and** eligible rogue services) via Startup Manager / System Health; clear **proxy / browser policy / hosts** via Hijack & Scam Repair (CST Custom file scans do not replace those)
 5. Cleanup pack action and/or restore snapshot
 
 ## Detection expectations (important)
@@ -64,7 +64,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Scripts\BenchLab\Invoke-Cd
 | Artifact type | Typical detector |
 |---|---|
 | Inert script markers under Temp / Public / Downloads / Desktop / Startup (path-gated YaraLike) | **CST** ThreatScan / FullScan |
-| Run / Startup / scheduled task | **Startup Manager** / System Health (CST Custom defaults persistence collectors **off**) |
+| Run / Startup / scheduled task / optional rogue service (C06, C08) | **Startup Manager** (User logon + Services) / System Health (CST Custom defaults persistence collectors **off**) |
 | Proxy / PAC / Edge homepage policy / hosts | **Hijack & Scam Repair** / System Health (CST config findings are mainly **hosts**) |
 | Decoy folders (e.g. AdobeCache) | Not intended as malware; remove with BenchLab **Cleanup** |
 
