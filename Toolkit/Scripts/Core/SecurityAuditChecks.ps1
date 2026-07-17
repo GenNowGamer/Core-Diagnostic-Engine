@@ -200,8 +200,28 @@ function Invoke-CoreSecurityTool {
         }
         $resultArtifactPath = Join-Path $cstDataRoot ("CST_Result_{0}.json" -f $sessionTs)
         $behaviorArtifactPath = Join-Path $cstDataRoot ("CST_BehaviorTelemetry_{0}.json" -f $sessionTs)
+        $networkArtifactPath = Join-Path $cstDataRoot ("CST_NetworkSnapshot_{0}.json" -f $sessionTs)
 
         $behaviorTelemetry = Invoke-CdeBehaviorTelemetryCollection -OutputPath $behaviorArtifactPath -SinceHours 24 -MaxEvents 32
+        $behaviorPaths = New-Object System.Collections.Generic.List[string]
+        if ($behaviorTelemetry.status -in @('Collected', 'NoArtifacts', 'Warn') -and -not [string]::IsNullOrWhiteSpace([string]$behaviorTelemetry.outputPath) -and (Test-Path -LiteralPath $behaviorTelemetry.outputPath -PathType Leaf)) {
+            $behaviorPaths.Add([string]$behaviorTelemetry.outputPath) | Out-Null
+        }
+
+        if (-not $isWinPe) {
+            try {
+                $paCore = Join-Path $PSScriptRoot 'ProcessAnalyzer.Core.ps1'
+                if (Test-Path -LiteralPath $paCore) { . $paCore }
+                if (Get-Command Export-ProcessNetworkArtifactsForCst -ErrorAction SilentlyContinue) {
+                    Export-ProcessNetworkArtifactsForCst -OutputPath $networkArtifactPath -MaxRows 200 | Out-Null
+                    if (Test-Path -LiteralPath $networkArtifactPath -PathType Leaf) {
+                        $behaviorPaths.Add($networkArtifactPath) | Out-Null
+                    }
+                }
+            } catch {
+                Write-Log ("Network snapshot for CST skipped: {0}" -f $_.Exception.Message)
+            }
+        }
 
         $invokeArgs = @{
             Mode = $CstMode
@@ -215,8 +235,8 @@ function Invoke-CoreSecurityTool {
             $invokeArgs.MaxMinutes = [int]$maxMinutes
         }
 
-        if ($behaviorTelemetry.status -in @('Collected', 'NoArtifacts', 'Warn') -and -not [string]::IsNullOrWhiteSpace([string]$behaviorTelemetry.outputPath) -and (Test-Path -LiteralPath $behaviorTelemetry.outputPath -PathType Leaf)) {
-            $invokeArgs.BehaviorArtifactsPath = @($behaviorTelemetry.outputPath)
+        if ($behaviorPaths.Count -gt 0) {
+            $invokeArgs.BehaviorArtifactsPath = @($behaviorPaths)
         }
 
         if ($CstMode -eq 'CustomScan' -and $ScanTarget -and $ScanTarget.Count -gt 0) {
@@ -1465,13 +1485,179 @@ function Invoke-ScheduledTasksAudit {
 }
 
 # â”€â”€â”€ Dispatch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function Invoke-RansomwareRecoveryAudit {
+    param($r)
+    Write-Log 'Auditing ransomware recovery tamper indicators (T1490)...'
+    $env = if (Get-Command Get-EnvironmentMode -ErrorAction SilentlyContinue) { Get-EnvironmentMode } else { 'Windows' }
+    $issues = [System.Collections.Generic.List[string]]::new()
+    $highSignal = 0
+
+    foreach ($svcName in @('VSS', 'swprv', 'wbengine')) {
+        try {
+            $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+            if ($null -eq $svc) { continue }
+            if ($svc.StartType -eq 'Disabled') {
+                $issues.Add("Service $svcName is Disabled.") | Out-Null
+                $highSignal++
+            }
+        } catch { }
+    }
+
+    if ($env -eq 'Windows') {
+        try {
+            $shadowBrowse = Join-Path $PSScriptRoot 'ShadowCopyBrowse.ps1'
+            if (Test-Path -LiteralPath $shadowBrowse) {
+                . $shadowBrowse
+                $shadows = @(Get-ShadowCopiesViaVssAdmin -AllowFailure)
+                if ($shadows.Count -eq 0) {
+                    $issues.Add('No volume shadow copies found (Warn: System Restore may be off).') | Out-Null
+                }
+            }
+        } catch {
+            $issues.Add("Shadow copy enumeration failed: $($_.Exception.Message)") | Out-Null
+        }
+
+        try {
+            $reagent = & reagentc.exe /info 2>&1 | Out-String
+            if ($reagent -match '(?i)Windows\s+RE\s+status\s*:\s*Disabled') {
+                $issues.Add('Windows RE is Disabled (reagentc).') | Out-Null
+                $highSignal++
+            }
+        } catch {
+            $issues.Add("WinRE check failed: $($_.Exception.Message)") | Out-Null
+        }
+    } else {
+        $offlineRoot = $env:OFFLINE_WINDOWS_ROOT
+        if (-not [string]::IsNullOrWhiteSpace($offlineRoot)) {
+            $recoveryDir = Join-Path $offlineRoot.TrimEnd('\') 'Windows\System32\Recovery'
+            if (-not (Test-Path -LiteralPath $recoveryDir)) {
+                $issues.Add("Offline recovery folder missing: $recoveryDir") | Out-Null
+                $highSignal++
+            }
+        } else {
+            $issues.Add('WinPE: set OFFLINE_WINDOWS_ROOT for offline WinRE checks.') | Out-Null
+        }
+    }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add('RANSOMWARE RECOVERY AUDIT') | Out-Null
+    $lines.Add('=========================') | Out-Null
+    foreach ($issue in $issues) { $lines.Add(" - $issue") | Out-Null }
+    if ($highSignal -ge 2) {
+        $lines.Add('') | Out-Null
+        $lines.Add('High: multiple recovery features impaired (T1490 pattern).') | Out-Null
+    }
+
+    $status = if ($highSignal -ge 2) { 'Fail' } elseif ($issues.Count -gt 0) { 'Warn' } else { 'Pass' }
+    $findings = @()
+    if ($status -eq 'Pass') {
+        $findings += New-HealthFinding -FindingId 'security.ransomware_recovery.ok' -CheckId 'sec_ransomware_recovery' `
+            -Finding 'Recovery features look intact' -Impact 'No strong T1490 recovery-tamper indicators.' `
+            -Severity 'Info' -Confidence 80 -Status 'Pass' -Evidence @('VSS/WinRE checks completed.')
+    } else {
+        foreach ($issue in $issues) {
+            if ($issue -match '(?i)informational') { continue }
+            $findings += New-HealthFinding -FindingId 'security.ransomware_recovery.issue' -CheckId 'sec_ransomware_recovery' `
+                -Finding $issue -Impact 'Ransomware often disables shadow copies, backup services, or WinRE before encryption.' `
+                -Severity $(if ($highSignal -ge 2) { 'High' } else { 'Medium' }) -Confidence 75 -Status $status `
+                -Evidence @($issue) `
+                -Recommendations @('Review VSS/WinRE state and run Core Security Tool Full Scan.', 'Do not rely on missing shadows alone as proof of ransomware.') `
+                -Actions @(
+                    @{ type = 'cde'; target = 'CoreSecurityTool'; label = 'Core Security Tool' }
+                    @{ type = 'cde'; target = 'FileManager'; label = 'File Manager (Shadow Copies)' }
+                )
+        }
+    }
+
+    $step = @{
+        Name    = 'RansomwareRecoveryAudit'
+        Status  = $status
+        Output  = ($lines -join "`n")
+        CheckId = 'sec_ransomware_recovery'
+        Detail  = "Issues=$($issues.Count); HighSignal=$highSignal"
+    }
+    Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $step.Detail
+    $r.Steps.Add([PSCustomObject]$step)
+    Write-Log $step.Output
+}
+
+function Invoke-MinerBehaviorAudit {
+    param($r)
+    Write-Log 'Auditing miner behavior heuristics...'
+    $env = if (Get-Command Get-EnvironmentMode -ErrorAction SilentlyContinue) { Get-EnvironmentMode } else { 'Windows' }
+    if ($env -ne 'Windows') {
+        $step = @{
+            Name = 'MinerBehaviorAudit'; Status = 'N/A'; CheckId = 'sec_miner_behavior'
+            Output = 'Miner behavior audit requires live Windows process telemetry.'
+        }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-HealthFinding -FindingId 'security.miner.na' -CheckId 'sec_miner_behavior' `
+                -Finding 'Not available in WinPE' -Impact 'Live process heuristics unavailable.' `
+                -Severity 'Info' -Confidence 90 -Status 'N/A'
+        ) -SummaryText 'N/A'
+        $r.Steps.Add([PSCustomObject]$step)
+        return
+    }
+
+    $core = Join-Path $PSScriptRoot 'ProcessAnalyzer.Core.ps1'
+    if (Test-Path -LiteralPath $core) { . $core }
+
+    $hits = [System.Collections.Generic.List[string]]::new()
+    try {
+        $samples = Get-ProcessCpuPercentMap -SampleMs 400
+        foreach ($proc in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
+            if ($null -eq $proc) { continue }
+            $procId = [int]$proc.ProcessId
+            $path = [string]$proc.ExecutablePath
+            $cmd = [string]$proc.CommandLine
+            $cpu = 0.0
+            if ($samples -and $samples.ContainsKey($procId)) { $cpu = [double]$samples[$procId] }
+            $risk = Get-ProcessRiskInfo -Name ([string]$proc.Name) -FilePath $path -CommandLine $cmd `
+                -IsSigned $null -CpuPercent $cpu -RamMB 0 -Status 'Running'
+            $flags = @([string]$risk.Flags -split ',' | Where-Object { $_ })
+            if ($flags -contains 'miner_cmdline' -or ($flags -contains 'high_cpu' -and $flags -contains 'writable_path')) {
+                $hits.Add("PID $procId $($proc.Name) cpu=$([math]::Round($cpu,1))% flags=$($risk.Flags) path=$path") | Out-Null
+            }
+        }
+    } catch {
+        $hits.Add("Miner audit failed: $($_.Exception.Message)") | Out-Null
+    }
+
+    $status = if ($hits.Count -gt 0) { 'Warn' } else { 'Pass' }
+    $findings = @()
+    if ($hits.Count -eq 0) {
+        $findings += New-HealthFinding -FindingId 'security.miner.ok' -CheckId 'sec_miner_behavior' `
+            -Finding 'No miner heuristics triggered' -Impact 'No high-CPU risky-path or miner cmdline process found in snapshot.' `
+            -Severity 'Info' -Confidence 70 -Status 'Pass'
+    } else {
+        foreach ($hit in $hits) {
+            $findings += New-HealthFinding -FindingId 'security.miner.suspect' -CheckId 'sec_miner_behavior' `
+                -Finding 'Possible miner behavior' -Impact 'Crypto miners often show high CPU and mining pool cmdline from user-writable paths.' `
+                -Severity 'Medium' -Confidence 65 -Status 'Warn' -Evidence @($hit) `
+                -Recommendations @('Inspect the process in Process Analyzer and scan the image path with CST.') `
+                -Actions @(@{ type = 'cde'; target = 'ProcessAnalyzer'; label = 'Process Analyzer' })
+        }
+    }
+
+    $step = @{
+        Name = 'MinerBehaviorAudit'; Status = $status; CheckId = 'sec_miner_behavior'
+        Output = if ($hits.Count -eq 0) { 'No miner heuristics triggered.' } else { ($hits -join "`n") }
+        Detail = "Hits=$($hits.Count)"
+    }
+    Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $step.Detail
+    $r.Steps.Add([PSCustomObject]$step)
+    Write-Log $step.Output
+}
+
 function Get-SecurityAuditCheckDispatchMap {
     return @{
-        sec_defender           = { param($r) Invoke-DefenderScan $r }
-        sec_cst                = { param($r) Invoke-CoreSecurityTool $r }
-        sec_autoruns           = { param($r) Invoke-AutorunsAudit $r }
-        sec_hosts              = { param($r) Invoke-HostsFileCheck $r }
-        sec_browser_extensions = { param($r) Invoke-BrowserExtensionScan $r }
-        sec_scheduled_tasks    = { param($r) Invoke-ScheduledTasksAudit $r }
+        sec_defender             = { param($r) Invoke-DefenderScan $r }
+        sec_cst                  = { param($r) Invoke-CoreSecurityTool $r }
+        sec_autoruns             = { param($r) Invoke-AutorunsAudit $r }
+        sec_hosts                = { param($r) Invoke-HostsFileCheck $r }
+        sec_browser_extensions   = { param($r) Invoke-BrowserExtensionScan $r }
+        sec_scheduled_tasks      = { param($r) Invoke-ScheduledTasksAudit $r }
+        sec_ransomware_recovery  = { param($r) Invoke-RansomwareRecoveryAudit $r }
+        sec_miner_behavior       = { param($r) Invoke-MinerBehaviorAudit $r }
     }
 }

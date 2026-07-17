@@ -2,6 +2,27 @@
 
 **Last updated:** 2026-07-17
 
+## 2026-07-17 — CST capability gaps, Process Analyzer detail, and false-positive hardening
+
+### Security capability coverage
+
+- **Defender exclusions** — `Get-MpPreference` inventory feeds System Health **Security Tampering Audit** and CST `DefenderExclusionInspector`; risky broad path/process/extension exclusions are high-confidence PUM findings. Defender service unavailable (`0x800106BA`) is N/A, not a security warning.
+- **Ransomware recovery tamper** — System Health **Ransomware Recovery Audit** and CST inspect disabled VSS/backup services and WinRE state (T1490 context).
+- **Drivers and filters** — System Health **Driver Signature Audit** and CST inventory minifilters plus disk/volume UpperFilters/LowerFilters. Verified stock Microsoft and Malwarebytes names are globally recognized; no path exclusions or host-local suppression are used.
+- **Live behavior** — Process Analyzer and `CdeBehaviorCollector` add process-network snapshots and credential-access, injection, and miner command-line/event indicators; Malware Cleanup passes behavior artifacts into CST for correlation.
+
+### Process Analyzer and CST results UI
+
+- **Process details** — The GUI now renders collected **Network connections** and **Module anomalies** beneath the selected process details.
+- **Suppressed review** — The separate Suppressed panel was removed. A single collapsed **Suppressed audit Findings** expander sits at the bottom of the main Findings card and reveals the review-only grid when opened.
+- **Signer noise** — Authenticode timeout alone produces no finding. Unsigned DLLs in risky paths are Low/0.50 weak signals and require another detector to surface as primary; unsigned EXE/SYS behavior remains unchanged.
+
+### Validation and publish
+
+- `Test-ProcessAnalyzerRiskAndNetwork.ps1`, targeted CST capability validators, signer-trust contracts, ToolkitGUI tests, and full CST release gates passed.
+- Canonical `App\Publish-ToolkitGUI.ps1` completed. Launch `Toolkit\CDE.exe`; GUI payload timestamp **2026-07-17 1:51:42 PM**. Final CST module was synced after its release-gate pass.
+- This section supersedes the 2026-07-15 notes describing separate Findings/Suppressed grids with a 2:1 layout.
+
 ## 2026-07-17 — Structured System Health findings + GPU functional tests
 
 ### Findings model and hybrid result cards
@@ -244,7 +265,7 @@ Read-only review across ~10 toolkit slices; **Pass 1 and Pass 2 fixes shipped** 
 - **Horizontal scroll** — Findings grid uses DataGrid-native horizontal scrollbar (`Visible`) with wide Location/Evidence columns (2026-07-13 restore). App-wide `ScrollBar` style still clears forced `Width=12` for horizontal bars.
 - **Verdict / coverage** — Mode labels in verdict/action text (ThreatScan vs FullScan vs CustomScan); coverage notes surface Partial / known-good skips / trusted-signer exits.
 - **Archive findings** — Inner `zip::entry` rows stay review-only; CST also emits an actionable **parent archive** `File` finding so techs can Quarantine/Remove the `.zip`/`.jar`. UI notes explain the path.
-- **CST engine (synced)** — ThreatScan includes DLLs + light archive peek; Authenticode timeouts emit Low/Unknown (not silence); trusted-signer early exit narrowed to Microsoft-family + cheap spot-check on known-good/trusted skips; stronger correlation promote; empty EFI hash baselines → signer-only + coverage note (see 2026-07-11). See CST `CST\session_handoff.md`.
+- **CST engine (historical)** — ThreatScan added DLLs + light archive peek; trusted-signer early exit narrowed to Microsoft-family + cheap spot-check; stronger correlation promotion; empty EFI hash baselines moved to coverage. **Superseded 2026-07-17:** timeout-only Authenticode checks no longer emit findings.
 - **Publish** — `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (GUI + CST runtime sync). Latest GUI payload this session ~**2:54 PM**; 2026-07-11 coverage-note publish ~**4:11 PM**.
 
 ## 2026-07-10 — Startup Manager CST StartupEntryScan

@@ -130,7 +130,7 @@ The directories pane starts empty until you select a location.
 
 ## Process Analyzer
 
-**What this does:** Live process triage on the running system — CPU and RAM usage, image path, risk heuristics, and a detail pane for command line, session, parent chain, loaded modules, and file hash. Use during malware investigations or when System Health Check flags high CPU or memory.
+**What this does:** Live process triage on the running system — CPU and RAM usage, image path, risk heuristics, network activity, and a detail pane for command line, session, parent chain, loaded modules, module anomalies, connections, and file hash. Use during malware investigations or when System Health Check flags high CPU or memory.
 
 ### Main controls
 
@@ -152,7 +152,13 @@ The directories pane starts empty until you select a location.
 
 ### Detail pane (select a row)
 
-Shows command line, parent PID, **session** (0 = services/system; 1+ = user desktop), start time, signature, RAM, parent chain, top loaded modules, and SHA256. Action buttons:
+Shows command line, parent PID, **session** (0 = services/system; 1+ = user desktop), start time, signature, RAM, parent chain, top loaded modules, SHA256, and:
+
+- **Network connections** — protocol, local/remote endpoints, state, and owning PID when available
+- **Module anomalies** — loaded-module conditions that merit review
+- **Risk flags** — credential-access, injection, miner, suspicious command-line/path, and related indicators; these are triage signals, not automatic proof of malware
+
+Action buttons:
 
 | Button | Action |
 |--------|--------|

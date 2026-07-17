@@ -3,6 +3,14 @@
 **Last updated:** 2026-07-17
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
 
+## 2026-07-17 update — CST capability closure + results noise/UI
+
+- **Capability coverage** — System Health/Hijack/CST now inspect Defender exclusions, ransomware recovery tampering, and driver/minifilter inventory. Process Analyzer/behavior telemetry add network snapshots plus credential-access, injection, and miner indicators.
+- **Process Analyzer details** — Network connections and module anomalies collected by the backend now render in the selected-process detail pane.
+- **CST results UX** — Primary findings remain in the main grid; **Suppressed audit Findings** is one collapsed expander row at its bottom and opens the review-only grid on demand.
+- **False-positive hardening** — Verified Windows/Malwarebytes filters are globally recognized; Defender `0x800106BA` is unavailable/N/A; Authenticode timeout alone is not a security finding; unsigned DLLs in risky paths are Low/0.50 weak signals requiring corroboration (unsigned EXE behavior remains Medium/0.68).
+- **Verify/publish** — Targeted validators and full CST release gates passed. Canonical publish completed; GUI payload **2026-07-17 1:51:42 PM** and final CST runtime synced afterward. Full notes: `Toolkit\session_handoff.md` and CST `CST\session_handoff.md`.
+
 ## 2026-07-17 update — Structured health findings + GPU diagnostics
 
 - **System Health findings** — Checks now persist Finding / Impact / Severity / deterministic Confidence (0–100) / Evidence / Recommendation / actions. Event checks correlate common failure clusters and retain unclassified significant events.

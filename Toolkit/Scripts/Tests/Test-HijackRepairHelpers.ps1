@@ -78,6 +78,16 @@ Assert-True -Name 'Wrong browser exe path is hijacked' -Condition (
     (Test-HijackBrowserShortcutHijacked -BrowserLabel 'Edge' -TargetPath 'C:\Program Files\evil\launcher.exe' -PathFragment 'Microsoft\Edge\Application' -AppPathExe 'msedge.exe')
 )
 
+Assert-True -Name 'Risky Defender Temp exclusion' -Condition (
+    (Test-HijackRiskyDefenderExclusion -ExclusionType 'Path' -Value 'C:\Users\Bob\AppData\Local\Temp')
+)
+Assert-True -Name 'Risky Defender exe extension exclusion' -Condition (
+    (Test-HijackRiskyDefenderExclusion -ExclusionType 'Extension' -Value '.exe')
+)
+Assert-True -Name 'Benign Defender Program Files exclusion' -Condition (
+    -not (Test-HijackRiskyDefenderExclusion -ExclusionType 'Path' -Value 'C:\Program Files\Contoso')
+)
+
 $f1 = New-HijackFinding -Category 'Browser' -Name 'Test' -Location 'HKCU:\Test' -CurrentValue 'x' -RepairAction 'browser.policy.remove' -RepairData @{ policyPath = 'HKCU:\Test'; propertyName = 'Homepage' }
 $f2 = New-HijackFinding -Category 'Browser' -Name 'Test' -Location 'HKCU:\Test' -CurrentValue 'x' -RepairAction 'browser.policy.remove' -RepairData @{ policyPath = 'HKCU:\Test'; propertyName = 'Homepage' }
 Assert-True -Name 'Finding id is stable' -Condition ($f1.id -eq $f2.id)

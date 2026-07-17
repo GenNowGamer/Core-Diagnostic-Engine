@@ -179,6 +179,8 @@ function Get-ProcessDetailPayload {
     $services = Get-SvchostServiceNames -ProcessId $ProcessId
     $modules = Get-ProcessLoadedModules -ProcessId $ProcessId
     $inStartup = if ($path) { Test-ProcessPathInStartup -ExePath $path } else { $false }
+    $connections = @(Get-ProcessNetworkSnapshot -ProcessId $ProcessId -MaxRows 80)
+    $moduleAnomalies = @(Get-ProcessModuleAnomalies -ProcessId $ProcessId -ProcessPath $path)
 
     $fileHash = ''
     if ($path -and (Test-Path -LiteralPath $path)) {
@@ -221,6 +223,8 @@ function Get-ProcessDetailPayload {
         ParentChain      = @($parentChain)
         Services         = @($services)
         Modules          = @($modules)
+        Connections      = @($connections)
+        ModuleAnomalies  = @($moduleAnomalies)
         Sha256           = $fileHash
     }
 }

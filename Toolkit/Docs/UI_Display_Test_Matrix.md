@@ -48,6 +48,13 @@ Use this checklist when validating responsive layout changes across display size
 - [ ] Header action buttons wrap
 - [ ] Process list + detail resize via GridSplitter (AvalonDock prototype deferred — named control scope)
 - [ ] Process grid horizontal scroll on narrow widths
+- [ ] Selected-process Network connections and Module anomalies sections remain reachable and scroll correctly
+
+### CST Scan Results
+- [ ] Primary Findings grid retains vertical and horizontal scrolling at the default window size
+- [ ] **Suppressed audit Findings** appears as one collapsed line at the bottom of Findings when suppressed rows exist
+- [ ] Expanding suppressed findings reveals a usable review-only grid; collapsing restores primary-findings space
+- [ ] Suppressed line is absent when the scan has no suppressed audit rows
 
 ### Workflow views (OS Repair, Malware Cleanup, Backup, Post-Op, etc.)
 - [ ] OUTPUT status bars wrap instead of clipping

@@ -266,7 +266,7 @@ Scripts/
 │   ├── EventFindingClusters.ps1 # Event-log correlation and confidence scoring
 │   ├── SystemAuditChecks.ps1  # Shared audit functions (System Health Check audit_* checks)
 │   ├── SecurityAuditChecks.ps1  # Shared security audit functions (System Health Check sec_* checks)
-│   ├── ProcessAnalyzer.Core.ps1  # Process list/detail helpers, risk heuristics, CST invoke (Process Analyzer)
+│   ├── ProcessAnalyzer.Core.ps1  # Process detail, network/module anomaly collection, credential/injection/miner risk flags, CST invoke
 │   ├── HijackRepairChecks.ps1  # Hijack scan category checks (browser, network, security, startup, remote)
 │   ├── HijackRepairFindings.ps1  # Hijack scan orchestration + tagged [HIJACK:FINDING] output
 │   ├── HijackRepairHelpers.ps1  # Hijack repair actions (browser policy, hosts, Defender RTP, Winlogon, etc.)
@@ -279,7 +279,7 @@ Scripts/
     ├── MalwareSweep.ps1   # Malware Cleanup: DefenderScan, CoreSecurityTool, UpdateHashIOCs
     ├── OSRepair.ps1
     ├── PostOp.ps1   # Post-Op Cleanup (8 tools: browser cache, services, file assoc, shell caches, DNS/proxy, hosts, restart Explorer)
-    ├── ProcessAnalyzer.ps1   # Process Analyzer: List, Detail, Kill, CstScan, Export
+    ├── ProcessAnalyzer.ps1   # Process Analyzer: List, Detail, network artifacts, Kill, CstScan, Export
     ├── HijackRepair.ps1   # Hijack & Scam Repair: Scan, Repair, Quick Repairs, Generate-Report
     ├── StartupManager.ps1
     ├── SystemHealthCheck.ps1  # Catalog-driven multi-check health orchestrator (audit_* + sec_* via shared Core modules)
@@ -453,8 +453,9 @@ WorkOrders/                  # Toolkit root (operator-facing)
 ```
 App/
 ├── ToolkitGUI/         # Source project edited for all GUI changes
-│   ├── Services/       # PDF export, TabularScanReportService, result formatting, ProcessWmiEnricher, ProcessAnalyzerCstResultService, ResultLogCleanupService, WorkOrderService (ClearRecentInternalWorkOrderRecords), …
+│   ├── Services/       # PDF export, CST/Defender result + progress services, result formatting, ProcessWmiEnricher, cleanup/work-order services, …
 │   └── Views/          # HijackRepairView, ProcessAnalyzerView, ProcessAnalyzerCstResultDialog, SettingsView, DashboardView (Clear Recent), CoreSecurityToolConfigDialog, …
+├── CdeBehaviorCollector/ # Self-contained Security/System/Defender/PowerShell/WMI behavior bundle collector for CST correlation
 ├── CdeGpuDiagCli/      # Self-contained GPU probe/functional-test helper (probe, test-all)
 ├── UserGuideGenerator/ # Console: Docs/UserGuide → HALP/CDE_User_Guide.pdf (not linked into ToolkitGUI — Markdig conflict)
 ├── ToolkitGUI.sln      # Source solution

@@ -78,7 +78,8 @@ internal sealed class CollectorApplication
             "System",
             "Microsoft-Windows-Windows Defender/Operational",
             "Microsoft-Windows-PowerShell/Operational",
-            "Microsoft-Windows-WMI-Activity/Operational"
+            "Microsoft-Windows-WMI-Activity/Operational",
+            "Microsoft-Windows-Sysmon/Operational"
         };
 
         var results = channels.Select(channel =>
@@ -109,6 +110,7 @@ internal sealed class CollectorApplication
         CollectDefender1116(sinceUtc, options.MaxEventsPerChannel, artifacts, channelResults);
         CollectPowerShell4104(sinceUtc, options.MaxEventsPerChannel, artifacts, channelResults);
         CollectWmi5861(sinceUtc, options.MaxEventsPerChannel, artifacts, channelResults);
+        CollectOptionalSysmon(sinceUtc, options.MaxEventsPerChannel, artifacts, channelResults);
 
         return new BehaviorEnvelope(
             Collector: "CdeBehaviorCollector",
@@ -140,9 +142,10 @@ internal sealed class CollectorApplication
                 var userSid = FirstNonEmpty(data, "SubjectUserSid", "TargetUserSid");
                 var integrity = FirstNonEmpty(data, "MandatoryLabel");
                 var riskTags = BuildRiskTags(processPath, commandLine);
+                var kind = ResolveArtifactKind(riskTags);
 
                 return new BehaviorArtifact(
-                    Kind: "Process",
+                    Kind: kind,
                     Source: "CdeBehaviorCollector",
                     Name: Path.GetFileName(processPath),
                     Path: processPath,
@@ -150,7 +153,7 @@ internal sealed class CollectorApplication
                     CommandLine: commandLine,
                     Location: "Security/4688",
                     State: "Observed",
-                    ObjectType: "Process",
+                    ObjectType: kind == "Process" ? "Process" : "Telemetry",
                     Evidence: "Process creation observed via Security event 4688.",
                     EntityType: "Process",
                     Pid: newProcessId,
@@ -167,7 +170,7 @@ internal sealed class CollectorApplication
                     ParentEntityId: parentPid.HasValue && parentPid.Value > 0 ? $"process:{parentPid.Value}" : null,
                     EdgeType: parentPid.HasValue && parentPid.Value > 0 ? "created_by" : null,
                     CorrelationStrength: 0.0,
-                    ConfidenceDelta: riskTags.Count > 0 ? 0.05 : 0.0,
+                    ConfidenceDelta: riskTags.Count > 0 ? Math.Min(0.15, 0.04 * riskTags.Count) : 0.0,
                     FirstSeenUtc: record.TimeCreated?.ToUniversalTime(),
                     LastSeenUtc: record.TimeCreated?.ToUniversalTime());
             });
@@ -611,7 +614,176 @@ internal sealed class CollectorApplication
             tags.Add("network_stager");
         }
 
+        if (combined.Contains("login data") || combined.Contains("\\cookies") || combined.Contains("web data") ||
+            combined.Contains("key4.db") || combined.Contains("logins.json") || combined.Contains("procdump") ||
+            combined.Contains("mimikatz") || combined.Contains("lsass.exe") || combined.Contains("\\lsass"))
+        {
+            tags.Add("credential_store_touch");
+            tags.Add("lsass_or_browser_store");
+        }
+
+        if ((combined.Contains("vssadmin") && combined.Contains("delete")) ||
+            combined.Contains("shadowcopy delete") ||
+            (combined.Contains("wbadmin") && combined.Contains("delete")) ||
+            (combined.Contains("diskshadow") && combined.Contains("delete")) ||
+            combined.Contains("resize shadowstorage") ||
+            (combined.Contains("recoveryenabled") && combined.Contains("no")) ||
+            (combined.Contains("reagentc") && combined.Contains("disable")))
+        {
+            tags.Add("t1490_recovery_inhibit");
+        }
+
+        if (combined.Contains("virtualallocex") || combined.Contains("writeprocessmemory") ||
+            combined.Contains("createremotethread") || combined.Contains("ntcreatethreadex") ||
+            combined.Contains("reflectivedll") || combined.Contains("process hollowing"))
+        {
+            tags.Add("injection_api");
+        }
+
+        if (combined.Contains("xmrig") || combined.Contains("stratum+tcp") || combined.Contains("stratum+ssl") ||
+            combined.Contains("nicehash") || combined.Contains("ethminer") || combined.Contains("--cuda"))
+        {
+            tags.Add("miner_cmdline");
+        }
+
         return tags.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static string ResolveArtifactKind(IReadOnlyCollection<string> riskTags)
+    {
+        if (riskTags.Any(t => t.Equals("credential_store_touch", StringComparison.OrdinalIgnoreCase) ||
+                              t.Equals("lsass_or_browser_store", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "CredentialAccess";
+        }
+
+        if (riskTags.Any(t => t.Equals("injection_api", StringComparison.OrdinalIgnoreCase) ||
+                              t.Equals("remote_thread", StringComparison.OrdinalIgnoreCase) ||
+                              t.Equals("process_access", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "ProcessInjection";
+        }
+
+        if (riskTags.Any(t => t.Equals("t1490_recovery_inhibit", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "RecoveryTamper";
+        }
+
+        return "Process";
+    }
+
+    private static void CollectOptionalSysmon(DateTime sinceUtc, int maxEvents, List<BehaviorArtifact> artifacts, List<ChannelResult> channelResults)
+    {
+        const string sysmonLog = "Microsoft-Windows-Sysmon/Operational";
+        if (!EventLog.Exists(sysmonLog))
+        {
+            channelResults.Add(new ChannelResult("Sysmon", "Unavailable", 0, "Sysmon operational log not present; skipped."));
+            return;
+        }
+
+        CollectFromLog(
+            logName: sysmonLog,
+            eventId: 8,
+            logicalChannel: "Sysmon-8",
+            sinceUtc: sinceUtc,
+            maxEvents: maxEvents,
+            artifacts: artifacts,
+            channelResults: channelResults,
+            mapEvent: record =>
+            {
+                var data = GetNamedEventData(record);
+                var sourceImage = FirstNonEmpty(data, "SourceImage");
+                var targetImage = FirstNonEmpty(data, "TargetImage");
+                var sourcePid = ParseProcessId(FirstNonEmpty(data, "SourceProcessId", "SourceProcessGuid"));
+                var riskTags = new List<string> { "remote_thread", "injection_api" };
+                riskTags.AddRange(BuildRiskTags(sourceImage, targetImage));
+
+                return new BehaviorArtifact(
+                    Kind: "ProcessInjection",
+                    Source: "CdeBehaviorCollector",
+                    Name: Path.GetFileName(sourceImage),
+                    Path: sourceImage,
+                    TargetPath: targetImage,
+                    CommandLine: null,
+                    Location: "Sysmon/8",
+                    State: "Observed",
+                    ObjectType: "Telemetry",
+                    Evidence: "CreateRemoteThread observed via Sysmon event 8.",
+                    EntityType: "Process",
+                    Pid: sourcePid,
+                    ParentPid: null,
+                    SessionId: null,
+                    UserSid: null,
+                    IntegrityLevel: null,
+                    SignerStatus: null,
+                    Publisher: null,
+                    Sha256: null,
+                    SourceChannel: "Sysmon-8",
+                    EvidenceKind: "ImportedTelemetry",
+                    RiskTags: riskTags.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                    ParentEntityId: null,
+                    EdgeType: "remote_thread",
+                    CorrelationStrength: 0.25,
+                    ConfidenceDelta: 0.12,
+                    FirstSeenUtc: record.TimeCreated?.ToUniversalTime(),
+                    LastSeenUtc: record.TimeCreated?.ToUniversalTime());
+            });
+
+        CollectFromLog(
+            logName: sysmonLog,
+            eventId: 10,
+            logicalChannel: "Sysmon-10",
+            sinceUtc: sinceUtc,
+            maxEvents: maxEvents,
+            artifacts: artifacts,
+            channelResults: channelResults,
+            mapEvent: record =>
+            {
+                var data = GetNamedEventData(record);
+                var sourceImage = FirstNonEmpty(data, "SourceImage");
+                var targetImage = FirstNonEmpty(data, "TargetImage");
+                var sourcePid = ParseProcessId(FirstNonEmpty(data, "SourceProcessId"));
+                var riskTags = new List<string> { "process_access" };
+                if (!string.IsNullOrWhiteSpace(targetImage) &&
+                    targetImage.Contains("lsass", StringComparison.OrdinalIgnoreCase))
+                {
+                    riskTags.Add("lsass_access");
+                    riskTags.Add("credential_store_touch");
+                }
+
+                riskTags.AddRange(BuildRiskTags(sourceImage, targetImage));
+                var kind = ResolveArtifactKind(riskTags);
+
+                return new BehaviorArtifact(
+                    Kind: kind,
+                    Source: "CdeBehaviorCollector",
+                    Name: Path.GetFileName(sourceImage),
+                    Path: sourceImage,
+                    TargetPath: targetImage,
+                    CommandLine: null,
+                    Location: "Sysmon/10",
+                    State: "Observed",
+                    ObjectType: "Telemetry",
+                    Evidence: "Process access observed via Sysmon event 10.",
+                    EntityType: "Process",
+                    Pid: sourcePid,
+                    ParentPid: null,
+                    SessionId: null,
+                    UserSid: null,
+                    IntegrityLevel: null,
+                    SignerStatus: null,
+                    Publisher: null,
+                    Sha256: null,
+                    SourceChannel: "Sysmon-10",
+                    EvidenceKind: "ImportedTelemetry",
+                    RiskTags: riskTags.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                    ParentEntityId: null,
+                    EdgeType: "process_access",
+                    CorrelationStrength: 0.2,
+                    ConfidenceDelta: 0.1,
+                    FirstSeenUtc: record.TimeCreated?.ToUniversalTime(),
+                    LastSeenUtc: record.TimeCreated?.ToUniversalTime());
+            });
     }
 
     private static List<string> BuildPowerShellRiskTags(string? scriptText, string? scriptPath)

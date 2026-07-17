@@ -928,7 +928,12 @@ namespace ToolkitGUI.ViewModels
 
         private void ApplyProgressEvent(CstLiveProgressEvent progress)
         {
-            var effectivePercent = progress.OverallPercent ?? progress.Percent;
+            var effectivePercent = CstScanProgressHelper.ResolveDisplayPercent(
+                progress.Phase,
+                progress.Scanned,
+                progress.ProgressTotal,
+                progress.OverallPercent,
+                progress.Percent);
             var percent = Math.Max(0.0, Math.Min(100.0, effectivePercent));
             Progress = (int)Math.Round(percent);
             ProgressPercentText = $"{percent:0.0}%";
@@ -1111,6 +1116,12 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
+            if (string.Equals(item.ToolKey, "DefenderScan", StringComparison.OrdinalIgnoreCase))
+            {
+                await RunDefenderLiveScanAsync(item, scriptPath);
+                return;
+            }
+
             var parameters = BuildToolParameters(item.ToolKey);
             if (parameters is null)
             {
@@ -1180,6 +1191,41 @@ namespace ToolkitGUI.ViewModels
             }
             finally
             {
+                item.IsRunning = false;
+                IsRunning = false;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        private Task RunDefenderLiveScanAsync(ToolItem item, string scriptPath)
+        {
+            item.IsRunning = true;
+            item.StatusText = "Scanning...";
+            IsRunning = true;
+
+            try
+            {
+                var owner = Application.Current?.Windows.OfType<Window>()
+                    .FirstOrDefault(window => window.IsActive);
+
+                DefenderScanResultService.ShowLiveScan(
+                    owner,
+                    scriptPath,
+                    onSuccess: (_, _) => item.StatusText = "Done \u2713",
+                    onFinished: () =>
+                    {
+                        item.IsRunning = false;
+                        IsRunning = false;
+                    });
+
+                if (string.Equals(item.StatusText, "Scanning...", StringComparison.Ordinal))
+                    item.StatusText = "Done \u2713";
+            }
+            catch (Exception ex)
+            {
+                item.StatusText = $"Error: {ex.Message}";
+                MessageBox.Show(ex.Message, "Windows Defender Scan", MessageBoxButton.OK, MessageBoxImage.Warning);
                 item.IsRunning = false;
                 IsRunning = false;
             }
@@ -3286,7 +3332,12 @@ namespace ToolkitGUI.ViewModels
                 cstItem.Status = "Running";
             }
 
-            var effectivePercent = progress.OverallPercent ?? progress.Percent;
+            var effectivePercent = CstScanProgressHelper.ResolveDisplayPercent(
+                progress.Phase,
+                progress.Scanned,
+                progress.ProgressTotal,
+                progress.OverallPercent,
+                progress.Percent);
             var percent = Math.Max(0.0, Math.Min(100.0, effectivePercent));
             if (percent > 0)
             {

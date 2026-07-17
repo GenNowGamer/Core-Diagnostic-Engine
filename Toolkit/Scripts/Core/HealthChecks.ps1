@@ -383,9 +383,63 @@ function Invoke-HealthCheck_driver_signature_audit {
                         -Actions @(@{ type = 'shell'; target = 'devmgmt.msc'; label = 'Device Manager' })
                 }
             }
+
+            $allowFilters = @('WdFilter', 'luafv', 'npsvctrig', 'FileInfo', 'Wof', 'storqosflt', 'wcifs', 'FileCrypt', 'bindflt', 'CldFlt', 'PrjFlt')
+            $unexpectedFilters = [System.Collections.Generic.List[string]]::new()
+            try {
+                $fltOut = & fltmc.exe filters 2>&1 | Out-String
+                foreach ($line in ($fltOut -split "`r?`n")) {
+                    if ($line -match '^\s*Filter\s+Name' -or $line -match '^-{3,}' -or [string]::IsNullOrWhiteSpace($line)) { continue }
+                    if ($line -match '^\s*(\S+)\s+\d+') {
+                        $fname = $Matches[1]
+                        $allowed = $false
+                        foreach ($a in $allowFilters) { if ($fname -ieq $a) { $allowed = $true; break } }
+                        if (-not $allowed) { $unexpectedFilters.Add($fname) | Out-Null }
+                    }
+                }
+            } catch { }
+
+            foreach ($fname in $unexpectedFilters) {
+                $findings += New-HealthFinding -FindingId 'driver.filter.unexpected' -CheckId 'driver_signature_audit' `
+                    -Subject $fname -Finding 'Unexpected minifilter' `
+                    -Impact 'Unexpected filter drivers warrant review; wording is inventory, not confirmed rootkit.' `
+                    -Severity 'Medium' -Confidence 60 -Status 'Warn' `
+                    -Evidence @("fltmc filter: $fname") `
+                    -Recommendations @('Verify the filter publisher and unload only if confirmed malicious.') `
+                    -Actions @(@{ type = 'cde'; target = 'CoreSecurityTool'; label = 'Core Security Tool' })
+            }
+
+            $filterKeys = @(
+                'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e967-e325-11ce-bfc1-08002be10318}',
+                'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e96a-e325-11ce-bfc1-08002be10318}'
+            )
+            foreach ($key in $filterKeys) {
+                if (-not (Test-Path -LiteralPath $key)) { continue }
+                try {
+                    $item = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
+                    foreach ($propName in @('UpperFilters', 'LowerFilters')) {
+                        if (-not $item.PSObject.Properties[$propName]) { continue }
+                        foreach ($val in @($item.$propName)) {
+                            if ([string]::IsNullOrWhiteSpace([string]$val)) { continue }
+                            $allowed = $false
+                            foreach ($a in $allowFilters) { if ([string]$val -ieq $a) { $allowed = $true; break } }
+                            if (-not $allowed) {
+                                $findings += New-HealthFinding -FindingId 'driver.filter.registry' -CheckId 'driver_signature_audit' `
+                                    -Subject ([string]$val) -Finding ("Unexpected $propName entry") `
+                                    -Impact 'Unexpected class filter registrations should be reviewed.' `
+                                    -Severity 'Medium' -Confidence 58 -Status 'Warn' `
+                                    -Evidence @("$key\$propName = $val")
+                            }
+                        }
+                    }
+                } catch { }
+            }
+
+            $warnCount = @($findings | Where-Object { $_.Status -eq 'Warn' }).Count
+            $detail = "$($drivers.Count) drivers | $($unsignedDrivers.Count) unsigned | $($unexpectedFilters.Count) unexpected filters"
             $step = @{
                 Name            = 'DriverAudit'
-                Status          = if ($unsignedDrivers.Count -gt 0) { 'Warn' } else { 'Pass' }
+                Status          = if ($warnCount -gt 0) { 'Warn' } else { 'Pass' }
                 Detail          = $detail
                 Output          = $output
                 UnsignedDrivers = $unsignedDrivers
@@ -393,7 +447,7 @@ function Invoke-HealthCheck_driver_signature_audit {
             }
             Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $detail
             Add-HealthCheckStep $r $step
-            Write-Log "Drivers: $($drivers.Count) total, $($unsignedDrivers.Count) unsigned"
+            Write-Log "Drivers: $($drivers.Count) total, $($unsignedDrivers.Count) unsigned, $($unexpectedFilters.Count) unexpected filters"
         } catch {
             Add-HealthCheckStep $r @{
                 Name    = 'DriverAudit'

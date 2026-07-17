@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Newtonsoft.Json;
@@ -31,6 +32,11 @@ namespace ToolkitGUI.Models
         public ObservableCollection<ProcessParentLink> ParentChain { get; set; } = new();
         public ObservableCollection<string> Services { get; set; } = new();
         public ObservableCollection<string> Modules { get; set; } = new();
+        public ObservableCollection<ProcessConnectionRow> Connections { get; set; } = new();
+        public ObservableCollection<ProcessModuleAnomaly> ModuleAnomalies { get; set; } = new();
+
+        public bool HasConnections => Connections.Count > 0;
+        public bool HasModuleAnomalies => ModuleAnomalies.Count > 0;
 
         public string SignedDisplay => SignatureChecked
             ? (IsSigned == true ? "Yes" : "No")
@@ -57,5 +63,51 @@ namespace ToolkitGUI.Models
         public string DisplayLine => string.IsNullOrWhiteSpace(Name)
             ? $"PID {Pid}"
             : $"{Name} (PID {Pid})";
+    }
+
+    public class ProcessConnectionRow
+    {
+        public string Kind { get; set; } = string.Empty;
+        public string LocalAddress { get; set; } = string.Empty;
+        public int LocalPort { get; set; }
+        public string RemoteAddress { get; set; } = string.Empty;
+        public int RemotePort { get; set; }
+        public string State { get; set; } = string.Empty;
+        public ObservableCollection<string> RiskTags { get; set; } = new();
+        public string Evidence { get; set; } = string.Empty;
+
+        public string Protocol => State.Equals("UDP", StringComparison.OrdinalIgnoreCase) ? "UDP" : "TCP";
+
+        public string LocalEndpoint => FormatEndpoint(LocalAddress, LocalPort);
+
+        public string RemoteEndpoint => string.IsNullOrWhiteSpace(RemoteAddress) ||
+                                        RemoteAddress is "0.0.0.0" or "::"
+            ? "—"
+            : FormatEndpoint(RemoteAddress, RemotePort);
+
+        public bool IsRisky => RiskTags.Count > 0;
+
+        public string RiskDisplay => RiskTags.Count == 0
+            ? string.Empty
+            : string.Join(", ", RiskTags);
+
+        private static string FormatEndpoint(string address, int port)
+        {
+            var displayAddress = string.IsNullOrWhiteSpace(address) ? "*" : address;
+            if (displayAddress.Contains(':') && !displayAddress.StartsWith('['))
+                displayAddress = $"[{displayAddress}]";
+
+            return $"{displayAddress}:{port.ToString(CultureInfo.InvariantCulture)}";
+        }
+    }
+
+    public class ProcessModuleAnomaly
+    {
+        public string Module { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+
+        public string DisplayLine => string.IsNullOrWhiteSpace(Reason)
+            ? Module
+            : $"{Reason}: {Module}";
     }
 }

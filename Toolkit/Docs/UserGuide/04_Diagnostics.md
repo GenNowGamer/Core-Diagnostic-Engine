@@ -31,9 +31,9 @@ This chapter covers the main **find problems** tools in the MAIN sidebar section
 | Category | Examples |
 |----------|----------|
 | Quick Vitals | OS version, CPU load, RAM, disk space, activation, recent errors |
-| Deep System | Drivers, Windows Update stack (idle **Stopped** + **Manual** `wuauserv` is normal on Win10/11), network adapters, GPU information, GPU functional tests, critical events |
+| Deep System | Driver signatures and filter inventory, Windows Update stack (idle **Stopped** + **Manual** `wuauserv` is normal on Win10/11), network adapters, GPU information, GPU functional tests, critical events |
 | System Audit | Installed software, services, startup entries, event logs, partitions |
-| Security Audits | Autoruns, hosts file, browser extensions, scheduled tasks, browser hijack, network hijack, security tampering, remote access |
+| Security Audits | Autoruns, hosts file, browser extensions, scheduled tasks, browser/network hijack, Defender exclusions and security tampering, ransomware recovery, miner behavior, remote access |
 
 > **Important:** Heavy scans (SMART deep tests, Defender, line-item hardware tests) are **not** in Health Check — use **S.M.A.R.T. Analyzer**, **Diag & Repair**, and **Malware Cleanup** instead.
 

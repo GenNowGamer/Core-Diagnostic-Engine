@@ -453,6 +453,10 @@ namespace ToolkitGUI.ViewModels
                 clone.Services.Add(svc);
             foreach (var mod in source.Modules)
                 clone.Modules.Add(mod);
+            foreach (var connection in source.Connections)
+                clone.Connections.Add(connection);
+            foreach (var anomaly in source.ModuleAnomalies)
+                clone.ModuleAnomalies.Add(anomaly);
 
             return clone;
         }
@@ -510,6 +514,10 @@ namespace ToolkitGUI.ViewModels
                 shell.Services = loaded.Services;
             if (loaded.Modules.Count > 0)
                 shell.Modules = loaded.Modules;
+            if (loaded.Connections.Count > 0)
+                shell.Connections = loaded.Connections;
+            if (loaded.ModuleAnomalies.Count > 0)
+                shell.ModuleAnomalies = loaded.ModuleAnomalies;
         }
 
         private static string PreferNonEmpty(string? value, string fallback)

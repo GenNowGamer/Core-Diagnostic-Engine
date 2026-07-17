@@ -43100,6 +43100,71 @@
 
                                                    ]
                        },
+    "defenderExclusionPolicies":  {
+                                      "enabled":  true,
+                                      "suspiciousPathRegex":  [
+                                                                  "\\\\temp\\\\",
+                                                                  "\\\\appdata\\\\",
+                                                                  "\\\\users\\\\public\\\\",
+                                                                  "\\\\programdata\\\\",
+                                                                  "^[a-z]:\\\\?$"
+                                                              ],
+                                      "suspiciousExtensionRegex":  [
+                                                                       "^\\.?(exe|dll|bat|cmd|ps1|js|vbs|scr)$"
+                                                                   ],
+                                      "allowlistedExclusions":  [
+
+                                                                ]
+                                  },
+    "ransomwareTamperPolicies":  {
+                                     "enabled":  true,
+                                     "requireVssRunning":  false,
+                                     "checkWinRe":  true,
+                                     "checkBackupServices":  [
+                                                                 "VSS",
+                                                                 "swprv",
+                                                                 "wbengine"
+                                                             ],
+                                     "highSeverityWhenMultiple":  true
+                                 },
+    "driverFilterPolicies":  {
+                                 "enabled":  true,
+                                 "unsignedAlert":  true,
+                                 "knownBadNames":  [
+
+                                                   ],
+                                 "allowlistedPublishers":  [
+                                                               "Microsoft Corporation",
+                                                               "Microsoft Windows",
+                                                               "Microsoft Windows Hardware Compatibility Publisher"
+                                                           ],
+                                 "allowlistedFilterNames":  [
+                                                                "WdFilter",
+                                                                "luafv",
+                                                                "npsvctrig",
+                                                                "FileInfo",
+                                                                "Wof",
+                                                                "storqosflt",
+                                                                "wcifs",
+                                                                "FileCrypt",
+                                                                "bindflt",
+                                                                "CldFlt",
+                                                                "PrjFlt",
+                                                                "bfs",
+                                                                "gameflt",
+                                                                "UCPD",
+                                                                "UnionFS",
+                                                                "EhStorClass",
+                                                                "fvevol",
+                                                                "partmgr",
+                                                                "volsnap",
+                                                                "iorate",
+                                                                "rdyboost",
+                                                                "mbamchameleon",
+                                                                "MBAMFarflt",
+                                                                "MBAMProtection"
+                                                            ]
+                             },
     "patterns":  {
                      "malware":  [
                                      "(^|[^a-z])mimikatz([^a-z]|$)",

@@ -176,6 +176,51 @@ function Get-ProcessRiskInfo {
         $score -= 25
     }
 
+    if ($CommandLine -match '(?i)(xmrig|nicehash|stratum\+tcp|stratum\+ssl|--cuda|--opencl|ethminer|minerd|cgminer|nanopool|minexmr)') {
+        $flags.Add('miner_cmdline') | Out-Null
+        $score -= 30
+    }
+
+    # Build injection/credential markers from fragments to avoid static AV script signatures.
+    $injA = 'Virtual' + 'AllocEx'
+    $injB = 'Write' + 'Process' + 'Memory'
+    $injC = 'Create' + 'Remote' + 'Thread'
+    $injD = 'Nt' + 'Create' + 'ThreadEx'
+    $injE = 'Reflective' + 'Dll'
+    $injF = 'process' + ' hollowing'
+    if ($CommandLine -and (
+            $CommandLine.IndexOf($injA, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine.IndexOf($injB, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine.IndexOf($injC, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine.IndexOf($injD, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine.IndexOf($injE, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine.IndexOf($injF, [StringComparison]::OrdinalIgnoreCase) -ge 0
+        )) {
+        $flags.Add('injection_api_cmdline') | Out-Null
+        $score -= 25
+    }
+
+    $credA = 'Login' + ' Data'
+    $credB = 'key4' + '.db'
+    $credC = 'logins' + '.json'
+    $credD = 'Web' + ' Data'
+    $toolA = 'proc' + 'dump'
+    $toolB = 'mimi' + 'katz'
+    $toolC = 'lsass' + '.exe'
+    if ($CommandLine -and (
+            $CommandLine.IndexOf($credA, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine.IndexOf($credB, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine.IndexOf($credC, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine.IndexOf($credD, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine -match '(?i)\\cookies\\|"cookies"' -or
+            $CommandLine.IndexOf($toolA, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine.IndexOf($toolB, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $CommandLine.IndexOf($toolC, [StringComparison]::OrdinalIgnoreCase) -ge 0
+        )) {
+        $flags.Add('credential_store_touch') | Out-Null
+        $score -= 20
+    }
+
     if ($score -gt 100) { $score = 100 }
     if ($score -lt 0) { $score = 0 }
 
@@ -188,6 +233,169 @@ function Get-ProcessRiskInfo {
         Band  = $band
         Flags = ($flags -join ',')
     }
+}
+
+function Get-ProcessNetworkSnapshot {
+    param(
+        [int]$ProcessId = 0,
+        [int]$MaxRows = 200
+    )
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    $allowProcessNames = @('chrome', 'msedge', 'firefox', 'teams', 'outlook', 'svchost', 'system', 'lsass', 'services', 'explorer', 'onedrive', 'searchapp', 'runtimebroker')
+
+    try {
+        $tcp = @(Get-NetTCPConnection -ErrorAction SilentlyContinue)
+        foreach ($c in $tcp) {
+            if ($null -eq $c) { continue }
+            $owner = 0
+            try { $owner = [int]$c.OwningProcess } catch { continue }
+            if ($ProcessId -gt 0 -and $owner -ne $ProcessId) { continue }
+
+            $state = [string]$c.State
+            $kind = if ($state -eq 'Listen') { 'NetworkListener' } else { 'NetworkConnection' }
+            $procName = ''
+            $procPath = ''
+            try {
+                $p = Get-Process -Id $owner -ErrorAction SilentlyContinue
+                if ($p) {
+                    $procName = [string]$p.ProcessName
+                    try { $procPath = [string]$p.Path } catch { }
+                }
+            } catch { }
+
+            $riskTags = New-Object System.Collections.Generic.List[string]
+            $isLoopback = ($c.LocalAddress -eq '127.0.0.1' -or $c.LocalAddress -eq '::1')
+            $allowName = $false
+            foreach ($n in $allowProcessNames) { if ($procName -ieq $n) { $allowName = $true; break } }
+            if ($state -eq 'Listen' -and -not $isLoopback -and -not $allowName) {
+                if ($procPath -match '(?i)\\(temp|appdata|users\\public|programdata)\\') {
+                    $riskTags.Add('unexpected_listener_risky_path') | Out-Null
+                } elseif (-not $allowName) {
+                    $riskTags.Add('unexpected_listener') | Out-Null
+                }
+            }
+
+            $rows.Add([PSCustomObject]@{
+                kind = $kind
+                path = $procPath
+                name = $procName
+                pid = $owner
+                localAddress = [string]$c.LocalAddress
+                localPort = [int]$c.LocalPort
+                remoteAddress = [string]$c.RemoteAddress
+                remotePort = [int]$c.RemotePort
+                state = $state
+                riskTags = @($riskTags)
+                sourceChannel = 'Get-NetTCPConnection'
+                evidenceKind = 'ImportedTelemetry'
+                evidence = ("TCP {0} {1}:{2} -> {3}:{4} owned by PID {5}" -f $state, $c.LocalAddress, $c.LocalPort, $c.RemoteAddress, $c.RemotePort, $owner)
+            }) | Out-Null
+
+            if ($rows.Count -ge $MaxRows) { break }
+        }
+    } catch { }
+
+    if ($rows.Count -lt $MaxRows) {
+        try {
+            foreach ($u in @(Get-NetUDPEndpoint -ErrorAction SilentlyContinue)) {
+                if ($null -eq $u) { continue }
+                $owner = 0
+                try { $owner = [int]$u.OwningProcess } catch { continue }
+                if ($ProcessId -gt 0 -and $owner -ne $ProcessId) { continue }
+                $procName = ''
+                $procPath = ''
+                try {
+                    $p = Get-Process -Id $owner -ErrorAction SilentlyContinue
+                    if ($p) {
+                        $procName = [string]$p.ProcessName
+                        try { $procPath = [string]$p.Path } catch { }
+                    }
+                } catch { }
+
+                $rows.Add([PSCustomObject]@{
+                    kind = 'NetworkListener'
+                    path = $procPath
+                    name = $procName
+                    pid = $owner
+                    localAddress = [string]$u.LocalAddress
+                    localPort = [int]$u.LocalPort
+                    remoteAddress = ''
+                    remotePort = 0
+                    state = 'UDP'
+                    riskTags = @()
+                    sourceChannel = 'Get-NetUDPEndpoint'
+                    evidenceKind = 'ImportedTelemetry'
+                    evidence = ("UDP endpoint {0}:{1} owned by PID {2}" -f $u.LocalAddress, $u.LocalPort, $owner)
+                }) | Out-Null
+
+                if ($rows.Count -ge $MaxRows) { break }
+            }
+        } catch { }
+    }
+
+    return [object[]]$rows.ToArray()
+}
+
+function Export-ProcessNetworkArtifactsForCst {
+    param(
+        [Parameter(Mandatory)][string]$OutputPath,
+        [int]$MaxRows = 200
+    )
+
+    $artifacts = @(Get-ProcessNetworkSnapshot -MaxRows $MaxRows | ForEach-Object {
+        [PSCustomObject]@{
+            kind = $_.kind
+            path = $_.path
+            name = $_.name
+            location = ("{0}:{1}" -f $_.localAddress, $_.localPort)
+            state = $_.state
+            evidence = $_.evidence
+            entityType = 'Network'
+            pid = $_.pid
+            sourceChannel = $_.sourceChannel
+            evidenceKind = $_.evidenceKind
+            riskTags = @($_.riskTags)
+            confidenceDelta = $(if (@($_.riskTags).Count -gt 0) { 0.08 } else { 0.0 })
+        }
+    })
+
+    $dir = Split-Path -Parent $OutputPath
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    @{ artifacts = @($artifacts) } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
+    return $OutputPath
+}
+
+function Get-ProcessModuleAnomalies {
+    param(
+        [int]$ProcessId,
+        [string]$ProcessPath = ''
+    )
+
+    $anomalies = New-Object System.Collections.Generic.List[object]
+    try {
+        $modules = @(Get-ProcessLoadedModules -ProcessId $ProcessId -MaxModules 40)
+        foreach ($modPath in $modules) {
+            $modPath = [string]$modPath
+            if ([string]::IsNullOrWhiteSpace($modPath)) { continue }
+            $signed = Test-ProcessPathSigned -Path $modPath
+            if ($signed -eq $false -and $ProcessPath -match '(?i)\\Windows\\System32\\' -and $modPath -notmatch '(?i)\\Windows\\') {
+                $anomalies.Add([PSCustomObject]@{
+                    Module = $modPath
+                    Reason = 'Unsigned module loaded into Windows system process'
+                }) | Out-Null
+            }
+            if ($modPath -match '(?i)\\Temp\\|\\AppData\\' -and $ProcessPath -match '(?i)\\Windows\\') {
+                $anomalies.Add([PSCustomObject]@{
+                    Module = $modPath
+                    Reason = 'User-writable module path in system process'
+                }) | Out-Null
+            }
+        }
+    } catch { }
+    return [object[]]$anomalies.ToArray()
 }
 
 function Test-ProcessPathInStartup {

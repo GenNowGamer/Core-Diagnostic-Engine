@@ -50,7 +50,9 @@
         { "id": "sec_scheduled_tasks", "label": "Scheduled Tasks Audit", "description": "Non-Microsoft scheduled tasks review.", "estimatedMinutes": 1.0, "winPe": "unavailable" },
         { "id": "sec_browser_hijack", "label": "Browser Hijack Audit", "description": "Homepage, search provider, startup URLs, and browser policy overrides.", "estimatedMinutes": 0.5, "winPe": "unavailable" },
         { "id": "sec_network_hijack", "label": "Network Hijack Audit", "description": "Proxy, PAC, DNS servers, and NRPT rules.", "estimatedMinutes": 0.3, "winPe": "available" },
-        { "id": "sec_security_tampering", "label": "Security Tampering Audit", "description": "Defender, firewall, UAC, and SmartScreen drift.", "estimatedMinutes": 0.3, "winPe": "unavailable" },
+        { "id": "sec_security_tampering", "label": "Security Tampering Audit", "description": "Defender, firewall, UAC, SmartScreen drift, and Defender exclusion inventory.", "estimatedMinutes": 0.4, "winPe": "unavailable" },
+        { "id": "sec_ransomware_recovery", "label": "Ransomware Recovery Audit", "description": "VSS/backup services, shadow-copy presence, and WinRE recovery state (T1490).", "estimatedMinutes": 0.5, "winPe": "offline_registry" },
+        { "id": "sec_miner_behavior", "label": "Miner Behavior Audit", "description": "High-CPU and miner cmdline/pool heuristics for crypto miners.", "estimatedMinutes": 0.4, "winPe": "unavailable" },
         { "id": "sec_remote_access", "label": "Remote Access Inventory", "description": "Remote support tools and RDP exposure.", "estimatedMinutes": 0.5, "winPe": "unavailable" }
       ]
     }
@@ -104,6 +106,8 @@
       "sec_browser_hijack",
       "sec_network_hijack",
       "sec_security_tampering",
+      "sec_ransomware_recovery",
+      "sec_miner_behavior",
       "sec_remote_access",
       "sec_scheduled_tasks",
       "audit_startup"
@@ -159,6 +163,8 @@
     "sec_network_hijack",
     "audit_installed_software",
     "sec_security_tampering",
+    "sec_ransomware_recovery",
+    "sec_miner_behavior",
     "sec_remote_access"
   ],
   "recommendations": [
@@ -278,6 +284,26 @@
       "actions": [
         { "type": "cde", "target": "HijackRepair", "label": "Hijack & Scam Repair" },
         { "type": "cde", "target": "FastFixes", "label": "Fast Fixes (Enable Defender)" }
+      ]
+    },
+    {
+      "whenCheckId": "sec_ransomware_recovery",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review recovery tamper indicators",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "CoreSecurityTool", "label": "Core Security Tool" },
+        { "type": "cde", "target": "FileManager", "label": "File Manager (Shadow Copies)" }
+      ]
+    },
+    {
+      "whenCheckId": "sec_miner_behavior",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Investigate possible miner process",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "cde", "target": "ProcessAnalyzer", "label": "Process Analyzer" },
+        { "type": "cde", "target": "CoreSecurityTool", "label": "Core Security Tool" }
       ]
     },
     {

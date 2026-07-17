@@ -19,6 +19,7 @@ namespace ToolkitGUI.Views
         private bool _scanCompleted;
         private bool _isStartupEntryScan;
         private readonly bool _showMalwareCleanupButton;
+        private readonly SecurityScanDialogKind _scanKind;
         private bool _remediationBusy;
         private bool _pendingResultsApply;
         private string _reportPdfPath = string.Empty;
@@ -35,6 +36,7 @@ namespace ToolkitGUI.Views
             _presentation = presentation;
             _scanCompleted = true;
             _showMalwareCleanupButton = false;
+            _scanKind = SecurityScanDialogKind.Cst;
             Loaded += OnWindowLoaded;
             EnterResultsState(presentation);
         }
@@ -44,17 +46,27 @@ namespace ToolkitGUI.Views
             string targetPath,
             string scanSubtitle,
             bool isStartupEntryScan,
-            bool showMalwareCleanupButton = false)
+            bool showMalwareCleanupButton = false,
+            SecurityScanDialogKind scanKind = SecurityScanDialogKind.Cst)
         {
             InitializeComponent();
             WindowSizingHelper.EnableAdaptiveDialog(this);
             _isStartupEntryScan = isStartupEntryScan;
             _showMalwareCleanupButton = showMalwareCleanupButton;
+            _scanKind = scanKind;
             ProcessNameText.Text = displayName;
             TargetPathText.Text = targetPath;
             ScanKindSubtitle.Text = scanSubtitle;
-            TitleText.Text = "CST Scan";
-            Title = "CST Scan";
+            if (_scanKind == SecurityScanDialogKind.Defender)
+            {
+                TitleText.Text = "Windows Defender Scan";
+                Title = "Windows Defender Scan";
+            }
+            else
+            {
+                TitleText.Text = "CST Scan";
+                Title = "CST Scan";
+            }
             Loaded += OnWindowLoaded;
             EnterScanningState();
             ApplyMalwareCleanupButtonVisibility();
@@ -93,25 +105,43 @@ namespace ToolkitGUI.Views
 
                 if (!outcome.Success)
                 {
-                    ShowFailure(outcome.ErrorMessage ?? "CST scan failed.", incomplete: true);
+                    ShowFailure(outcome.ErrorMessage ?? GetScanFailureMessage(), incomplete: true);
                     return;
                 }
 
-                if (ProcessAnalyzerCstResultService.TryBuildPresentation(
-                        outcome.RawOutput,
-                        TargetPathText.Text,
-                        ProcessNameText.Text,
-                        out var presentation,
-                        out var parseError))
+                ProcessAnalyzerCstScanPresentation? presentation = outcome.Presentation;
+                string? parseError = null;
+                if (presentation is null)
                 {
-                    // Populate UI + operator PDF before onSuccess so work-order hooks see ReportPdfPath.
-                    EnterResultsState(presentation);
-                    outcome.OnSuccess?.Invoke(presentation, outcome.RawOutput);
+                    if (_scanKind == SecurityScanDialogKind.Defender)
+                    {
+                        if (!DefenderScanResultService.TryBuildPresentation(
+                                outcome.RawOutput, out presentation, out parseError))
+                        {
+                            ShowFailure(parseError ?? "Could not parse Defender scan results.", incomplete: true);
+                            return;
+                        }
+                    }
+                    else if (!ProcessAnalyzerCstResultService.TryBuildPresentation(
+                            outcome.RawOutput,
+                            TargetPathText.Text,
+                            ProcessNameText.Text,
+                            out presentation,
+                            out parseError))
+                    {
+                        ShowFailure(parseError ?? "Could not parse CST scan results.", incomplete: true);
+                        return;
+                    }
                 }
-                else
+
+                if (presentation is null)
                 {
-                    ShowFailure(parseError ?? "Could not parse CST scan results.", incomplete: true);
+                    ShowFailure(parseError ?? GetScanFailureMessage(), incomplete: true);
+                    return;
                 }
+
+                EnterResultsState(presentation);
+                outcome.OnSuccess?.Invoke(presentation, outcome.RawOutput);
             }
             catch (OperationCanceledException)
             {
@@ -140,8 +170,9 @@ namespace ToolkitGUI.Views
             MetricsPanel.Visibility = Visibility.Collapsed;
             StartupAxisPanel.Visibility = Visibility.Collapsed;
             FindingsPanel.Visibility = Visibility.Collapsed;
-            SuppressedPanel.Visibility = Visibility.Collapsed;
-            ApplyFindingsLayout(hasSuppressed: false);
+            SuppressedExpander.Visibility = Visibility.Collapsed;
+            SuppressedExpander.IsExpanded = false;
+            SuppressedGrid.ItemsSource = null;
             RemediationToolbar.Visibility = Visibility.Collapsed;
             SetRemediationButtonsVisible(false);
             CopySummaryButton.IsEnabled = false;
@@ -150,9 +181,22 @@ namespace ToolkitGUI.Views
             PrimaryButton.Content = "Cancel";
             VerdictText.Text = "Scanning...";
             VerdictBadge.Background = new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD4));
-            VerdictDetailText.Text = "Core Security Tool is preparing targets and pre-scan checks.";
-            ProgressPhaseText.Text = "Preparing scan...";
-            ProgressDetailText.Text = "Starting Core Security Tool pre-checks (targets, known-good, path discovery)...";
+            if (_scanKind == SecurityScanDialogKind.Defender)
+            {
+                VerdictDetailText.Text = "Windows Defender is preparing the quick scan.";
+                ProgressPhaseText.Text = "Checking Defender status...";
+                ProgressDetailText.Text = "Starting Windows Defender quick scan...";
+                ScanningPlaceholderDetailText.Text =
+                    "Defender does not report per-file progress. Elapsed time and ETA are estimated while the scan runs.";
+            }
+            else
+            {
+                VerdictDetailText.Text = "Core Security Tool is preparing targets and pre-scan checks.";
+                ProgressPhaseText.Text = "Preparing scan...";
+                ProgressDetailText.Text = "Starting Core Security Tool pre-checks (targets, known-good, path discovery)...";
+                ScanningPlaceholderDetailText.Text =
+                    "Pre-scan checks (targets, known-good baselines, path discovery) and file analysis both report above. This panel is replaced when the scan finishes.";
+            }
             ProgressPathText.Text = string.Empty;
             ProgressPercentText.Text = "…";
             ScanProgressBar.Value = 0;
@@ -245,14 +289,23 @@ namespace ToolkitGUI.Views
             MalwareCleanupButton.IsEnabled = _showMalwareCleanupButton;
             ApplyMalwareCleanupButtonVisibility();
             PrimaryButton.Content = "OK";
-            TitleText.Text = "CST Scan Results";
-            Title = "CST Scan Results";
+            if (_scanKind == SecurityScanDialogKind.Defender)
+            {
+                TitleText.Text = "Windows Defender Scan Results";
+                Title = "Windows Defender Scan Results";
+            }
+            else
+            {
+                TitleText.Text = "CST Scan Results";
+                Title = "CST Scan Results";
+            }
 
             ProcessNameText.Text = presentation.ProcessName;
             TargetPathText.Text = presentation.TargetPath;
             VerdictDetailText.Text = presentation.VerdictDetail;
             VerdictDetailText.ToolTip = presentation.VerdictDetail;
-            ItemsScannedText.Text = presentation.ItemsScanned.ToString();
+            ItemsScannedLabel.Text = presentation.PrimaryMetricLabel;
+            ItemsScannedText.Text = presentation.PrimaryMetricDisplay;
             ThreatsText.Text = presentation.ThreatsFound.ToString();
             WarningsText.Text = presentation.WarningsFound.ToString();
             ScanErrorsText.Text = presentation.ScanErrors.ToString();
@@ -271,7 +324,9 @@ namespace ToolkitGUI.Views
             }
             else
             {
-                ScanKindSubtitle.Text = FormatScanModeSubtitle(presentation.ScanMode);
+                ScanKindSubtitle.Text = _scanKind == SecurityScanDialogKind.Defender
+                    ? FormatDefenderScanSubtitle(presentation.ScanMode)
+                    : FormatScanModeSubtitle(presentation.ScanMode);
                 MetricsPanel.Visibility = Visibility.Visible;
                 StartupAxisPanel.Visibility = Visibility.Collapsed;
             }
@@ -300,25 +355,35 @@ namespace ToolkitGUI.Views
                 : "Findings";
             FindingsSubtitleText.Text = presentation.CanRemediate
                 ? "Select actionable file/archive traces. Archive entry rows are review-only — pick the parent archive."
-                : (presentation.IsStartupEntryScan
-                    ? "File, command-line, and persistence findings for this startup entry."
-                    : "Review severity, detector, and evidence for the scanned path.");
+                : (_scanKind == SecurityScanDialogKind.Defender
+                    ? "Windows Defender reported these detections. Remediate in Windows Security."
+                    : (presentation.IsStartupEntryScan
+                        ? "File, command-line, and persistence findings for this startup entry."
+                        : "Review severity, detector, and evidence for the scanned path."));
 
-            SetRemediationButtonsVisible(presentation.CanRemediate);
-            RemediationToolbar.Visibility = presentation.CanRemediate ? Visibility.Visible : Visibility.Collapsed;
+            SetRemediationButtonsVisible(presentation.CanRemediate && _scanKind != SecurityScanDialogKind.Defender);
+            RemediationToolbar.Visibility = presentation.CanRemediate && _scanKind != SecurityScanDialogKind.Defender
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            if (FindingsGrid.Columns.Count > 0)
+            {
+                FindingsGrid.Columns[0].Visibility = _scanKind == SecurityScanDialogKind.Defender
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
+            }
             RefreshSelectionSummary();
 
             if (presentation.HasSuppressedFindings)
             {
-                SuppressedPanel.Visibility = Visibility.Visible;
+                SuppressedExpander.Visibility = Visibility.Visible;
+                SuppressedExpander.IsExpanded = false;
                 SuppressedGrid.ItemsSource = presentation.SuppressedFindings;
-                ApplyFindingsLayout(hasSuppressed: true);
             }
             else
             {
-                SuppressedPanel.Visibility = Visibility.Collapsed;
+                SuppressedExpander.Visibility = Visibility.Collapsed;
+                SuppressedExpander.IsExpanded = false;
                 SuppressedGrid.ItemsSource = null;
-                ApplyFindingsLayout(hasSuppressed: false);
             }
 
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
@@ -342,24 +407,6 @@ namespace ToolkitGUI.Views
             }
 
             EnsureOperatorPdf(presentation);
-        }
-
-        private void ApplyFindingsLayout(bool hasSuppressed)
-        {
-            if (hasSuppressed)
-            {
-                FindingsSectionRow.Height = new GridLength(2, GridUnitType.Star);
-                FindingsSectionRow.MinHeight = 200;
-                SuppressedSectionRow.Height = new GridLength(1, GridUnitType.Star);
-                SuppressedSectionRow.MinHeight = 160;
-            }
-            else
-            {
-                FindingsSectionRow.Height = new GridLength(1, GridUnitType.Star);
-                FindingsSectionRow.MinHeight = 220;
-                SuppressedSectionRow.Height = new GridLength(0);
-                SuppressedSectionRow.MinHeight = 0;
-            }
         }
 
         private void EnsureOperatorPdf(ProcessAnalyzerCstScanPresentation presentation)
@@ -401,15 +448,16 @@ namespace ToolkitGUI.Views
             MetricsPanel.Visibility = Visibility.Collapsed;
             StartupAxisPanel.Visibility = Visibility.Collapsed;
             FindingsPanel.Visibility = Visibility.Collapsed;
-            SuppressedPanel.Visibility = Visibility.Collapsed;
-            ApplyFindingsLayout(hasSuppressed: false);
+            SuppressedExpander.Visibility = Visibility.Collapsed;
+            SuppressedExpander.IsExpanded = false;
+            SuppressedGrid.ItemsSource = null;
             RemediationToolbar.Visibility = Visibility.Collapsed;
             SetRemediationButtonsVisible(false);
             CopySummaryButton.IsEnabled = false;
             OpenReportButton.IsEnabled = false;
             MalwareCleanupButton.IsEnabled = false;
             PrimaryButton.Content = "OK";
-            TitleText.Text = "CST Scan";
+            TitleText.Text = _scanKind == SecurityScanDialogKind.Defender ? "Windows Defender Scan" : "CST Scan";
             VerdictText.Text = incomplete ? "Incomplete" : "Failed";
             VerdictBadge.Background = new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06));
             VerdictDetailText.Text = message;
@@ -446,7 +494,9 @@ namespace ToolkitGUI.Views
             {
                 ScanProgressBar.IsIndeterminate = false;
                 ScanProgressBar.Value = Math.Max(0, Math.Min(100, progress.Percent));
-                ProgressPercentText.Text = $"{progress.Percent:0.#}%";
+                ProgressPercentText.Text = progress.IsEstimated
+                    ? $"~{progress.Percent:0.#}%"
+                    : $"{progress.Percent:0.#}%";
             }
             else if (!string.IsNullOrWhiteSpace(progress.Phase))
             {
@@ -811,6 +861,14 @@ namespace ToolkitGUI.Views
             Close();
         }
 
+        private string GetScanFailureMessage()
+            => _scanKind == SecurityScanDialogKind.Defender ? "Defender scan failed." : "CST scan failed.";
+
+        private static string FormatDefenderScanSubtitle(string? scanMode)
+            => string.IsNullOrWhiteSpace(scanMode)
+                ? "Quick scan • Windows Defender"
+                : $"{scanMode} • Windows Defender";
+
         private static string FormatScanModeSubtitle(string? scanMode)
         {
             if (string.IsNullOrWhiteSpace(scanMode))
@@ -846,6 +904,7 @@ namespace ToolkitGUI.Views
         public string? CurrentPath { get; init; }
         public string? VerdictDetail { get; init; }
         public bool IsPreScanPhase { get; init; }
+        public bool IsEstimated { get; init; }
     }
 
     public sealed class CstScanRunOutcome
@@ -853,6 +912,7 @@ namespace ToolkitGUI.Views
         public bool Success { get; init; }
         public string RawOutput { get; init; } = string.Empty;
         public string? ErrorMessage { get; init; }
+        public ProcessAnalyzerCstScanPresentation? Presentation { get; init; }
         public Action<ProcessAnalyzerCstScanPresentation, string>? OnSuccess { get; init; }
 
         public static CstScanRunOutcome Failed(string message) => new()

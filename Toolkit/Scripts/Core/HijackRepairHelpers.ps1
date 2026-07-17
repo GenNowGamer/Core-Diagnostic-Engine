@@ -558,6 +558,31 @@ function Invoke-HijackNetworkAudit {
     }
 }
 
+function Test-HijackRiskyDefenderExclusion {
+    param(
+        [Parameter(Mandatory)][string]$ExclusionType,
+        [Parameter(Mandatory)][string]$Value
+    )
+
+    $trimmed = ([string]$Value).Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed)) { return $false }
+    $lower = $trimmed.ToLowerInvariant()
+
+    if ($ExclusionType -in @('Path', 'Process')) {
+        if ($lower -match '\\temp\\|\\appdata\\|\\users\\public\\|\\programdata\\' -or $lower -match '^[a-z]:\\?$') {
+            return $true
+        }
+    }
+
+    if ($ExclusionType -eq 'Extension') {
+        if ($trimmed -match '(?i)^\.?((exe)|(dll)|(bat)|(cmd)|(ps1)|(js)|(vbs)|(scr))$') {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Invoke-HijackSecurityTamperingAudit {
     $issues = [System.Collections.Generic.List[string]]::new()
     $envMode = if (Get-Command Get-EnvironmentMode -ErrorAction SilentlyContinue) { Get-EnvironmentMode } else { 'Windows' }
@@ -579,6 +604,30 @@ function Invoke-HijackSecurityTamperingAudit {
         if ($mp.AMServiceEnabled -eq $false) { $issues.Add('Defender antimalware service is disabled.') | Out-Null }
     } catch {
         $issues.Add("Defender status unavailable: $($_.Exception.Message)") | Out-Null
+    }
+
+    try {
+        if (Get-Command Get-MpPreference -ErrorAction SilentlyContinue) {
+            $pref = Get-MpPreference -ErrorAction Stop
+            $exclusionGroups = @(
+                @{ Type = 'Path'; Values = @($pref.ExclusionPath) },
+                @{ Type = 'Process'; Values = @($pref.ExclusionProcess) },
+                @{ Type = 'Extension'; Values = @($pref.ExclusionExtension) },
+                @{ Type = 'IpAddress'; Values = @($pref.ExclusionIpAddress) }
+            )
+            foreach ($group in $exclusionGroups) {
+                foreach ($value in @($group.Values)) {
+                    if ([string]::IsNullOrWhiteSpace([string]$value)) { continue }
+                    if (Test-HijackRiskyDefenderExclusion -ExclusionType $group.Type -Value ([string]$value)) {
+                        $issues.Add("Risky Defender $($group.Type) exclusion: $value") | Out-Null
+                    } else {
+                        $issues.Add("Defender $($group.Type) exclusion present (review): $value") | Out-Null
+                    }
+                }
+            }
+        }
+    } catch {
+        $issues.Add("Defender exclusion audit unavailable: $($_.Exception.Message)") | Out-Null
     }
 
     try {
@@ -620,11 +669,11 @@ function Invoke-HijackSecurityTamperingAudit {
     $lines.Add('========================') | Out-Null
     $lines.Add('') | Out-Null
     if ($issues.Count -eq 0) {
-        $lines.Add('Defender, firewall, UAC, and SmartScreen settings look intact.') | Out-Null
+        $lines.Add('Defender, firewall, UAC, SmartScreen, and exclusion settings look intact.') | Out-Null
     } else {
         foreach ($issue in $issues) { $lines.Add(" - $issue") | Out-Null }
         $lines.Add('') | Out-Null
-        $lines.Add('Repair: Hijack and Scam Repair - Security Settings Restore.') | Out-Null
+        $lines.Add('Repair: Hijack and Scam Repair - Security Settings Restore (exclusions are review-only).') | Out-Null
     }
 
     $status = if ($issues.Count -gt 0) { 'Warn' } else { 'Pass' }

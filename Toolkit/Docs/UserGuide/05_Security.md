@@ -17,13 +17,13 @@
 2. Click **Open** on **Core Security Tool**
 3. In the config dialog, set scan type (**ThreatScan** / **FullScan** / **CustomScan**), detection scope (**All** recommended), and optional custom paths
 4. The **CST Scan Results** window opens immediately with live progress (same layout as File Manager / Startup Manager / Process Analyzer). Pre-scan steps (targets, known-good baselines, path discovery) and file analysis both update the progress panel — the window should not sit idle with no status
-5. When finished, the same window shows the verdict (with scan-mode label), metrics, and findings (Findings + Suppressed grids are the main focus)
+5. When finished, the same window shows the verdict, metrics, and primary findings. If review-only rows exist, a single collapsed **Suppressed audit Findings** line appears at the bottom of the Findings card; expand it to inspect those rows
 6. Use **Copy summary** or **Open Report** for coverage notes and full scan narrative (coverage/action summary is not shown in the dialog footer)
 7. Use **Open Report** to open the operator PDF (`Logs\CST_Scan_*.pdf`) generated when results appear
 8. Select **actionable** findings and use **Quarantine Selected**, **Remove Selected**, or **Restore from Manifest...** — remediation runs with a **per-item progress** window, then a summary. No separate post-scan operator dialog is required after Malware Cleanup CST
 9. **Archive hits:** inner `zip::entry` rows are review-only; select the **parent .zip/.jar** row to quarantine or remove the container
 
-> **ThreatScan** is a high-risk-path triage (not full-disk AV). It walks ProgramData, Temp, Tasks, Startup, Downloads, **Users\Public**, per-user **Desktop** / **Documents** / Roaming / INetCache (and more). Prefer **FullScan** or a folder **CustomScan** when hunting outside those roots. Authenticode timeouts appear as low-confidence warnings (“signer not verified”), not confirmed malware. Empty EFI hash baselines are noted in **Copy summary** / PDF **Coverage** (signer-only boot checks still run), not as a findings row. Long Location paths in **CST Scan Results** use the Findings grid horizontal scrollbar; suppressed findings appear in the lower grid.
+> **ThreatScan** is a high-risk-path triage (not full-disk AV). It walks ProgramData, Temp, Tasks, Startup, Downloads, **Users\Public**, per-user **Desktop** / **Documents** / Roaming / INetCache (and more). Prefer **FullScan** or a folder **CustomScan** when hunting outside those roots. Authenticode timeout alone is a coverage event and does not create a security finding. An unsigned DLL in a risky path is only a weak signal unless another detector corroborates it; unsigned executables retain stronger handling. Empty EFI hash baselines are noted in **Copy summary** / PDF **Coverage**, not as a findings row.
 
 > **WinPE + offline OS:** Boot menu **option 2** so CST can scan the customer's Windows folder. Without offline load, CST may show "no Windows volume found."
 
@@ -40,9 +40,13 @@ CDE separates **active scanning** from **configuration audits**:
 | Activity | Where to run it |
 |----------|-----------------|
 | Defender scan, CST malware scan | **Malware Cleanup** |
-| Autoruns, hosts file, browser extensions, scheduled tasks, browser/network hijack, security tampering, remote access | **System Health Check** → Security Audits category |
+| Autoruns, hosts file, browser extensions, scheduled tasks, browser/network hijack, Defender exclusions/security tampering, ransomware recovery, driver/filter inventory, remote access | **System Health Check** → Security Audits or Deep System category |
 
 **Scheduled Tasks Audit** flags non-Microsoft tasks with suspicious execute paths or unsigned COM handlers. Microsoft-signed software under AppData (e.g. OneDrive) is not flagged for path alone. COM-only actions show the resolved handler (`COM {guid} -> path`) and a **Review Reason** when flagged.
+
+**Security Tampering Audit** inventories risky Microsoft Defender exclusions when Defender is available. If Defender is disabled or another antivirus owns protection, an unavailable Defender service is treated as N/A rather than a malicious exclusion.
+
+**Ransomware Recovery Audit** reviews VSS/backup-service and Windows Recovery Environment state for recovery impairment. **Driver Signature Audit** also inventories file-system minifilters and disk/volume UpperFilters/LowerFilters; known Microsoft and installed security-product filters are not suspicious merely because they are present.
 
 > **Important:** Do not look for Autoruns or Hosts File checks under Malware Cleanup — they were moved to System Health Check only.
 

@@ -42,6 +42,7 @@ There is no **Save report** or **Open HTML** button in the GUI — operators use
 - System Health findings include Finding, Impact, Severity, deterministic Confidence (0–100 match score), Evidence, and Recommendations when available
 - System Health keeps detailed legacy output (adapter/device/service/event inventories) alongside the scored findings; older text-only reports still use the legacy formatter
 - Hijack & Scam Repair and Process Analyzer PDFs use a findings/process table layout (landscape) suitable for bench notes
+- CST PDFs retain primary findings and review-only suppressed audit rows. In the live CST window, suppressed rows are collapsed under **Suppressed audit Findings** until expanded
 
 ## Work orders and logging
 

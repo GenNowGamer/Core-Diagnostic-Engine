@@ -342,6 +342,67 @@ function Get-CstRuleSet {
     if (-not $rules.sectorPolicies.PSObject.Properties['bootCodeHashAlgorithm']) { $rules.sectorPolicies | Add-Member -NotePropertyName bootCodeHashAlgorithm -NotePropertyValue 'SHA256' -Force }
     if (-not $rules.sectorPolicies.PSObject.Properties['knownBootCodeHashes']) { $rules.sectorPolicies | Add-Member -NotePropertyName knownBootCodeHashes -NotePropertyValue @() -Force }
 
+    if (-not $rules.defenderExclusionPolicies) {
+        $rules | Add-Member -NotePropertyName defenderExclusionPolicies -NotePropertyValue ([PSCustomObject]@{
+            enabled = $true
+            suspiciousPathRegex = @(
+                '\\temp\\',
+                '\\appdata\\',
+                '\\users\\public\\',
+                '\\programdata\\',
+                '^[a-z]:\\?$'
+            )
+            suspiciousExtensionRegex = @('^\.?(exe|dll|bat|cmd|ps1|js|vbs|scr)$')
+            allowlistedExclusions = @()
+        }) -Force
+    }
+    if (-not $rules.defenderExclusionPolicies.PSObject.Properties['enabled']) { $rules.defenderExclusionPolicies | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force }
+    if (-not $rules.defenderExclusionPolicies.PSObject.Properties['suspiciousPathRegex']) { $rules.defenderExclusionPolicies | Add-Member -NotePropertyName suspiciousPathRegex -NotePropertyValue @('\\temp\\', '\\appdata\\', '\\users\\public\\', '\\programdata\\', '^[a-z]:\\?$') -Force }
+    if (-not $rules.defenderExclusionPolicies.PSObject.Properties['suspiciousExtensionRegex']) { $rules.defenderExclusionPolicies | Add-Member -NotePropertyName suspiciousExtensionRegex -NotePropertyValue @('^\.?(exe|dll|bat|cmd|ps1|js|vbs|scr)$') -Force }
+    if (-not $rules.defenderExclusionPolicies.PSObject.Properties['allowlistedExclusions']) { $rules.defenderExclusionPolicies | Add-Member -NotePropertyName allowlistedExclusions -NotePropertyValue @() -Force }
+
+    if (-not $rules.ransomwareTamperPolicies) {
+        $rules | Add-Member -NotePropertyName ransomwareTamperPolicies -NotePropertyValue ([PSCustomObject]@{
+            enabled = $true
+            requireVssRunning = $false
+            checkWinRe = $true
+            checkBackupServices = @('VSS', 'swprv', 'wbengine')
+            highSeverityWhenMultiple = $true
+        }) -Force
+    }
+    if (-not $rules.ransomwareTamperPolicies.PSObject.Properties['enabled']) { $rules.ransomwareTamperPolicies | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force }
+    if (-not $rules.ransomwareTamperPolicies.PSObject.Properties['requireVssRunning']) { $rules.ransomwareTamperPolicies | Add-Member -NotePropertyName requireVssRunning -NotePropertyValue $false -Force }
+    if (-not $rules.ransomwareTamperPolicies.PSObject.Properties['checkWinRe']) { $rules.ransomwareTamperPolicies | Add-Member -NotePropertyName checkWinRe -NotePropertyValue $true -Force }
+    if (-not $rules.ransomwareTamperPolicies.PSObject.Properties['checkBackupServices']) { $rules.ransomwareTamperPolicies | Add-Member -NotePropertyName checkBackupServices -NotePropertyValue @('VSS', 'swprv', 'wbengine') -Force }
+    if (-not $rules.ransomwareTamperPolicies.PSObject.Properties['highSeverityWhenMultiple']) { $rules.ransomwareTamperPolicies | Add-Member -NotePropertyName highSeverityWhenMultiple -NotePropertyValue $true -Force }
+
+    if (-not $rules.driverFilterPolicies) {
+        $rules | Add-Member -NotePropertyName driverFilterPolicies -NotePropertyValue ([PSCustomObject]@{
+            enabled = $true
+            unsignedAlert = $true
+            knownBadNames = @()
+            allowlistedPublishers = @('Microsoft Corporation', 'Microsoft Windows', 'Microsoft Windows Hardware Compatibility Publisher')
+            allowlistedFilterNames = @(
+                'WdFilter', 'luafv', 'npsvctrig', 'FileInfo', 'Wof', 'storqosflt', 'wcifs',
+                'FileCrypt', 'bindflt', 'CldFlt', 'PrjFlt', 'bfs', 'gameflt', 'UCPD',
+                'UnionFS', 'EhStorClass', 'fvevol', 'partmgr', 'volsnap', 'iorate', 'rdyboost',
+                'mbamchameleon', 'MBAMFarflt', 'MBAMProtection'
+            )
+        }) -Force
+    }
+    if (-not $rules.driverFilterPolicies.PSObject.Properties['enabled']) { $rules.driverFilterPolicies | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force }
+    if (-not $rules.driverFilterPolicies.PSObject.Properties['unsignedAlert']) { $rules.driverFilterPolicies | Add-Member -NotePropertyName unsignedAlert -NotePropertyValue $true -Force }
+    if (-not $rules.driverFilterPolicies.PSObject.Properties['knownBadNames']) { $rules.driverFilterPolicies | Add-Member -NotePropertyName knownBadNames -NotePropertyValue @() -Force }
+    if (-not $rules.driverFilterPolicies.PSObject.Properties['allowlistedPublishers']) { $rules.driverFilterPolicies | Add-Member -NotePropertyName allowlistedPublishers -NotePropertyValue @('Microsoft Corporation', 'Microsoft Windows', 'Microsoft Windows Hardware Compatibility Publisher') -Force }
+    if (-not $rules.driverFilterPolicies.PSObject.Properties['allowlistedFilterNames']) {
+        $rules.driverFilterPolicies | Add-Member -NotePropertyName allowlistedFilterNames -NotePropertyValue @(
+            'WdFilter', 'luafv', 'npsvctrig', 'FileInfo', 'Wof', 'storqosflt', 'wcifs',
+            'FileCrypt', 'bindflt', 'CldFlt', 'PrjFlt', 'bfs', 'gameflt', 'UCPD',
+            'UnionFS', 'EhStorClass', 'fvevol', 'partmgr', 'volsnap', 'iorate', 'rdyboost',
+            'mbamchameleon', 'MBAMFarflt', 'MBAMProtection'
+        ) -Force
+    }
+
     if (-not $rules.PSObject.Properties['pathExclusions'] -or $null -eq $rules.pathExclusions) {
         $rules | Add-Member -NotePropertyName pathExclusions -NotePropertyValue ([PSCustomObject]@{
             applyToModes = @('ThreatScan', 'FullScan', 'CustomScan')
@@ -627,13 +688,21 @@ function Get-CstHighRiskScanRoots {
 function Get-CstScanOverallPercent {
     param(
         [int]$Scanned,
-        [int]$MaxFiles,
+        [int]$ProgressTotal = 0,
+        [int]$MaxFiles = 0,
         [double]$MinimumPercent = 10.0,
         [double]$MaximumPercent = 95.0
     )
 
-    if ($MaxFiles -le 0) { return $MinimumPercent }
-    $scanPortion = [math]::Min(1.0, ($Scanned / [double]$MaxFiles))
+    $denom = 0
+    if ($ProgressTotal -gt 0) {
+        $denom = $ProgressTotal
+    } elseif ($MaxFiles -gt 0) {
+        $denom = $MaxFiles
+    }
+
+    if ($denom -le 0) { return $MinimumPercent }
+    $scanPortion = [math]::Min(1.0, ($Scanned / [double]$denom))
     return [math]::Min($MaximumPercent, [math]::Round($MinimumPercent + ($scanPortion * ($MaximumPercent - $MinimumPercent)), 1))
 }
 
@@ -2912,13 +2981,17 @@ function Find-CstSignerTrustFinding {
             $statusMessage = 'Signer inspection unavailable.'
         }
 
-        # Timeouts / inspection failures are "unknown", not "safe". Always surface a low-confidence finding.
+        # A bounded Authenticode timeout is a coverage event, not evidence about the file.
+        # Keep the timeout in scan telemetry/cache, but do not create a security finding from it alone.
+        if ($statusCode -eq 'TimeoutDuringInspection') {
+            return $null
+        }
+
+        # Other inspection failures remain unknown and surface at low confidence.
         $unknownType = 'Suspicious'
         $unknownSeverity = 'Low'
         $unknownConfidence = 0.4
-        if ($statusCode -eq 'TimeoutDuringInspection') {
-            $unknownConfidence = if ($riskyPath) { 0.48 } else { 0.4 }
-        } elseif ($systemPath -and -not $riskyPath) {
+        if ($systemPath -and -not $riskyPath) {
             $unknownConfidence = 0.32
         }
 
@@ -2933,6 +3006,21 @@ function Find-CstSignerTrustFinding {
     }
 
     if ($signerStatus -eq 'NotSigned' -and $riskyPath) {
+        if ($extLower -eq '.dll') {
+            # Unsigned libraries (NuGet analyzers, app-local dependencies) are routine and are
+            # not independently suspicious. Keep this as a weak single signal: it is suppressed
+            # in dependency-trust contexts and demoted to the suppressed audit list unless
+            # another detector corroborates it.
+            return [PSCustomObject]@{
+                type = 'Suspicious'
+                severity = 'Low'
+                confidence = 0.5
+                evidence = 'Unsigned DLL in risky path (weak signal; requires corroborating detector).'
+                publisher = $publisher
+                signerStatus = $signerStatus
+            }
+        }
+
         return [PSCustomObject]@{
             type = 'Suspicious'
             severity = 'Medium'
@@ -3873,7 +3961,7 @@ function Find-CstFileFindings {
             } else {
                 0.0
             }
-            $scanOverallPercent = Get-CstScanOverallPercent -Scanned $scanned -MaxFiles $MaxFiles
+            $scanOverallPercent = Get-CstScanOverallPercent -Scanned $scanned -ProgressTotal $progressTotal -MaxFiles $MaxFiles
             Write-CstLiveProgress -Scanned $scanned -ProgressTotal $progressTotal -CurrentPath $full -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -RecentAverageSec $recentAverageSec -MinEtaSampleSize 25 -MaxBudgetSec $timeLimitSec -Phase 'Scanning' -PhasePercent $scanPhasePercent -OverallPercent $scanOverallPercent -TargetIndex $enumTargetIndex -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail ("Scanning {0:N0}/{1:N0}" -f $scanned, $progressTotal)
 
             $name = $FileInfo.Name
@@ -4061,7 +4149,7 @@ function Find-CstFileFindings {
         $targetStartPhase = if ($enablePipelineScan -and $scanned -gt 0) { 'Scanning' } else { 'Enumerating' }
         $targetStartScanned = if ($enablePipelineScan -and $scanned -gt 0) { $scanned } else { $enumeratedCandidates }
         $targetStartOverall = if ($enablePipelineScan -and $scanned -gt 0) {
-            Get-CstScanOverallPercent -Scanned $scanned -MaxFiles $MaxFiles
+            Get-CstScanOverallPercent -Scanned $scanned -ProgressTotal $progressTotal -MaxFiles $MaxFiles
         } else {
             [math]::Round(10.0 + ($lastEnumPhasePercent * 0.25), 1)
         }
@@ -4096,7 +4184,7 @@ function Find-CstFileFindings {
                         } else {
                             0.0
                         }
-                        $walkScanOverall = Get-CstScanOverallPercent -Scanned $scanned -MaxFiles $MaxFiles
+                        $walkScanOverall = Get-CstScanOverallPercent -Scanned $scanned -ProgressTotal $progressTotal -MaxFiles $MaxFiles
                         Write-CstLiveProgress -Scanned $scanned -ProgressTotal $progressTotal -CurrentPath $candidate.FullName -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -RecentAverageSec $recentAverageSec -MinEtaSampleSize 25 -MaxBudgetSec $timeLimitSec -Phase 'Scanning' -PhasePercent $walkScanPhasePercent -OverallPercent $walkScanOverall -TargetIndex $enumTargetIndex -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail ("Scanning {0:N0}/{1:N0} • walked {2:N0} paths (target {3}/{4})" -f $scanned, $progressTotal, $enumeratedCandidates, $enumTargetIndex, $enumTargetCount)
                     } else {
                         $enumOverall = [math]::Round(10.0 + ($enumPhasePercent * 0.25), 1)
@@ -4187,7 +4275,7 @@ function Find-CstFileFindings {
         }
         $enumCompletePhase = if ($enablePipelineScan) { 'Scanning' } else { 'Enumerating' }
         $enumCompleteScanned = if ($enablePipelineScan) { $scanned } else { $enumeratedCandidates }
-        $enumCompleteOverall = Get-CstScanOverallPercent -Scanned $enumCompleteScanned -MaxFiles $MaxFiles
+        $enumCompleteOverall = Get-CstScanOverallPercent -Scanned $enumCompleteScanned -ProgressTotal $progressTotal -MaxFiles $MaxFiles
         Write-CstLiveProgress -Scanned $enumCompleteScanned -ProgressTotal $progressTotal -CurrentPath '' -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -Phase $enumCompletePhase -PhasePercent 100.0 -OverallPercent $enumCompleteOverall -TargetIndex $enumTargetCount -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail $enumCompleteDetail
     }
 
@@ -4538,6 +4626,25 @@ function Get-CstPersistenceArtifacts {
             $artifacts.Add((New-CstArtifact -Kind 'Service' -Source 'ServiceControlManager' -Path $path -CommandLine $path -Name ([string]$svc.Name) -Location 'Win32_Service' -State ([string]$svc.State) -ObjectType 'Persistence' -Evidence 'Service image path observed.' -EntityType 'Service' -SourceChannel 'Win32_Service' -EvidenceKind 'LiveTelemetry'))
         }
     } catch {}
+
+    # Kernel drivers (Type 1/2) for correlation
+    try {
+        foreach ($drv in @(Get-CimInstance Win32_SystemDriver -ErrorAction SilentlyContinue)) {
+            if ($null -eq $drv) { continue }
+            $path = [string]$drv.PathName
+            $artifacts.Add((New-CstArtifact -Kind 'Driver' -Source 'SystemDriver' -Path $path -CommandLine $path -Name ([string]$drv.Name) -Location 'Win32_SystemDriver' -State ([string]$drv.State) -ObjectType 'Driver' -Evidence 'System driver image path observed.' -EntityType 'Driver' -SourceChannel 'Win32_SystemDriver' -EvidenceKind 'LiveTelemetry'))
+        }
+    } catch {}
+
+    # Minifilter inventory (live Windows)
+    if ($EnvironmentMode -eq 'Windows') {
+        try {
+            foreach ($filterName in @(Get-CstFltmcFilterNames)) {
+                if ([string]::IsNullOrWhiteSpace($filterName)) { continue }
+                $artifacts.Add((New-CstArtifact -Kind 'Minifilter' -Source 'fltmc' -Name $filterName -Location ("Minifilter:{0}" -f $filterName) -ObjectType 'Filter' -Evidence 'Minifilter registered with Filter Manager.' -EntityType 'Filter' -SourceChannel 'fltmc' -EvidenceKind 'LiveTelemetry'))
+            }
+        } catch {}
+    }
 
     # Scheduled tasks
     try {
@@ -5011,6 +5118,249 @@ function Find-CstConfigurationFindings {
         } catch {
             $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name 'Hosts check failed' -Location $hostsPath -Evidence $_.Exception.Message -Detector 'HostsInspector' -Confidence 0.2 -ObjectType 'Configuration' -CanRemediate $false))
         }
+    }
+
+    return $findings
+}
+
+function Test-CstRiskyDefenderExclusion {
+    param(
+        [Parameter(Mandatory)][string]$ExclusionType,
+        [Parameter(Mandatory)][string]$Value,
+        [Parameter(Mandatory)]$Rules
+    )
+
+    $policy = $Rules.defenderExclusionPolicies
+    if (-not $policy -or -not $policy.enabled) { return $null }
+
+    $trimmed = $Value.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed)) { return $null }
+
+    foreach ($allowed in @($policy.allowlistedExclusions)) {
+        if ([string]::IsNullOrWhiteSpace([string]$allowed)) { continue }
+        if ($trimmed -ieq [string]$allowed) { return $null }
+    }
+
+    $lower = $trimmed.ToLowerInvariant()
+    if ($ExclusionType -eq 'Path' -or $ExclusionType -eq 'Process') {
+        foreach ($rx in @($policy.suspiciousPathRegex)) {
+            if ([string]::IsNullOrWhiteSpace([string]$rx)) { continue }
+            if ($lower -match [string]$rx) {
+                return "Matches risky exclusion pattern: $rx"
+            }
+        }
+        if ($ExclusionType -eq 'Path' -and $lower -match '^[a-z]:\\?$') {
+            return 'Entire drive excluded from Defender scanning.'
+        }
+    }
+
+    if ($ExclusionType -eq 'Extension') {
+        $ext = $trimmed.TrimStart('.')
+        foreach ($rx in @($policy.suspiciousExtensionRegex)) {
+            if ([string]::IsNullOrWhiteSpace([string]$rx)) { continue }
+            if ($trimmed -match [string]$rx -or ('.' + $ext) -match [string]$rx) {
+                return "Risky file extension exclusion: $trimmed"
+            }
+        }
+    }
+
+    return $null
+}
+
+function Test-CstDefenderUnavailableError {
+    param(
+        [int]$HResult = 0,
+        [string]$Message = ''
+    )
+
+    return (
+        $HResult -eq -2147416390 -or
+        $Message -match '(?i)0x800106ba|service.*(disabled|not available|not started)|failed to initialize'
+    )
+}
+
+function Find-CstDefenderExclusionFindings {
+    param(
+        [Parameter(Mandatory)]$Rules,
+        [ValidateSet('Windows','WinPE')][string]$EnvironmentMode = 'Windows'
+    )
+
+    $findings = New-Object System.Collections.Generic.List[object]
+    $policy = $Rules.defenderExclusionPolicies
+    if (-not $policy -or -not $policy.enabled) { return $findings }
+    if ($EnvironmentMode -ne 'Windows') { return $findings }
+
+    try {
+        if (-not (Get-Command Get-MpPreference -ErrorAction SilentlyContinue)) {
+            return $findings
+        }
+
+        $pref = Get-MpPreference -ErrorAction Stop
+        $groups = @(
+            @{ Type = 'Path'; Values = @($pref.ExclusionPath) },
+            @{ Type = 'Process'; Values = @($pref.ExclusionProcess) },
+            @{ Type = 'Extension'; Values = @($pref.ExclusionExtension) },
+            @{ Type = 'IpAddress'; Values = @($pref.ExclusionIpAddress) }
+        )
+
+        foreach ($group in $groups) {
+            foreach ($value in @($group.Values)) {
+                if ([string]::IsNullOrWhiteSpace([string]$value)) { continue }
+                $risk = Test-CstRiskyDefenderExclusion -ExclusionType $group.Type -Value ([string]$value) -Rules $Rules
+                if ($risk) {
+                    $findings.Add((New-CstFinding -Type 'PUM' -Severity 'High' -Name ("Risky Defender {0} exclusion" -f $group.Type) -Location ("DefenderExclusion:{0}:{1}" -f $group.Type, $value) -Evidence $risk -Detector 'DefenderExclusionInspector' -Confidence 0.78 -ObjectType 'Configuration' -CanRemediate $false))
+                } else {
+                    $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name ("Defender {0} exclusion present" -f $group.Type) -Location ("DefenderExclusion:{0}:{1}" -f $group.Type, $value) -Evidence ("Defender exclusion inventory: {0}={1}" -f $group.Type, $value) -Detector 'DefenderExclusionInspector' -Confidence 0.35 -ObjectType 'Configuration' -CanRemediate $false))
+                }
+            }
+        }
+    } catch {
+        $message = [string]$_.Exception.Message
+        $hresult = [int]$_.Exception.HResult
+        $defenderUnavailable = Test-CstDefenderUnavailableError -HResult $hresult -Message $message
+        if (-not $defenderUnavailable) {
+            $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name 'Defender exclusion check failed' -Location 'Get-MpPreference' -Evidence $message -Detector 'DefenderExclusionInspector' -Confidence 0.2 -ObjectType 'Configuration' -CanRemediate $false))
+        }
+    }
+
+    return $findings
+}
+
+function Find-CstRansomwareTamperFindings {
+    param(
+        [Parameter(Mandatory)]$Rules,
+        [ValidateSet('Windows','WinPE')][string]$EnvironmentMode = 'Windows',
+        [string]$OfflineWindowsRoot = ''
+    )
+
+    $findings = New-Object System.Collections.Generic.List[object]
+    $policy = $Rules.ransomwareTamperPolicies
+    if (-not $policy -or -not $policy.enabled) { return $findings }
+
+    $issueCount = 0
+
+    foreach ($svcName in @($policy.checkBackupServices)) {
+        if ([string]::IsNullOrWhiteSpace([string]$svcName)) { continue }
+        try {
+            if ($EnvironmentMode -eq 'Windows') {
+                $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+                if ($null -eq $svc) { continue }
+                if ($svc.StartType -eq 'Disabled') {
+                    $issueCount++
+                    $findings.Add((New-CstFinding -Type 'PUM' -Severity 'High' -Name ("Recovery service disabled: {0}" -f $svcName) -Location ("Service:{0}" -f $svcName) -Evidence ("Service {0} start type is Disabled (T1490-related)." -f $svcName) -Detector 'RansomwareTamperInspector' -Confidence 0.82 -ObjectType 'Configuration' -CanRemediate $false))
+                } elseif ($policy.requireVssRunning -and $svcName -eq 'VSS' -and $svc.Status -ne 'Running') {
+                    $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name 'VSS service not running' -Location 'Service:VSS' -Evidence 'Volume Shadow Copy service is not running.' -Detector 'RansomwareTamperInspector' -Confidence 0.4 -ObjectType 'Configuration' -CanRemediate $false))
+                }
+            }
+        } catch { }
+    }
+
+    if ($policy.checkWinRe) {
+        try {
+            if ($EnvironmentMode -eq 'Windows') {
+                $reagent = & reagentc.exe /info 2>&1 | Out-String
+                if ($reagent -match '(?i)Windows\s+RE\s+status\s*:\s*Disabled') {
+                    $issueCount++
+                    $findings.Add((New-CstFinding -Type 'PUM' -Severity 'High' -Name 'Windows RE disabled' -Location 'reagentc' -Evidence 'reagentc reports Windows RE status: Disabled.' -Detector 'RansomwareTamperInspector' -Confidence 0.8 -ObjectType 'Configuration' -CanRemediate $false))
+                }
+            } elseif (-not [string]::IsNullOrWhiteSpace($OfflineWindowsRoot)) {
+                $recoveryDir = Join-Path $OfflineWindowsRoot.TrimEnd('\') 'Windows\System32\Recovery'
+                $reagentXml = Join-Path $recoveryDir 'ReAgent.xml'
+                if (-not (Test-Path -LiteralPath $recoveryDir)) {
+                    $issueCount++
+                    $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Medium' -Name 'Offline WinRE recovery folder missing' -Location $recoveryDir -Evidence 'Offline Windows\System32\Recovery folder was not found.' -Detector 'RansomwareTamperInspector' -Confidence 0.55 -ObjectType 'Configuration' -CanRemediate $false))
+                } elseif (Test-Path -LiteralPath $reagentXml) {
+                    $xmlText = Get-Content -LiteralPath $reagentXml -Raw -ErrorAction SilentlyContinue
+                    if ($xmlText -match '(?i)WinREOfflineDisabled\s*=\s*"1"' -or $xmlText -match '(?i)<WinreStaged>\s*0\s*</WinreStaged>') {
+                        $issueCount++
+                        $findings.Add((New-CstFinding -Type 'PUM' -Severity 'Medium' -Name 'Offline WinRE appears disabled' -Location $reagentXml -Evidence 'ReAgent.xml indicates WinRE may be disabled.' -Detector 'RansomwareTamperInspector' -Confidence 0.65 -ObjectType 'Configuration' -CanRemediate $false))
+                    }
+                }
+            }
+        } catch {
+            $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name 'WinRE check failed' -Location 'WinRE' -Evidence $_.Exception.Message -Detector 'RansomwareTamperInspector' -Confidence 0.2 -ObjectType 'Configuration' -CanRemediate $false))
+        }
+    }
+
+    if ($policy.highSeverityWhenMultiple -and $issueCount -ge 2) {
+        $findings.Add((New-CstFinding -Type 'Malware' -Severity 'High' -Name 'Multiple recovery features impaired' -Location 'RecoveryTamper' -Evidence ("{0} recovery-related impairments detected (ransomware T1490 pattern)." -f $issueCount) -Detector 'RansomwareTamperInspector' -Confidence 0.88 -ObjectType 'Configuration' -CanRemediate $false))
+    }
+
+    return $findings
+}
+
+function Get-CstFltmcFilterNames {
+    $names = New-Object System.Collections.Generic.List[string]
+    try {
+        $raw = & fltmc.exe filters 2>&1 | Out-String
+        foreach ($line in ($raw -split "`r?`n")) {
+            if ($line -match '^\s*Filter\s+Name' -or $line -match '^-{3,}' -or [string]::IsNullOrWhiteSpace($line)) { continue }
+            if ($line -match '^\s*(\S+)\s+\d+') {
+                $names.Add($Matches[1]) | Out-Null
+            }
+        }
+    } catch { }
+    return [string[]]$names.ToArray()
+}
+
+function Find-CstDriverFilterFindings {
+    param(
+        [Parameter(Mandatory)]$Rules,
+        [ValidateSet('Windows','WinPE')][string]$EnvironmentMode = 'Windows'
+    )
+
+    $findings = New-Object System.Collections.Generic.List[object]
+    $policy = $Rules.driverFilterPolicies
+    if (-not $policy -or -not $policy.enabled) { return $findings }
+    if ($EnvironmentMode -ne 'Windows') { return $findings }
+
+    $allowFilters = @($policy.allowlistedFilterNames | ForEach-Object { [string]$_ })
+    $knownBad = @($policy.knownBadNames | ForEach-Object { [string]$_.ToLowerInvariant() })
+
+    try {
+        foreach ($filterName in @(Get-CstFltmcFilterNames)) {
+            if ([string]::IsNullOrWhiteSpace($filterName)) { continue }
+            $lower = $filterName.ToLowerInvariant()
+            if ($knownBad -contains $lower) {
+                $findings.Add((New-CstFinding -Type 'PUM' -Severity 'High' -Name ("Known-bad minifilter: {0}" -f $filterName) -Location ("Minifilter:{0}" -f $filterName) -Evidence 'Filter name matches known-bad policy list.' -Detector 'DriverFilterInventory' -Confidence 0.9 -ObjectType 'Filter' -CanRemediate $false))
+                continue
+            }
+            $allowed = $false
+            foreach ($a in $allowFilters) {
+                if ($filterName -ieq $a) { $allowed = $true; break }
+            }
+            if (-not $allowed) {
+                $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Medium' -Name ("Unexpected minifilter: {0}" -f $filterName) -Location ("Minifilter:{0}" -f $filterName) -Evidence 'Minifilter is not on the Microsoft/common allowlist. Review publisher and altitude.' -Detector 'DriverFilterInventory' -Confidence 0.55 -ObjectType 'Filter' -CanRemediate $false))
+            }
+        }
+    } catch {
+        $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Low' -Name 'Minifilter enumeration failed' -Location 'fltmc' -Evidence $_.Exception.Message -Detector 'DriverFilterInventory' -Confidence 0.2 -ObjectType 'Filter' -CanRemediate $false))
+    }
+
+    $filterKeys = @(
+        'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e967-e325-11ce-bfc1-08002be10318}',
+        'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e96a-e325-11ce-bfc1-08002be10318}',
+        'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{71a27cdd-812a-11d0-bec7-08002be2092f}'
+    )
+    foreach ($key in $filterKeys) {
+        if (-not (Test-Path -LiteralPath $key)) { continue }
+        try {
+            $item = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
+            foreach ($propName in @('UpperFilters', 'LowerFilters')) {
+                if (-not $item.PSObject.Properties[$propName]) { continue }
+                $vals = @($item.$propName)
+                foreach ($val in $vals) {
+                    if ([string]::IsNullOrWhiteSpace([string]$val)) { continue }
+                    $allowed = $false
+                    foreach ($a in $allowFilters) {
+                        if ([string]$val -ieq $a) { $allowed = $true; break }
+                    }
+                    if (-not $allowed) {
+                        $findings.Add((New-CstFinding -Type 'Suspicious' -Severity 'Medium' -Name ("Unexpected {0}: {1}" -f $propName, $val) -Location ("{0}\{1}" -f $key, $propName) -Evidence ("Registry {0} lists unexpected filter '{1}'." -f $propName, $val) -Detector 'DriverFilterInventory' -Confidence 0.58 -ObjectType 'Filter' -CanRemediate $false))
+                    }
+                }
+            }
+        } catch { }
     }
 
     return $findings
@@ -5673,8 +6023,11 @@ function Get-CstDetectorWeight {
         'BootFileIntegrity' { 90 }
         'BcdInspector' { 85 }
         'YaraLike' { 85 }
+        'RansomwareTamperInspector' { 82 }
+        'DefenderExclusionInspector' { 78 }
         'MbrVbrInspector' { 75 }
         'GptStructureInspector' { 75 }
+        'DriverFilterInventory' { 72 }
         'PatternEngine' { 70 }
         'ArchiveInspector' { 65 }
         'HeuristicEngine' { 50 }
@@ -5894,10 +6247,17 @@ function Invoke-CstScan {
     }
 
     $postScanScanned = [int]$scanData.scanned
-    $postScanOverall = Get-CstScanOverallPercent -Scanned $postScanScanned -MaxFiles $maxFiles -MaximumPercent 95.0
-    Write-CstLiveProgress -Scanned $postScanScanned -ProgressTotal $maxFiles -CurrentPath '' -ElapsedSec (((Get-Date) - $start).TotalSeconds) -Phase 'Scanning' -PhasePercent 95.0 -OverallPercent $postScanOverall -Detail 'File scan complete. Running boot and configuration checks...'
+    $postScanProgressTotal = [math]::Max(1, $postScanScanned)
+    $postScanOverall = Get-CstScanOverallPercent -Scanned $postScanScanned -ProgressTotal $postScanProgressTotal -MaxFiles $maxFiles -MaximumPercent 95.0
+    Write-CstLiveProgress -Scanned $postScanScanned -ProgressTotal $postScanProgressTotal -CurrentPath '' -ElapsedSec (((Get-Date) - $start).TotalSeconds) -Phase 'Scanning' -PhasePercent 95.0 -OverallPercent $postScanOverall -Detail 'File scan complete. Running boot and configuration checks...'
 
     $configFindings = Find-CstConfigurationFindings -Rules $rules
+    $defenderFindings = Find-CstDefenderExclusionFindings -Rules $rules -EnvironmentMode $envMode
+    $ransomwareFindings = Find-CstRansomwareTamperFindings -Rules $rules -EnvironmentMode $envMode -OfflineWindowsRoot ([string]$targetResolution.offlineRoot)
+    $driverFilterFindings = @()
+    if ($Mode -in @('FullScan', 'CustomScan', 'ThreatScan')) {
+        $driverFilterFindings = Find-CstDriverFilterFindings -Rules $rules -EnvironmentMode $envMode
+    }
     $bootData = [PSCustomObject]@{
         findings = @()
         itemsScanned = 0
@@ -5912,7 +6272,7 @@ function Invoke-CstScan {
         $bootData = Find-CstBootChainFindings -Mode $Mode -EnvironmentMode $envMode -TargetResolution $targetResolution -Rules $rules
     }
 
-    $findings = @(ConvertTo-CstFindingArray -InputObject @($scanData.findings, $configFindings, $bootData.findings))
+    $findings = @(ConvertTo-CstFindingArray -InputObject @($scanData.findings, $configFindings, $defenderFindings, $ransomwareFindings, $driverFilterFindings, $bootData.findings))
 
     $collectPersistence = $EnablePersistenceCollectors
     if ($Mode -ne 'CustomScan') {

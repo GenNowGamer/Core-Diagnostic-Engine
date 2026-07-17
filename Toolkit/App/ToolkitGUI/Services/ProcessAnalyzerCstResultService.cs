@@ -259,7 +259,12 @@ namespace ToolkitGUI.Services
                 if (progress is null)
                     return false;
 
-                var percent = Math.Max(0.0, Math.Min(100.0, progress.OverallPercent ?? progress.Percent));
+                var percent = Math.Max(0.0, Math.Min(100.0, CstScanProgressHelper.ResolveDisplayPercent(
+                    progress.Phase,
+                    progress.Scanned,
+                    progress.ProgressTotal,
+                    progress.OverallPercent,
+                    progress.Percent)));
                 var phasePercent = progress.PhasePercent ?? -1;
                 var phase = (progress.Phase ?? string.Empty).Trim();
                 var phaseUpper = phase.ToUpperInvariant();
@@ -1604,6 +1609,11 @@ namespace ToolkitGUI.Services
         public string Verdict { get; init; } = "Clean";
         public string VerdictDetail { get; init; } = string.Empty;
         public int ItemsScanned { get; init; }
+        public string PrimaryMetricLabel { get; init; } = "FILES ANALYZED";
+        public string PrimaryMetricValue { get; init; } = string.Empty;
+        public string PrimaryMetricDisplay => !string.IsNullOrWhiteSpace(PrimaryMetricValue)
+            ? PrimaryMetricValue
+            : ItemsScanned.ToString("N0");
         public int ThreatsFound { get; init; }
         public int WarningsFound { get; init; }
         public int ScanErrors { get; init; }

@@ -16,11 +16,14 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 ## Session Update (2026-07-17)
 
+- **CST capability closure** — Defender exclusions, ransomware recovery tampering, and driver/minifilter inventory are available through System Health/Hijack/CST. Process and behavior collection add network, credential-access, injection, and miner indicators for CST correlation.
+- **Process Analyzer detail** — Selected-process details now render network connections and module anomalies in addition to command line, parent chain, modules, hash, and signature.
+- **CST results/noise** — **Suppressed audit Findings** is a collapsed expander row at the bottom of the primary Findings card (not a separate 2:1 panel). Timeout-only Authenticode checks do not create findings; unsigned DLLs in risky paths are weak Low/0.50 signals requiring corroboration; verified Windows/Malwarebytes filters and Defender-unavailable state no longer create noise.
 - **Structured System Health findings** — Workflow steps persist Finding, Impact, Severity, deterministic Confidence (0–100), Evidence, Recommendations, and actions. Event-log checks correlate known failure clusters while retaining unmatched significant events.
 - **Hybrid review UI/PDF** — Structured findings are additive to the previous grouped technical output, so adapter/device/service/event details remain available. The selected result card is blue-highlighted with a left accent and **VIEWING** badge; duplicate **DETAILED RESULTS** label removed.
 - **GPU functional tests** — New Deep System `gpu_functional_tests` check uses self-contained `CdeGpuDiagCli.exe` for driver, D3D11, OpenGL, Vulkan, capped VRAM, and best-effort thermal checks. Unsupported environments report **N/A**.
 - **Reliability** — Fixed PowerShell 5.1 generic-list conversion that caused `Argument types do not match` in Hijack/GPU finding paths. Regression coverage added in `Test-HealthFindingsAndEventClusters.ps1`.
-- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; latest GUI payload **2026-07-17 10:35:34 AM**.
+- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; latest GUI payload **2026-07-17 1:51:42 PM**, with final CST runtime synced afterward.
 
 ## Session Update (2026-07-16)
 
@@ -38,7 +41,7 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 ## Session Update (2026-07-15)
 
 - **Code review Pass 1 & 2 — shipped** — Correctness/security/UX fixes across Startup Manager, CST/Malware glue, workflow elevation, Hijack repair, OS Repair/Fast Fixes, File Manager/Robocopy, Diag & Repair/hardware tests, and work orders/logging. Regression helpers: `Test-StartupManagerCoverage.ps1`, `Test-ToolkitElevation.ps1`, `Test-HijackRepairHelpers.ps1` (also in `Invoke-CdeRegressionSuite.ps1` where wired).
-- **CST Scan Results UI** — Findings and Suppressed grids are the focal layout (shared height 2:1); footer coverage/action-summary text removed from the dialog (still in Copy summary / PDF).
+- **CST Scan Results UI (historical)** — Findings and Suppressed grids initially shared height 2:1; footer coverage/action-summary text was removed from the dialog. **Superseded 2026-07-17:** Suppressed rows now live under one collapsed expander at the bottom of the main Findings card.
 - **Code review Pass 3 — deferred** — Publish/launcher/packaging reviewed (14 documented findings); operator keeping current workflow. No changes to `Publish-ToolkitGUI.ps1`, `CDE.exe`, or `SyncUSB.bat` from that review.
 - **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; full validation `App/Publish-ToolkitGUI-FullVerify.ps1`. Details — `session_handoff.md`.
 

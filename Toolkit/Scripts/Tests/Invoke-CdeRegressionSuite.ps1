@@ -85,6 +85,7 @@ Invoke-Tier -Name 'Unit: MSIX startup tasks' -ScriptPath (Join-Path $testsRoot '
 Invoke-Tier -Name 'Unit: Startup Manager coverage' -ScriptPath (Join-Path $testsRoot 'Test-StartupManagerCoverage.ps1')
 Invoke-Tier -Name 'Unit: Post-Op cleanup helpers' -ScriptPath (Join-Path $testsRoot 'Test-PostOpCleanup.ps1')
 Invoke-Tier -Name 'Unit: Hijack repair helpers' -ScriptPath (Join-Path $testsRoot 'Test-HijackRepairHelpers.ps1')
+Invoke-Tier -Name 'Unit: Process analyzer risk/network' -ScriptPath (Join-Path $testsRoot 'Test-ProcessAnalyzerRiskAndNetwork.ps1')
 Invoke-Tier -Name 'Unit: Offline hosts path' -ScriptPath (Join-Path $testsRoot 'Test-OfflineHostsPath.ps1')
 Invoke-Tier -Name 'Unit: Environment capability matrix' -ScriptPath (Join-Path $testsRoot 'Test-EnvironmentCapabilityMatrix.ps1')
 Invoke-Tier -Name 'Unit: Symptom flows E2E' -ScriptPath (Join-Path $testsRoot 'Test-SymptomFlowsE2E.ps1')
