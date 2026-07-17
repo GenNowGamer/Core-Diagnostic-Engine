@@ -1,6 +1,32 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-16
+**Last updated:** 2026-07-17
+
+## 2026-07-17 — Structured System Health findings + GPU functional tests
+
+### Findings model and hybrid result cards
+
+- **Schema** — System Health workflow steps can now persist `StructuredFindings` with Finding, Impact, Severity, deterministic Confidence (0–100 match score), Status, Evidence, Recommendations, and trusted actions. PowerShell also appends `[HEALTH:FINDING]` JSON lines for live/backward-compatible parsing.
+- **Hybrid presentation** — The GUI and PDF show scored/actionable findings while retaining the previous detailed inventories and grouped adapter/device/service/event output. Structured findings are additive; they do not replace the check's technical detail.
+- **Result selection** — The currently viewed card in the left Findings list has a blue-tinted background, blue border/left accent, and **VIEWING** badge. The duplicate **DETAILED RESULTS** heading was removed.
+- **PowerShell 5.1 fix** — Generic finding lists are converted with `.ToArray()`; this fixes `Argument types do not match` in Network/Browser Hijack, Security Tampering, Remote Access, and GPU finding paths.
+
+### Event correlation and producer coverage
+
+- **Event clusters** — `Config\EventFindingClusters.json` + `Scripts\Core\EventFindingClusters.ps1` correlate unexpected shutdown, BSOD, application crash, profile, disk/NTFS, WHEA, service, TPM/security, Windows Update, and display-reset events. Planned restart suppressors reduce false positives; unmatched significant events remain low-confidence unclassified findings.
+- **Coverage** — Quick Vitals, Deep System, System Audit, Security Audit, and Hijack checks emit structured findings at appropriate detail levels. Inventory checks stay informational unless a risky condition exists.
+
+### GPU functional diagnostics
+
+- **New check** — Deep System includes `gpu_functional_tests` beside informational `gpu_info`.
+- **Helper** — `App\CdeGpuDiagCli\` (`probe`, `test-all`) performs per-adapter driver, D3D11, OpenGL, Vulkan, capped VRAM, and best-effort thermal checks. Unsupported WinPE/RDP/basic-display/vendor conditions report **N/A**, not false failures.
+- **Packaging** — Canonical publish builds the self-contained helper into the ToolkitGUI payload; `Publish-Verify-Toolkit.ps1` probes it.
+
+### Reports, tests, and publish
+
+- **Reports** — Nested findings persist in workflow JSON and render in System Health PDFs; older text-only reports keep the legacy fallback.
+- **Regression** — `Test-HealthFindingsAndEventClusters.ps1` is wired into `Invoke-CdeRegressionSuite.ps1`; ToolkitGUI unit tests and PowerShell finding/hijack checks passed during implementation.
+- **Publish** — Canonical `App\Publish-ToolkitGUI.ps1` completed after the final selection-indicator update. Launch `Toolkit\CDE.exe`; published GUI payload timestamp **2026-07-17 10:35:34 AM**.
 
 ## 2026-07-16 — Startup services, Post-Op hosts, health checks, lab ops
 

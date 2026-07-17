@@ -217,7 +217,7 @@ namespace ToolkitGUI.Services
         {
             var status = string.IsNullOrWhiteSpace(step.Status) ? "Unknown" : step.Status;
             var rawOutput = !string.IsNullOrWhiteSpace(step.Output) ? step.Output : step.Detail;
-            var formatted = WorkflowResultFormatter.Format(step.Name, rawOutput);
+            var formatted = WorkflowResultFormatter.Format(step.Name, rawOutput, step.StructuredFindings);
             var displayTitle = WorkflowStepLabelHelper.ResolveDisplayTitle(step, workflowName);
             var repeatTestLabel = WorkflowStepLabelHelper.ShouldRepeatTestLabelOnItems(workflowName);
 
@@ -374,6 +374,54 @@ namespace ToolkitGUI.Services
                 if (!string.IsNullOrWhiteSpace(item.Subtitle))
                 {
                     column.Item().Text(item.Subtitle).FontSize(8.5f).FontColor("#37475F");
+                }
+
+                if (item.IsStructuredFinding)
+                {
+                    if (!string.IsNullOrWhiteSpace(item.Impact))
+                    {
+                        column.Item().Text(text =>
+                        {
+                            text.Span("Impact: ").SemiBold().FontSize(8.5f).FontColor("#5A6B80");
+                            text.Span(item.Impact).FontSize(8.5f).FontColor("#1B2B40");
+                        });
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(item.SeverityLabel))
+                    {
+                        column.Item().Text(text =>
+                        {
+                            text.Span("Severity: ").SemiBold().FontSize(8.5f).FontColor("#5A6B80");
+                            text.Span(item.SeverityLabel).FontSize(8.5f).FontColor("#1B2B40");
+                        });
+                    }
+
+                    if (item.Confidence is int confidence)
+                    {
+                        column.Item().Text(text =>
+                        {
+                            text.Span("Confidence: ").SemiBold().FontSize(8.5f).FontColor("#5A6B80");
+                            text.Span($"{confidence}/100").FontSize(8.5f).FontColor("#1B2B40");
+                        });
+                    }
+
+                    if (item.Evidence.Count > 0)
+                    {
+                        column.Item().Text("Evidence:").SemiBold().FontSize(8.5f).FontColor("#5A6B80");
+                        foreach (var evidence in item.Evidence)
+                        {
+                            column.Item().PaddingLeft(8).Text("• " + evidence).FontSize(8.5f).FontColor("#1B2B40");
+                        }
+                    }
+
+                    if (item.Recommendations.Count > 0)
+                    {
+                        column.Item().Text("Recommendation:").SemiBold().FontSize(8.5f).FontColor("#5A6B80");
+                        foreach (var rec in item.Recommendations)
+                        {
+                            column.Item().PaddingLeft(8).Text("• " + rec).FontSize(8.5f).FontColor("#1B2B40");
+                        }
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(item.Path))

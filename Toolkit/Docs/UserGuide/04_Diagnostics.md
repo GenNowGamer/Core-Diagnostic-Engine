@@ -4,7 +4,7 @@ This chapter covers the main **find problems** tools in the MAIN sidebar section
 
 ## System Health Check
 
-**What this does:** Runs a catalog of automated checks (vitals, deep system info, audits, security reviews) and presents easy-to-read grouped results with a PDF report.
+**What this does:** Runs a catalog of automated checks (vitals, deep system info, audits, security reviews) and presents scored findings together with detailed technical inventories and a PDF report.
 
 ### When to use it
 
@@ -17,20 +17,31 @@ This chapter covers the main **find problems** tools in the MAIN sidebar section
 1. Sidebar → **System Health Check**
 2. Use a preset (**Recommended**, **Quick Vitals**, **Deep System**, **Full Audit**) or tick individual checks in the category list (**Select All** / **Clear All** as needed)
 3. Click **Run Health Check**
-4. Review grouped cards — green Pass, yellow Warn, red Fail
-5. The **Findings** list on the results screen follows the catalog order in `Config/HealthCheckCatalog.json` (`findingsDisplayOrder`: Activation through Remote Access)
-6. Click **Open Report** for a printable PDF summary (`Logs\`)
+4. Review the left-side cards — green Pass, yellow Warn, red Fail. The currently open card has a blue highlight, left accent, and **VIEWING** badge
+5. In the right panel, review:
+   - **Actionable / verified findings** — Finding, Impact, Severity, deterministic Confidence (0–100 match score), Evidence, and Recommendations
+   - **Detailed results** — the full adapter, device, service, event, or inventory information collected by the check
+6. The **Findings** list follows the catalog order in `Config/HealthCheckCatalog.json` (`findingsDisplayOrder`: Activation through Remote Access)
+7. Click **Open Report** for a printable PDF summary (`Logs\`)
+
+> **Confidence:** This is a deterministic rule/evidence match score from 0–100, not a probability that hardware or software is faulty.
 
 ### What is included
 
 | Category | Examples |
 |----------|----------|
 | Quick Vitals | OS version, CPU load, RAM, disk space, activation, recent errors |
-| Deep System | Drivers, Windows Update stack (idle **Stopped** + **Manual** `wuauserv` is normal on Win10/11), network adapters, GPU, critical events |
+| Deep System | Drivers, Windows Update stack (idle **Stopped** + **Manual** `wuauserv` is normal on Win10/11), network adapters, GPU information, GPU functional tests, critical events |
 | System Audit | Installed software, services, startup entries, event logs, partitions |
 | Security Audits | Autoruns, hosts file, browser extensions, scheduled tasks, browser hijack, network hijack, security tampering, remote access |
 
 > **Important:** Heavy scans (SMART deep tests, Defender, line-item hardware tests) are **not** in Health Check — use **S.M.A.R.T. Analyzer**, **Diag & Repair**, and **Malware Cleanup** instead.
+
+### Event and GPU findings
+
+- Event-log checks correlate related records into findings such as unexpected shutdown, BSOD, application crash, storage/NTFS, WHEA hardware, service, update, and display-driver failures. Raw/deduplicated event evidence remains available in the detailed output.
+- **GPU Information** is inventory-only. **GPU Functional Tests** is a separate active check covering driver state, DirectX, OpenGL, Vulkan, a capped VRAM write/readback test, and best-effort temperature reporting.
+- WinPE, Remote Desktop, Microsoft Basic Display, missing graphics runtimes, or unavailable vendor temperature tools can produce **N/A**. That means the test could not run in that environment; it is not automatically a failure.
 
 ---
 

@@ -626,11 +626,16 @@ function Invoke-AutorunsAudit {
     param($r)
     $envMode = Get-EnvironmentMode
     if ($envMode -eq 'WinPE' -and $env:OFFLINE_REGISTRY_LOADED -ne '1') {
-        $r.Steps.Add([PSCustomObject]@{
-            Name   = 'AutorunsAudit'
-            Status = 'N/A'
+        $step = @{
+            Name = 'AutorunsAudit'; Status = 'N/A'; CheckId = 'sec_autoruns'
             Output = 'WinPE: load an offline Windows installation to audit startup registry hives and Winlogon.'
-        })
+        }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-HealthFinding -FindingId 'security.autorun.na_winpe' -CheckId 'sec_autoruns' `
+                -Finding 'Autoruns audit unavailable without offline hives' -Impact 'Cannot review persistence keys offline until a Windows hive is loaded.' `
+                -Severity 'Info' -Confidence 95 -Status 'N/A' -Evidence @('Environment=WinPE')
+        ) -SummaryText $step.Output
+        $r.Steps.Add([PSCustomObject]$step)
         return
     }
 
@@ -666,10 +671,29 @@ function Invoke-AutorunsAudit {
         $formatted = Format-AutorunsList -Entries $entries -Suspicious $suspicious
         Write-Log $formatted
 
-        $status = if ($suspicious.Count -gt 0) { 'Warn' } else { 'Pass' }
-        $r.Steps.Add([PSCustomObject]@{ Name='AutorunsAudit'; Status=$status; Output=$formatted })
+        $findings = @()
+        if ($suspicious.Count -gt 0) {
+            foreach ($item in @($suspicious | Select-Object -First 15)) {
+                $findings += New-HealthFinding -FindingId 'security.autorun.suspicious' -CheckId 'sec_autoruns' `
+                    -Subject ([string]$item.Name) -Finding 'Suspicious autorun entry' `
+                    -Impact 'Writable-folder or Winlogon-deviated autoruns can persist unwanted software.' `
+                    -Severity 'High' -Confidence 80 -Status 'Warn' `
+                    -Evidence @("Location=$($item.Location)", "Value=$($item.Value)", "Deviated=$($item.IsDeviated)") `
+                    -Recommendations @('Disable or remove unexpected autoruns in Startup Manager.', 'Investigate the command path before trusting the entry.') `
+                    -Actions @(@{ type = 'cde'; target = 'StartupManager'; label = 'Startup Manager' })
+            }
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'security.autorun.ok' -CheckId 'sec_autoruns' `
+                -Finding 'No suspicious autoruns flagged' -Impact 'Autorun locations did not match high-risk heuristics.' `
+                -Severity 'Info' -Confidence 75 -Status 'Pass' -Evidence @("Entries: $($entries.Count)")
+        }
+
+        $step = @{ Name='AutorunsAudit'; Status='Pass'; Output=$formatted; CheckId='sec_autoruns'; Detail="Suspicious: $($suspicious.Count) / $($entries.Count)" }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $step.Detail
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
-        $r.Steps.Add([PSCustomObject]@{ Name='AutorunsAudit'; Status='Warn'; Output=$_.Exception.Message })
+        $r.Steps.Add([PSCustomObject]@{ Name='AutorunsAudit'; Status='Warn'; Output=$_.Exception.Message; CheckId='sec_autoruns' })
     }
 }
 
@@ -681,26 +705,62 @@ function Invoke-HostsFileCheck {
 
         if (Test-Path $hostsPath) {
             $lines   = Get-Content $hostsPath -ErrorAction Stop
-            $custom  = $lines | Where-Object { $_ -notmatch '^\s*#' -and $_ -match '\S' -and $_ -notmatch '127\.0\.0\.1\s+localhost' -and $_ -notmatch '::1\s+localhost' }
-            if ($null -eq $custom) { $custom = @() }
+            $custom  = @($lines | Where-Object { $_ -notmatch '^\s*#' -and $_ -match '\S' -and $_ -notmatch '127\.0\.0\.1\s+localhost' -and $_ -notmatch '::1\s+localhost' })
             
             $formatted = Format-HostsFileDetail -HostsPath $hostsPath -CustomEntries $custom
             Write-Log $formatted
             
-            $status  = if ($custom.Count -gt 10) { 'Warn' } else { 'Pass' }
-            $r.Steps.Add([PSCustomObject]@{ Name='HostsFile'; Status=$status; Output=$formatted })
+            $findings = @()
+            if ($custom.Count -gt 10) {
+                $findings += New-HealthFinding -FindingId 'security.hosts.many_custom' -CheckId 'sec_hosts' `
+                    -Finding 'Hosts file has many non-default entries' `
+                    -Impact 'Large hosts redirects can hijack browsing, block updates, or break DNS resolution.' `
+                    -Severity 'Medium' -Confidence 85 -Status 'Warn' `
+                    -Evidence @("Path=$hostsPath", "Custom entries: $($custom.Count)") `
+                    -Recommendations @('Review custom hosts lines and remove unexpected redirects.', 'Run Hijack and Scam Repair if browser traffic is being redirected.') `
+                    -Actions @(@{ type = 'cde'; target = 'HijackRepair'; label = 'Hijack Repair' })
+                foreach ($entry in @($custom | Select-Object -First 8)) {
+                    $findings += New-HealthFinding -FindingId 'security.hosts.custom_entry' -CheckId 'sec_hosts' `
+                        -Subject ([string]$entry) -Finding 'Custom hosts entry' `
+                        -Impact 'This mapping overrides DNS for the listed name.' `
+                        -Severity 'Low' -Confidence 90 -Status 'Warn' `
+                        -Evidence @([string]$entry) `
+                        -Recommendations @('Confirm the mapping is intentional before leaving it in place.')
+                }
+            }
+            else {
+                $findings += New-HealthFinding -FindingId 'security.hosts.ok' -CheckId 'sec_hosts' `
+                    -Finding 'Hosts file looks within normal bounds' `
+                    -Impact 'Custom entry count is not elevated.' `
+                    -Severity 'Info' -Confidence 80 -Status 'Pass' `
+                    -Evidence @("Path=$hostsPath", "Custom entries: $($custom.Count)")
+            }
+
+            $step = @{ Name='HostsFile'; Status='Pass'; Output=$formatted; CheckId='sec_hosts'; Detail="Custom hosts entries: $($custom.Count)" }
+            Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $step.Detail
+            $r.Steps.Add([PSCustomObject]$step)
         } else {
-            $r.Steps.Add([PSCustomObject]@{ Name='HostsFile'; Status='Skip'; Output='Hosts file not found' })
+            $r.Steps.Add([PSCustomObject]@{ Name='HostsFile'; Status='Skip'; Output='Hosts file not found'; CheckId='sec_hosts' })
         }
     } catch {
-        $r.Steps.Add([PSCustomObject]@{ Name='HostsFile'; Status='Warn'; Output=$_.Exception.Message })
+        $r.Steps.Add([PSCustomObject]@{ Name='HostsFile'; Status='Warn'; Output=$_.Exception.Message; CheckId='sec_hosts' })
     }
 }
 
 function Invoke-BrowserExtensionScan {
     param($r)
     if ((Get-EnvironmentMode) -ne 'Windows') {
-        $r.Steps.Add([PSCustomObject]@{ Name='BrowserExtensionScan'; Status='N/A'; Output='Not applicable in WinPE. Browser profile extension stores are not available as live user sessions.' }); return
+        $step = @{
+            Name = 'BrowserExtensionScan'; Status = 'N/A'; CheckId = 'sec_browser_extensions'
+            Output = 'Not applicable in WinPE. Browser profile extension stores are not available as live user sessions.'
+        }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-HealthFinding -FindingId 'security.extension.na_winpe' -CheckId 'sec_browser_extensions' `
+                -Finding 'Browser extension scan unavailable in WinPE' -Impact 'User profile extension stores are not available offline as live sessions.' `
+                -Severity 'Info' -Confidence 95 -Status 'N/A' -Evidence @('Environment!=Windows')
+        ) -SummaryText $step.Output
+        $r.Steps.Add([PSCustomObject]$step)
+        return
     }
     Write-Log "Scanning browser extension folders..."
     try {
@@ -910,14 +970,44 @@ function Invoke-BrowserExtensionScan {
             $formatted += "`nReview in browser settings or run Hijack and Scam Repair.`n"
         }
         
-        $status = if ($suspicious.Count -gt 0) { 'Warn' } else { 'Pass' }
-        $r.Steps.Add([PSCustomObject]@{ Name='BrowserExtensionScan'; Status=$status; Output=$formatted })
+        $findings = @()
+        $extCount = @($inventory | Where-Object { $_.Kind -eq 'Extension' }).Count
+        if ($suspicious.Count -gt 0) {
+            foreach ($ext in @($suspicious | Select-Object -First 15)) {
+                $findings += New-HealthFinding -FindingId 'security.extension.suspicious' -CheckId 'sec_browser_extensions' `
+                    -Subject ([string]$ext.ExtensionName) -Finding 'Suspicious browser extension' `
+                    -Impact 'Unwanted extensions can hijack search, inject ads, or steal session data.' `
+                    -Severity 'High' -Confidence 80 -Status 'Warn' `
+                    -Evidence @(
+                        "Browser=$($ext.Browser)",
+                        "User=$($ext.User)",
+                        "Id=$($ext.ExtensionId)",
+                        "Path=$($ext.ExtensionPath)"
+                    ) `
+                    -Recommendations @('Remove the extension from the browser profile.', 'Run Hijack and Scam Repair for related redirects.') `
+                    -Actions @(@{ type = 'cde'; target = 'HijackRepair'; label = 'Hijack Repair' })
+            }
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'security.extension.ok' -CheckId 'sec_browser_extensions' `
+                -Finding 'No suspicious browser extensions flagged' `
+                -Impact 'Extension inventory did not match known-risk heuristics.' `
+                -Severity 'Info' -Confidence 70 -Status 'Pass' `
+                -Evidence @("Extensions: $extCount")
+        }
+
+        $step = @{
+            Name = 'BrowserExtensionScan'; Status = 'Pass'; Output = $formatted
+            CheckId = 'sec_browser_extensions'; Detail = "Suspicious: $($suspicious.Count) / extensions $extCount"
+        }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $step.Detail
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
         $detail = [string]$_.Exception.Message
         if ($_.InvocationInfo -and $_.InvocationInfo.PositionMessage) {
             $detail += "`n" + [string]$_.InvocationInfo.PositionMessage
         }
-        $r.Steps.Add([PSCustomObject]@{ Name='BrowserExtensionScan'; Status='Skip'; Output=$detail })
+        $r.Steps.Add([PSCustomObject]@{ Name='BrowserExtensionScan'; Status='Skip'; Output=$detail; CheckId='sec_browser_extensions' })
     }
 }
 
@@ -1294,7 +1384,17 @@ function Test-ScheduledTaskSuspicious {
 function Invoke-ScheduledTasksAudit {
     param($r)
     if ((Get-EnvironmentMode) -ne 'Windows') {
-        $r.Steps.Add([PSCustomObject]@{ Name='ScheduledTasksAudit'; Status='N/A'; Output='Not applicable in WinPE. Requires live Task Scheduler service state.' }); return
+        $step = @{
+            Name = 'ScheduledTasksAudit'; Status = 'N/A'; CheckId = 'sec_scheduled_tasks'
+            Output = 'Not applicable in WinPE. Requires live Task Scheduler service state.'
+        }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-HealthFinding -FindingId 'security.task.na_winpe' -CheckId 'sec_scheduled_tasks' `
+                -Finding 'Scheduled task audit unavailable in WinPE' -Impact 'Live Task Scheduler state cannot be queried offline.' `
+                -Severity 'Info' -Confidence 95 -Status 'N/A' -Evidence @('Environment!=Windows')
+        ) -SummaryText $step.Output
+        $r.Steps.Add([PSCustomObject]$step)
+        return
     }
     Write-Log "Auditing scheduled tasks..."
     try {
@@ -1328,10 +1428,39 @@ function Invoke-ScheduledTasksAudit {
         $formatted = Format-ScheduledTasksList -CustomTasks @($tasks) -SuspiciousTasks @($suspect)
         Write-Log $formatted
 
-        $status = if ($suspect.Count -gt 0) { 'Warn' } else { 'Pass' }
-        $r.Steps.Add([PSCustomObject]@{ Name='ScheduledTasksAudit'; Status=$status; Output=$formatted })
+        $findings = @()
+        if ($suspect.Count -gt 0) {
+            foreach ($task in @($suspect | Select-Object -First 15)) {
+                $reasons = if ($task.PSObject.Properties['SuspiciousReasons']) { @($task.SuspiciousReasons) -join ', ' } else { '' }
+                $actionText = ''
+                try {
+                    $actionText = (@($task.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join '; ')
+                } catch { }
+                $findings += New-HealthFinding -FindingId 'security.task.suspicious' -CheckId 'sec_scheduled_tasks' `
+                    -Subject ([string]$task.TaskName) -Finding 'Suspicious scheduled task' `
+                    -Impact 'Malicious or unexpected tasks can reinstall malware and run with elevated rights.' `
+                    -Severity 'High' -Confidence 80 -Status 'Warn' `
+                    -Evidence @("Path=$($task.TaskPath)", "Reasons=$reasons", "Action=$actionText") `
+                    -Recommendations @('Disable or delete the task if unexpected.', 'Inspect the action executable path and publisher.') `
+                    -Actions @(@{ type = 'shell'; target = 'taskschd.msc'; label = 'Task Scheduler' })
+            }
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'security.task.ok' -CheckId 'sec_scheduled_tasks' `
+                -Finding 'No suspicious non-Microsoft tasks flagged' `
+                -Impact 'Custom Ready tasks did not match high-risk heuristics.' `
+                -Severity 'Info' -Confidence 75 -Status 'Pass' `
+                -Evidence @("Custom Ready tasks: $($tasks.Count)")
+        }
+
+        $step = @{
+            Name = 'ScheduledTasksAudit'; Status = 'Pass'; Output = $formatted
+            CheckId = 'sec_scheduled_tasks'; Detail = "Suspicious: $($suspect.Count) / custom $($tasks.Count)"
+        }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $step.Detail
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
-        $r.Steps.Add([PSCustomObject]@{ Name='ScheduledTasksAudit'; Status='Skip'; Output=$_.Exception.Message })
+        $r.Steps.Add([PSCustomObject]@{ Name='ScheduledTasksAudit'; Status='Skip'; Output=$_.Exception.Message; CheckId='sec_scheduled_tasks' })
     }
 }
 

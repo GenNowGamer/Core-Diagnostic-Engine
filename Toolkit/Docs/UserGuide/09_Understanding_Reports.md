@@ -7,7 +7,7 @@ CDE separates **operator deliverables** from **internal app data**:
 | Location | Contents |
 |----------|----------|
 | **`Logs\`** | **PDF only** — printable reports for customers and case files |
-| **`CDE\Runtime\Data\workflows\`** | Internal workflow JSON (step details, health summaries) |
+| **`CDE\Runtime\Data\workflows\`** | Internal workflow JSON (step details, health summaries, structured findings and actions) |
 | **`CDE\Runtime\Data\scans\`** | Internal JSON for Hijack & Scam Repair and Process Analyzer snapshots |
 | **`CDE\Runtime\Data\cst\`** | Internal CST scan JSON from Process Analyzer single-file scans |
 | **`CDE\Runtime\Data\sessions\`** | PowerShell session `.log` files (not written to `Logs\`) |
@@ -39,6 +39,8 @@ There is no **Save report** or **Open HTML** button in the GUI — operators use
 - Overall health summary (Pass / Warn / Fail counts)
 - Step-by-step results in plain language
 - System Health PDFs label each check using friendly names from the health catalog
+- System Health findings include Finding, Impact, Severity, deterministic Confidence (0–100 match score), Evidence, and Recommendations when available
+- System Health keeps detailed legacy output (adapter/device/service/event inventories) alongside the scored findings; older text-only reports still use the legacy formatter
 - Hijack & Scam Repair and Process Analyzer PDFs use a findings/process table layout (landscape) suitable for bench notes
 
 ## Work orders and logging

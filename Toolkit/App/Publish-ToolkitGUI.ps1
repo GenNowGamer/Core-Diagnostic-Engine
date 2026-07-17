@@ -149,6 +149,38 @@ if (-not (Test-Path -LiteralPath $expectedSimdCli)) {
 Write-Host ("CdeCpuSimdCli: {0}" -f $expectedSimdCli) -ForegroundColor Green
 Write-Host ("CdeCpuSimdCli LastWrite: {0}" -f (Get-Item -LiteralPath $expectedSimdCli).LastWriteTime)
 
+$cdeGpuDiagCliProject = Join-Path $PSScriptRoot 'CdeGpuDiagCli\CdeGpuDiagCli.csproj'
+if (-not (Test-Path -LiteralPath $cdeGpuDiagCliProject)) {
+    throw "CdeGpuDiagCli project not found: $cdeGpuDiagCliProject"
+}
+
+$cdeGpuDiagCliArgs = @(
+    'publish',
+    $cdeGpuDiagCliProject,
+    '-c', 'Release',
+    '-r', 'win-x64',
+    '--self-contained', 'true',
+    '-o', $publishDir,
+    '-p:AppendTargetFrameworkToOutputPath=false',
+    '-p:AppendRuntimeIdentifierToOutputPath=false'
+)
+if ($Force) {
+    $cdeGpuDiagCliArgs += '--force'
+}
+
+Write-Host "`nPublishing CdeGpuDiagCli (self-contained, colocated with GUI runtime)..." -ForegroundColor Cyan
+dotnet @cdeGpuDiagCliArgs | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "CdeGpuDiagCli publish failed with exit code $LASTEXITCODE"
+}
+
+$expectedGpuCli = Join-Path $publishDir 'CdeGpuDiagCli.exe'
+if (-not (Test-Path -LiteralPath $expectedGpuCli)) {
+    throw "CdeGpuDiagCli publish completed but executable was not found at: $expectedGpuCli"
+}
+Write-Host ("CdeGpuDiagCli: {0}" -f $expectedGpuCli) -ForegroundColor Green
+Write-Host ("CdeGpuDiagCli LastWrite: {0}" -f (Get-Item -LiteralPath $expectedGpuCli).LastWriteTime)
+
 $cdeBehaviorCollectorProject = Join-Path $PSScriptRoot 'CdeBehaviorCollector\CdeBehaviorCollector.csproj'
 if (-not (Test-Path -LiteralPath $cdeBehaviorCollectorProject)) {
     throw "CdeBehaviorCollector project not found: $cdeBehaviorCollectorProject"

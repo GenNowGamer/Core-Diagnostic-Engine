@@ -9,6 +9,8 @@ $catalogPath = Join-Path $toolkitRoot 'Config\HealthCheckCatalog.json'
 $HelpersScript = Join-Path $coreDir 'HijackRepairHelpers.ps1'
 if (Test-Path $HelpersScript) { . $HelpersScript }
 
+. (Join-Path $coreDir 'HealthFindings.ps1')
+. (Join-Path $coreDir 'EventFindingClusters.ps1')
 . (Join-Path $coreDir 'HealthChecks.ps1')
 . (Join-Path $coreDir 'SystemAuditChecks.ps1')
 . (Join-Path $coreDir 'SecurityAuditChecks.ps1')

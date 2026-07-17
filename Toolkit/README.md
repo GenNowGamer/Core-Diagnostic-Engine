@@ -14,6 +14,14 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-07-17)
+
+- **Structured System Health findings** — Workflow steps persist Finding, Impact, Severity, deterministic Confidence (0–100), Evidence, Recommendations, and actions. Event-log checks correlate known failure clusters while retaining unmatched significant events.
+- **Hybrid review UI/PDF** — Structured findings are additive to the previous grouped technical output, so adapter/device/service/event details remain available. The selected result card is blue-highlighted with a left accent and **VIEWING** badge; duplicate **DETAILED RESULTS** label removed.
+- **GPU functional tests** — New Deep System `gpu_functional_tests` check uses self-contained `CdeGpuDiagCli.exe` for driver, D3D11, OpenGL, Vulkan, capped VRAM, and best-effort thermal checks. Unsupported environments report **N/A**.
+- **Reliability** — Fixed PowerShell 5.1 generic-list conversion that caused `Argument types do not match` in Hijack/GPU finding paths. Regression coverage added in `Test-HealthFindingsAndEventClusters.ps1`.
+- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; latest GUI payload **2026-07-17 10:35:34 AM**.
+
 ## Session Update (2026-07-16)
 
 - **System Health Check** — Findings list sorts by `findingsDisplayOrder` in `Config/HealthCheckCatalog.json`. Removed duplicate `audit_system_info` (use `system_info`). Startup Entry Audit review panel shows each entry once (Needs review cards + compact Verified).

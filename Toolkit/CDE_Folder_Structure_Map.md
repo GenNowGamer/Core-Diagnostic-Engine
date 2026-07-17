@@ -3,6 +3,7 @@
 > Historical snapshot note (2026-05-22): this map captures a prior restructuring phase plan.
 > For current operational behavior, follow `README.md` and `session_handoff.md` at the Toolkit root.
 > Current canonical source/build flow is `App/ToolkitGUI/` -> `App/Publish-ToolkitGUI.ps1` -> published GUI payload under `CDE/ToolkitGUI/bin/Release/net8.0-windows/` (not source).
+> **Operational addendum (2026-07-17):** System Health uses `Scripts/Core/HealthFindings.ps1` plus `Config/EventFindingClusters.json` / `Scripts/Core/EventFindingClusters.ps1` for persisted structured findings and event correlation. Deep System `gpu_functional_tests` invokes the self-contained `App/CdeGpuDiagCli/` helper published beside ToolkitGUI. GUI/PDF retain detailed legacy output alongside scored findings.
 > **Operational addendum (2026-07-03):** WinPE boot menu options 1–2 hand off to main `MainWindow` in-process (opaque shell; `WinPeStartupLog.cs` → `CDE\Runtime\winpe_startup.log`). GUI-only USB sync after `Publish-ToolkitGUI.ps1`; no `boot.wim` rebuild unless `startnet.cmd` changed.
 > **Operational addendum (2026-07-01):** Operator PDFs only in `Logs\`; internal JSON/session logs under `CDE\Runtime\Data\` (`workflows`, `scans`, `cst`, `sessions`); work order case JSON under `CDE\Runtime\WorkOrders\` (cleared via **Dashboard → Clear Recent**, not Settings). GUI **Open Report** (no Save report / Open HTML). Dashboard **suggested path** from `SymptomFlows.json` keywords on work order generate; **Verify case** removed. Case timeline light-theme cards.
 > **Operational addendum (2026-06-30):** Hijack & Scam Repair (`HijackRepair.ps1`, `HijackRepairFindings.ps1`, `HijackRepairView`); `TabularScanReportService` for PDF scan reports; System Health / Process Analyzer **Open Report**; MSIX startup-task executable resolution + package publisher signature in `MsixStartup.ps1`; Process Analyzer Investigation mode hides toolbar status banner.
@@ -260,7 +261,9 @@ Scripts/
 │   ├── OfflineRuntime.ps1  # CDE\Runtime paths, offline session validation/cleanup
 │   ├── ShadowCopyBrowse.ps1  # File Manager VSS list/mount (full Windows; all snapshots, newest-first)
 │   ├── HealthCheckOrchestrator.ps1  # System Health Check catalog, phase lines, child workflow merge
-│   ├── HealthChecks.ps1     # Quick vitals / deep system check dispatchers (incl. Windows Update stack)
+│   ├── HealthChecks.ps1     # Quick vitals / deep system dispatchers (incl. Windows Update + GPU functional tests)
+│   ├── HealthFindings.ps1   # Canonical structured finding schema, markers, status rollup
+│   ├── EventFindingClusters.ps1 # Event-log correlation and confidence scoring
 │   ├── SystemAuditChecks.ps1  # Shared audit functions (System Health Check audit_* checks)
 │   ├── SecurityAuditChecks.ps1  # Shared security audit functions (System Health Check sec_* checks)
 │   ├── ProcessAnalyzer.Core.ps1  # Process list/detail helpers, risk heuristics, CST invoke (Process Analyzer)
@@ -304,7 +307,8 @@ Config/
 │                         # - Tools (AutoDiscoverTools, ValidateTools)
 │                         # - Logging (LogPath, MaxLogAge)
 │
-├── HealthCheckCatalog.json  # System Health Check: Quick Vitals, Deep System, System Audit, Security Audits (2026-06-18: no hardware/Diag&Repair, SMART analyzer, Defender, or CST scan-only — use sidebar workflows)
+├── HealthCheckCatalog.json  # System Health catalog/presets/actions; includes separate gpu_info + gpu_functional_tests
+├── EventFindingClusters.json # Event correlation rules, scoring, suppressors, recommendations
 └── settings.json         # Toolkit settings
                          # - ToolkitRoot, LogsRoot, ToolsRoot paths
                          # - DiagnosticsRoot, WindowsToolsRoot paths
@@ -451,6 +455,7 @@ App/
 ├── ToolkitGUI/         # Source project edited for all GUI changes
 │   ├── Services/       # PDF export, TabularScanReportService, result formatting, ProcessWmiEnricher, ProcessAnalyzerCstResultService, ResultLogCleanupService, WorkOrderService (ClearRecentInternalWorkOrderRecords), …
 │   └── Views/          # HijackRepairView, ProcessAnalyzerView, ProcessAnalyzerCstResultDialog, SettingsView, DashboardView (Clear Recent), CoreSecurityToolConfigDialog, …
+├── CdeGpuDiagCli/      # Self-contained GPU probe/functional-test helper (probe, test-all)
 ├── UserGuideGenerator/ # Console: Docs/UserGuide → HALP/CDE_User_Guide.pdf (not linked into ToolkitGUI — Markdig conflict)
 ├── ToolkitGUI.sln      # Source solution
 └── Publish-ToolkitGUI.ps1  # Canonical publish: GUI + CST sync + user guide PDF

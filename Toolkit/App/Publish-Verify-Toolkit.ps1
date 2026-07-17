@@ -123,6 +123,15 @@ if (-not (Test-Path -LiteralPath $simdCliPath)) {
     Add-VerifyResult -Name 'CdeCpuSimdCli' -Passed ($LASTEXITCODE -eq 0) -Detail $simdCliPath
 }
 
+Write-Host "`n=== CdeGpuDiagCli payload ===" -ForegroundColor Cyan
+$gpuCliPath = Join-Path $toolkitRoot 'CDE\ToolkitGUI\bin\Release\net8.0-windows\CdeGpuDiagCli.exe'
+if (-not (Test-Path -LiteralPath $gpuCliPath)) {
+    Add-VerifyResult -Name 'CdeGpuDiagCli' -Passed $false -Detail "Missing: $gpuCliPath"
+} else {
+    & $gpuCliPath probe | Out-Null
+    Add-VerifyResult -Name 'CdeGpuDiagCli' -Passed ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 3) -Detail $gpuCliPath
+}
+
 Write-Host "`n=== GUI unit tests (dotnet test) ===" -ForegroundColor Cyan
 $slnPath = Join-Path $appDir 'ToolkitGUI.sln'
 if (Test-Path -LiteralPath $slnPath) {

@@ -56,7 +56,8 @@ Use this checklist when validating responsive layout changes across display size
 ## Regression pass views
 
 - [ ] Startup Manager (tabs + filter toolbar + grids)
-- [ ] System Health Check (preset toolbar wraps)
+- [ ] System Health Check picker (preset toolbar wraps)
+- [ ] System Health results (selected left card shows blue tint/border/left accent + VIEWING badge; only one DETAILED RESULTS heading; rich detail remains readable below scored findings)
 - [ ] S.M.A.R.T. Analyzer (drive selector wraps)
 - [ ] File Manager (panes fill height)
 - [ ] Temp File Cleaner (header + drive scope + status)

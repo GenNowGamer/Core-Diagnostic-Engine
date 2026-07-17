@@ -1,7 +1,15 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-16  
+**Last updated:** 2026-07-17
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-17 update — Structured health findings + GPU diagnostics
+
+- **System Health findings** — Checks now persist Finding / Impact / Severity / deterministic Confidence (0–100) / Evidence / Recommendation / actions. Event checks correlate common failure clusters and retain unclassified significant events.
+- **Hybrid results** — Scored findings are shown together with the original detailed inventories and grouped output; adapter, service, device, and event details are no longer replaced by one-line summaries.
+- **GPU functional tests** — New Deep System `gpu_functional_tests` check uses the self-contained `CdeGpuDiagCli.exe` for driver, DirectX, OpenGL, Vulkan, capped VRAM, and best-effort thermal tests. `gpu_info` remains informational.
+- **Result UI** — Current left-side result card has a blue highlight/left indicator and **VIEWING** badge; duplicate **DETAILED RESULTS** heading removed.
+- **Fixes/verify** — Fixed PowerShell 5.1 generic-list conversion that caused `Argument types do not match` in Hijack findings. Canonical publish completed; GUI payload **2026-07-17 10:35:34 AM**. Full notes: `Toolkit\session_handoff.md`.
 
 ## 2026-07-16 update — Startup services, Post-Op hosts, health checks, lab
 

@@ -23,13 +23,17 @@ function Invoke-HealthCheck_os_version {
         $os = Get-CimInstance Win32_OperatingSystem
         $detail = "$($os.Caption) (Build $($os.BuildNumber))"
         $output = Format-HealthCheckOsVersion -Os $os
-        Add-HealthCheckStep $r @{
+        $step = @{
             Name    = 'OSVersion'
             Status  = 'Pass'
             Detail  = $detail
             Output  = $output
             CheckId = 'os_version'
         }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-InventoryHealthFinding -CheckId 'os_version' -Finding $detail -Evidence @($detail)
+        ) -SummaryText $detail
+        Add-HealthCheckStep $r $step
     } catch {
         Add-HealthCheckStep $r @{
             Name    = 'OSVersion'
@@ -49,14 +53,30 @@ function Invoke-HealthCheck_cpu_load {
         $cpuLoad = ($processors | Measure-Object -Property LoadPercentage -Average).Average
         $cpuStatus = if ($cpuLoad -gt 90) { 'Warn' } else { 'Pass' }
         $output = Format-HealthCheckCpuLoad -Processors $processors
-        Add-HealthCheckStep $r @{
+        $detail = "$([math]::Round($cpuLoad, 1))% average across $($processors.Count) logical processor(s)"
+        $findings = @()
+        if ($cpuLoad -gt 90) {
+            $findings += New-HealthFinding -FindingId 'health.cpu.high_load' -CheckId 'cpu_load' `
+                -Finding 'CPU load is critically high' -Impact 'The system may feel slow or unresponsive under this load.' `
+                -Severity 'High' -Confidence 85 -Status 'Warn' -Evidence @($detail) `
+                -Recommendations @('Inspect top CPU consumers in Process Analyzer.', 'Close runaway apps or scan for malware if unexplained.') `
+                -Actions @(@{ type = 'cde'; target = 'ProcessAnalyzer:HighCpu'; label = 'Process Analyzer (high CPU)' })
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'health.cpu.load_ok' -CheckId 'cpu_load' `
+                -Finding 'CPU load is within normal range' -Impact 'No CPU pressure indicated by this snapshot.' `
+                -Severity 'Info' -Confidence 80 -Status 'Pass' -Evidence @($detail)
+        }
+        $step = @{
             Name    = 'CPULoad'
             Status  = $cpuStatus
-            Detail  = "$([math]::Round($cpuLoad, 1))% average across $($processors.Count) logical processor(s)"
+            Detail  = $detail
             Output  = $output
             Value   = $cpuLoad
             CheckId = 'cpu_load'
         }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $detail
+        Add-HealthCheckStep $r $step
     } catch {
         Add-HealthCheckStep $r @{
             Name    = 'CPULoad'
@@ -79,14 +99,30 @@ function Invoke-HealthCheck_ram {
         $usedPct = [math]::Round((($osObj.TotalVisibleMemorySize - $osObj.FreePhysicalMemory) / $osObj.TotalVisibleMemorySize) * 100, 1)
         $ramStatus = if ($usedPct -gt 90) { 'Warn' } else { 'Pass' }
         $output = Format-HealthCheckRam -Os $osObj -PhysicalMemory $memMods
-        Add-HealthCheckStep $r @{
+        $detail = "Used $usedPct% | Free ${freeGB}GB of ${totalGB}GB"
+        $findings = @()
+        if ($usedPct -gt 90) {
+            $findings += New-HealthFinding -FindingId 'health.memory.high_usage' -CheckId 'ram' `
+                -Finding 'Memory usage is critically high' -Impact 'Applications may thrash to disk and feel unresponsive.' `
+                -Severity 'High' -Confidence 85 -Status 'Warn' -Evidence @($detail) `
+                -Recommendations @('Inspect top memory consumers in Process Analyzer.', 'Consider closing browsers/apps or adding RAM if chronic.') `
+                -Actions @(@{ type = 'cde'; target = 'ProcessAnalyzer:HighRam'; label = 'Process Analyzer (high RAM)' })
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'health.memory.usage_ok' -CheckId 'ram' `
+                -Finding 'Memory usage is within normal range' -Impact 'No memory pressure indicated by this snapshot.' `
+                -Severity 'Info' -Confidence 80 -Status 'Pass' -Evidence @($detail)
+        }
+        $step = @{
             Name    = 'RAM'
             Status  = $ramStatus
-            Detail  = "Used $usedPct% | Free ${freeGB}GB of ${totalGB}GB"
+            Detail  = $detail
             Output  = $output
             UsedPct = $usedPct
             CheckId = 'ram'
         }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $detail
+        Add-HealthCheckStep $r $step
     } catch {
         Add-HealthCheckStep $r @{
             Name    = 'RAM'
@@ -109,10 +145,40 @@ function Invoke-HealthCheck_disk_space {
         })
         $lowNames = @($lowDrives | ForEach-Object { $_.Name })
         $output = Format-HealthCheckDiskSpace -Drives $drives -LowDriveNames $lowNames
-        Add-HealthCheckStep $r @{
+        $findings = @()
+        foreach ($d in $drives) {
+            $total = $d.Used + $d.Free
+            if ($total -le 0) { continue }
+            $freePct = [math]::Round(($d.Free / $total) * 100, 1)
+            $freeGB = [math]::Round($d.Free / 1GB, 1)
+            $totalGB = [math]::Round($total / 1GB, 1)
+            $evidence = @("$($d.Name): ${freeGB} GB free of ${totalGB} GB ($freePct%)")
+            if ($freePct -lt 10) {
+                $sev = if ($freePct -lt 5 -or $d.Name -eq 'C') { 'High' } else { 'Medium' }
+                $findings += New-HealthFinding -FindingId 'health.disk.low_space' -CheckId 'disk_space' `
+                    -Subject ("{0}:" -f $d.Name) `
+                    -Finding 'Drive has low free space' `
+                    -Impact 'Updates, paging, and application writes may fail on this volume.' `
+                    -Severity $sev -Confidence 90 -Status 'Warn' -Evidence $evidence `
+                    -Recommendations @('Free space on this volume.', 'Run Temp File Cleaner for temporary files.') `
+                    -Actions @(
+                        @{ type = 'cde'; target = 'TempFileCleaner'; label = 'Temp File Cleaner' }
+                        @{ type = 'shell'; target = 'cleanmgr'; label = 'Disk Cleanup (Windows)' }
+                    )
+            }
+        }
+        if ($findings.Count -eq 0) {
+            $findings += New-HealthFinding -FindingId 'health.disk.space_ok' -CheckId 'disk_space' `
+                -Finding 'All scanned drives have sufficient free space' `
+                -Impact 'No low-space condition detected.' `
+                -Severity 'Info' -Confidence 85 -Status 'Pass' `
+                -Evidence @('All drives above 10% free.')
+        }
+        $detail = if ($lowDrives.Count -gt 0) { "Low space on: $($lowNames -join ', ')" } else { 'All drives have sufficient space' }
+        $step = @{
             Name   = 'DiskSpace'
             Status = if ($lowDrives.Count -gt 0) { 'Warn' } else { 'Pass' }
-            Detail = if ($lowDrives.Count -gt 0) { "Low space on: $($lowNames -join ', ')" } else { 'All drives have sufficient space' }
+            Detail = $detail
             Output = $output
             Drives = $drives | ForEach-Object {
                 $total = $_.Used + $_.Free
@@ -124,6 +190,8 @@ function Invoke-HealthCheck_disk_space {
             }
             CheckId = 'disk_space'
         }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $detail
+        Add-HealthCheckStep $r $step
     } catch {
         Add-HealthCheckStep $r @{
             Name    = 'DiskSpace'
@@ -145,13 +213,32 @@ function Invoke-HealthCheck_activation {
             -ErrorAction Stop | Select-Object -First 1
         $activated = $lic.LicenseStatus -eq 1
         $output = Format-HealthCheckActivation -License $lic
-        Add-HealthCheckStep $r @{
+        $detail = if ($activated) { 'Windows is activated' } else { 'Windows is NOT activated' }
+        $findings = @()
+        if ($activated) {
+            $findings += New-HealthFinding -FindingId 'health.activation.licensed' -CheckId 'activation' `
+                -Finding 'Windows is activated' -Impact 'Licensing is healthy.' `
+                -Severity 'Info' -Confidence 95 -Status 'Pass' -Evidence @($detail)
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'health.activation.not_licensed' -CheckId 'activation' `
+                -Finding 'Windows is not activated' -Impact 'Personalization and some features may be limited; activation reminders will appear.' `
+                -Severity 'Medium' -Confidence 90 -Status 'Warn' -Evidence @($detail) `
+                -Recommendations @('Open Activation Settings and verify the product key or digital license.', 'Use Fast Fixes if reactivation after hardware change is needed.') `
+                -Actions @(
+                    @{ type = 'cde'; target = 'FastFixes'; label = 'Fast Fixes' }
+                    @{ type = 'shell'; target = 'ms-settings:activation'; label = 'Activation Settings' }
+                )
+        }
+        $step = @{
             Name    = 'Activation'
             Status  = if ($activated) { 'Pass' } else { 'Warn' }
-            Detail  = if ($activated) { 'Windows is activated' } else { 'Windows is NOT activated' }
+            Detail  = $detail
             Output  = $output
             CheckId = 'activation'
         }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $detail
+        Add-HealthCheckStep $r $step
     } catch {
         Add-HealthCheckStep $r @{
             Name    = 'Activation'
@@ -173,7 +260,8 @@ function Invoke-HealthCheck_event_errors_24h {
         $errCount = $errors.Count
         $samples = @($errors | Select-Object -First 10 TimeGenerated, Source, EventID, Message)
         $output = Format-HealthCheckEventErrors -ErrorCount $errCount -SampleEvents $samples
-        Add-HealthCheckStep $r @{
+        $findings = @(Invoke-EventFindingClustering -CheckId 'event_errors_24h' -Events $errors -DefaultLogName 'System')
+        $step = @{
             Name       = 'EventLogErrors'
             Status     = if ($errCount -gt 50) { 'Warn' } else { 'Pass' }
             Detail     = "$errCount System errors in last 24h"
@@ -181,6 +269,17 @@ function Invoke-HealthCheck_event_errors_24h {
             ErrorCount = $errCount
             CheckId    = 'event_errors_24h'
         }
+        if ($findings.Count -gt 0) {
+            Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $step.Detail
+        }
+        elseif ($errCount -eq 0) {
+            Add-HealthFindingsToStep -Step $step -Findings @(
+                New-HealthFinding -FindingId 'event.errors_24h.none' -CheckId 'event_errors_24h' `
+                    -Finding 'No System errors in the last 24 hours' -Impact 'No recent System log errors were recorded.' `
+                    -Severity 'Info' -Confidence 100 -Status 'Pass' -Evidence @('Error count: 0')
+            ) -SummaryText $step.Detail
+        }
+        Add-HealthCheckStep $r $step
     } catch {
         Add-HealthCheckStep $r @{
             Name    = 'EventLogErrors'
@@ -202,14 +301,19 @@ function Invoke-HealthCheck_system_info {
         $mb  = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
         $sysInfo = Get-SystemInfo
         $output = Format-SystemDetail -Os $os -Cpu $cpu -Motherboard $mb
-        Add-HealthCheckStep $r @{
+        $detail = "CPU: $($sysInfo.CpuName) | RAM: $($sysInfo.TotalRamGB)GB | Board: $($sysInfo.Motherboard)"
+        $step = @{
             Name    = 'SystemInfo'
             Status  = 'Pass'
-            Detail  = "CPU: $($sysInfo.CpuName) | RAM: $($sysInfo.TotalRamGB)GB | Board: $($sysInfo.Motherboard)"
+            Detail  = $detail
             Output  = $output
             Data    = $sysInfo
             CheckId = 'system_info'
         }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-InventoryHealthFinding -CheckId 'system_info' -Finding $detail -Evidence @($detail)
+        ) -SummaryText $detail
+        Add-HealthCheckStep $r $step
     } catch {
         Add-HealthCheckStep $r @{
             Name    = 'SystemInfo'
@@ -260,14 +364,35 @@ function Invoke-HealthCheck_driver_signature_audit {
                 Select-Object DeviceName, DriverVersion, DriverDate, Manufacturer, IsSigned)
             $unsignedDrivers = @(Get-ActionableUnsignedPnPDrivers -Drivers $drivers)
             $output = Format-DriverSignatureAudit -Drivers $drivers -UnsignedDrivers $unsignedDrivers
-            Add-HealthCheckStep $r @{
+            $detail = "$($drivers.Count) drivers | $($unsignedDrivers.Count) unsigned"
+            $findings = @()
+            if ($unsignedDrivers.Count -eq 0) {
+                $findings += New-HealthFinding -FindingId 'driver.signature.ok' -CheckId 'driver_signature_audit' `
+                    -Finding 'No actionable unsigned drivers detected' -Impact 'Driver signing looks healthy for reviewable devices.' `
+                    -Severity 'Info' -Confidence 85 -Status 'Pass' -Evidence @($detail)
+            }
+            else {
+                foreach ($u in $unsignedDrivers) {
+                    $findings += New-HealthFinding -FindingId 'driver.signature.unsigned' -CheckId 'driver_signature_audit' `
+                        -Subject ([string]$u.DeviceName) `
+                        -Finding 'Unsigned driver detected' `
+                        -Impact 'Unsigned drivers can indicate outdated, third-party, or tampered kernel modules.' `
+                        -Severity 'Medium' -Confidence 80 -Status 'Warn' `
+                        -Evidence @("Device: $($u.DeviceName)", "Manufacturer: $($u.Manufacturer)", "Version: $($u.DriverVersion)") `
+                        -Recommendations @('Verify the publisher and update or replace the driver from the OEM.') `
+                        -Actions @(@{ type = 'shell'; target = 'devmgmt.msc'; label = 'Device Manager' })
+                }
+            }
+            $step = @{
                 Name            = 'DriverAudit'
                 Status          = if ($unsignedDrivers.Count -gt 0) { 'Warn' } else { 'Pass' }
-                Detail          = "$($drivers.Count) drivers | $($unsignedDrivers.Count) unsigned"
+                Detail          = $detail
                 Output          = $output
                 UnsignedDrivers = $unsignedDrivers
                 CheckId         = 'driver_signature_audit'
             }
+            Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $detail
+            Add-HealthCheckStep $r $step
             Write-Log "Drivers: $($drivers.Count) total, $($unsignedDrivers.Count) unsigned"
         } catch {
             Add-HealthCheckStep $r @{
@@ -298,15 +423,33 @@ function Invoke-HealthCheck_windows_update_service {
         $evaluation = Get-WindowsUpdateStackStatus -Services $services
         $formatted = Format-WindowsUpdateStack -Services $services -Summary $evaluation.Summary
         Write-Log $formatted
-
-        $r.Steps.Add([PSCustomObject]@{
+        $findings = @()
+        if ($evaluation.Status -in @('Warn', 'Fail')) {
+            $findings += New-HealthFinding -FindingId 'update.service.stack' -CheckId 'windows_update_service' `
+                -Finding 'Windows Update stack needs attention' -Impact 'Updates may fail to download or install.' `
+                -Severity $(if ($evaluation.Status -eq 'Fail') { 'High' } else { 'Medium' }) `
+                -Confidence 85 -Status $evaluation.Status -Evidence @([string]$evaluation.Summary) `
+                -Recommendations @('Use Fast Fixes / Windows Update Repair to restore wuauserv, BITS, and UsoSvc.') `
+                -Actions @(
+                    @{ type = 'cde'; target = 'FastFixes'; label = 'Fast Fixes' }
+                    @{ type = 'cde'; target = 'WindowsUpdateRepair'; label = 'Windows Update Repair' }
+                )
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'update.service.ok' -CheckId 'windows_update_service' `
+                -Finding 'Windows Update stack looks healthy' -Impact 'Core update services are in an expected state.' `
+                -Severity 'Info' -Confidence 85 -Status 'Pass' -Evidence @([string]$evaluation.Summary)
+        }
+        $step = @{
             Name    = 'WindowsUpdateService'
             Status  = $evaluation.Status
             Detail  = $evaluation.Summary
             Output  = $formatted
             Services = $services
             CheckId = 'windows_update_service'
-        })
+        }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $evaluation.Summary
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
         $r.Steps.Add([PSCustomObject]@{
             Name    = 'WindowsUpdateService'
@@ -330,25 +473,35 @@ function Invoke-HealthCheck_network_adapters {
         }
         $output = Format-NetworkAdapters -Adapters $adapters -IpConfigs $ipConfigs
         $upCount = @($adapters | Where-Object { $_.Status -eq 'Up' }).Count
-        Add-HealthCheckStep $r @{
+        $detail = "$($adapters.Count) adapter(s) found ($upCount up)"
+        $step = @{
             Name     = 'NetworkAdapters'
             Status   = 'Pass'
-            Detail   = "$($adapters.Count) adapter(s) found ($upCount up)"
+            Detail   = $detail
             Output   = $output
             Adapters = $adapters | Select-Object Name, InterfaceDescription, Status, LinkSpeed, MacAddress, MediaType, DriverVersion, DriverDate, ifIndex
             CheckId  = 'network_adapters'
         }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-InventoryHealthFinding -CheckId 'network_adapters' -Finding $detail -Evidence @($detail)
+        ) -SummaryText $detail
+        Add-HealthCheckStep $r $step
     } catch {
         try {
             $adapters = @(Get-CimInstance -ClassName Win32_NetworkAdapter | Where-Object { $_.NetEnabled })
             $output = Format-NetworkAdapters -Adapters $adapters
-            Add-HealthCheckStep $r @{
+            $detail = "$($adapters.Count) adapter(s) found (via WMI)"
+            $step = @{
                 Name    = 'NetworkAdapters'
                 Status  = 'Pass'
-                Detail  = "$($adapters.Count) adapter(s) found (via WMI)"
+                Detail  = $detail
                 Output  = $output
                 CheckId = 'network_adapters'
             }
+            Add-HealthFindingsToStep -Step $step -Findings @(
+                New-InventoryHealthFinding -CheckId 'network_adapters' -Finding $detail -Evidence @($detail)
+            ) -SummaryText $detail
+            Add-HealthCheckStep $r $step
         } catch {
             Add-HealthCheckStep $r @{
                 Name    = 'NetworkAdapters'
@@ -373,10 +526,11 @@ function Invoke-HealthCheck_gpu_info {
         })
         $output = Format-GpuInfo -Gpus $gpus
         $names = ($gpus | ForEach-Object { $_.Caption }) -join '; '
-        Add-HealthCheckStep $r @{
+        $detail = if ($gpus.Count -gt 0) { $names } else { 'No video controllers reported' }
+        $step = @{
             Name    = 'GPUInfo'
             Status  = 'Pass'
-            Detail  = if ($gpus.Count -gt 0) { $names } else { 'No video controllers reported' }
+            Detail  = $detail
             Output  = $output
             GPUs    = $gpus | Select-Object Caption, DriverVersion, DriverDate,
                 @{ Name = 'VideoRAM'; Expression = { $_.DedicatedVideoRAM } },
@@ -385,6 +539,12 @@ function Invoke-HealthCheck_gpu_info {
                 CurrentRefreshRate, VideoModeDescription, Status, PNPDeviceID
             CheckId = 'gpu_info'
         }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-InventoryHealthFinding -CheckId 'gpu_info' -Finding $detail -Evidence @(
+                foreach ($g in $gpus) { "{0} | Driver {1}" -f $g.Caption, $g.DriverVersion }
+            )
+        ) -SummaryText $detail
+        Add-HealthCheckStep $r $step
     } catch {
         Add-HealthCheckStep $r @{
             Name    = 'GPUInfo'
@@ -392,6 +552,163 @@ function Invoke-HealthCheck_gpu_info {
             Detail  = 'Cannot enumerate GPUs'
             Output  = "Cannot enumerate GPUs: $($_.Exception.Message)"
             CheckId = 'gpu_info'
+        }
+    }
+}
+
+function Get-CdeGpuDiagCliPath {
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($env:TOOLKIT_ROOT)) {
+        $root = $env:TOOLKIT_ROOT.TrimEnd('\')
+        $candidates.Add((Join-Path $root 'CDE\ToolkitGUI\bin\Release\net8.0-windows\CdeGpuDiagCli.exe'))
+        $candidates.Add((Join-Path $root 'App\ToolkitGUI\bin\Release\net8.0-windows\CdeGpuDiagCli.exe'))
+    }
+    $coreDir = $PSScriptRoot
+    $candidates.Add((Join-Path $coreDir '..\..\CDE\ToolkitGUI\bin\Release\net8.0-windows\CdeGpuDiagCli.exe'))
+    $candidates.Add((Join-Path $coreDir '..\..\App\ToolkitGUI\bin\Release\net8.0-windows\CdeGpuDiagCli.exe'))
+    foreach ($rel in $candidates) {
+        try {
+            $full = [IO.Path]::GetFullPath($rel)
+            if (Test-Path -LiteralPath $full) { return $full }
+        } catch { }
+    }
+    return $null
+}
+
+function Invoke-CdeGpuDiagCli {
+    param(
+        [Parameter(Mandatory)][string]$Arguments,
+        [int]$TimeoutMs = 120000
+    )
+
+    $cli = Get-CdeGpuDiagCliPath
+    if (-not $cli) {
+        return [PSCustomObject]@{ Ok = $false; ExitCode = 3; StdOut = ''; StdErr = 'CdeGpuDiagCli.exe not found in toolkit payload.'; TimedOut = $false }
+    }
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $cli
+    $psi.Arguments = $Arguments
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    [void]$proc.Start()
+    $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
+    if (-not $proc.WaitForExit($TimeoutMs)) {
+        try { $proc.Kill($true) } catch { try { $proc.Kill() } catch { } }
+        return [PSCustomObject]@{ Ok = $false; ExitCode = -1; StdOut = ''; StdErr = "CdeGpuDiagCli timed out after $($TimeoutMs)ms."; TimedOut = $true }
+    }
+    return [PSCustomObject]@{
+        Ok = ($proc.ExitCode -eq 0)
+        ExitCode = $proc.ExitCode
+        StdOut = $stdoutTask.Result
+        StdErr = $stderrTask.Result
+        TimedOut = $false
+    }
+}
+
+function Invoke-HealthCheck_gpu_functional_tests {
+    param($r)
+    Write-Log 'Running GPU functional tests...'
+    try {
+        if ((Get-EnvironmentMode) -ne 'Windows') {
+            $step = @{
+                Name = 'GpuFunctionalTests'; Status = 'N/A'
+                Detail = 'GPU functional tests require a live Windows session.'
+                Output = 'GPU functional tests are not available in WinPE.'
+                CheckId = 'gpu_functional_tests'
+            }
+            Add-HealthFindingsToStep -Step $step -Findings @(
+                New-HealthFinding -FindingId 'gpu.functional.unavailable_winpe' -CheckId 'gpu_functional_tests' `
+                    -Finding 'GPU functional tests unavailable in WinPE' `
+                    -Impact 'Active DirectX/OpenGL/Vulkan tests need a full Windows graphics stack.' `
+                    -Severity 'Info' -Confidence 100 -Status 'N/A' -Evidence @('Environment: WinPE')
+            ) -SummaryText $step.Detail
+            Add-HealthCheckStep $r $step
+            return
+        }
+
+        $result = Invoke-CdeGpuDiagCli -Arguments 'test-all' -TimeoutMs 180000
+        if ($result.TimedOut -or $result.ExitCode -eq 3 -or [string]::IsNullOrWhiteSpace($result.StdOut)) {
+            $msg = if ($result.StdErr) { $result.StdErr } else { 'GPU diagnostic helper returned no output.' }
+            $step = @{
+                Name = 'GpuFunctionalTests'; Status = 'Skip'; Detail = $msg; Output = $msg; CheckId = 'gpu_functional_tests'
+            }
+            Add-HealthFindingsToStep -Step $step -Findings @(
+                New-HealthFinding -FindingId 'gpu.functional.helper_unavailable' -CheckId 'gpu_functional_tests' `
+                    -Finding 'GPU diagnostic helper unavailable' -Impact 'Functional GPU tests could not run.' `
+                    -Severity 'Low' -Confidence 70 -Status 'Skip' -Evidence @($msg) `
+                    -Recommendations @('Republish the toolkit so CdeGpuDiagCli.exe is present beside ToolkitGUI.')
+            ) -SummaryText $msg
+            Add-HealthCheckStep $r $step
+            return
+        }
+
+        $payload = $result.StdOut | ConvertFrom-Json
+        $findings = New-Object System.Collections.Generic.List[object]
+        $summaryLines = New-Object System.Collections.Generic.List[string]
+        foreach ($adapter in @($payload.adapters)) {
+            $adapterName = [string]$adapter.name
+            if ([string]::IsNullOrWhiteSpace($adapterName)) { $adapterName = 'Unknown GPU' }
+            $summaryLines.Add($adapterName)
+            foreach ($test in @($adapter.tests)) {
+                $testName = [string]$test.name
+                $testStatus = [string]$test.status
+                $detail = [string]$test.detail
+                $summaryLines.Add(("  {0}: {1}{2}" -f $testName, $testStatus, $(if ($detail) { " - $detail" } else { '' })))
+                $findingStatus = switch -Regex ($testStatus) {
+                    '^(?i)fail$' { 'Fail' }
+                    '^(?i)warn$' { 'Warn' }
+                    '^(?i)pass$' { 'Pass' }
+                    '^(?i)n/?a$' { 'N/A' }
+                    default { 'Info' }
+                }
+                $severity = switch ($findingStatus) {
+                    'Fail' { 'High' }
+                    'Warn' { 'Medium' }
+                    default { 'Info' }
+                }
+                $safeId = ($testName -replace '[^\w]+', '_').ToLowerInvariant()
+                $recs = @()
+                if ($test.recommendations) { $recs = @($test.recommendations) }
+                $impact = if ($findingStatus -eq 'Fail') { [string]$test.impact } elseif ($findingStatus -eq 'N/A') { 'Test not applicable on this adapter/environment.' } else { 'Test completed.' }
+                $findings.Add((New-HealthFinding `
+                    -FindingId ("gpu.functional.{0}" -f $safeId) `
+                    -CheckId 'gpu_functional_tests' `
+                    -Subject $adapterName `
+                    -Finding ("{0}: {1}" -f $testName, $testStatus) `
+                    -Impact $impact `
+                    -Severity $severity `
+                    -Confidence $(if ($test.confidence) { [int]$test.confidence } else { 80 }) `
+                    -Status $findingStatus `
+                    -Evidence @($(if ($detail) { $detail } else { "$testName=$testStatus" })) `
+                    -Recommendations $recs `
+                    -Actions $(if ($findingStatus -eq 'Fail') { @(@{ type = 'shell'; target = 'devmgmt.msc'; label = 'Device Manager' }) } else { @() })))
+            }
+        }
+
+        if ($findings.Count -eq 0) {
+            $findings.Add((New-HealthFinding -FindingId 'gpu.functional.none' -CheckId 'gpu_functional_tests' `
+                -Finding 'No GPU adapters were tested' -Impact 'No video controllers were available for functional testing.' `
+                -Severity 'Low' -Confidence 70 -Status 'Warn' -Evidence @('adapters: 0')))
+        }
+
+        $step = @{
+            Name = 'GpuFunctionalTests'; Status = 'Pass'
+            Detail = "GPU functional tests completed for $(@($payload.adapters).Count) adapter(s)."
+            Output = ($summaryLines -join "`n")
+            CheckId = 'gpu_functional_tests'
+        }
+        Add-HealthFindingsToStep -Step $step -Findings @($findings.ToArray()) -SummaryText $step.Detail
+        Add-HealthCheckStep $r $step
+    } catch {
+        Add-HealthCheckStep $r @{
+            Name = 'GpuFunctionalTests'; Status = 'Skip'
+            Detail = $_.Exception.Message; Output = $_.Exception.Message; CheckId = 'gpu_functional_tests'
         }
     }
 }
@@ -426,7 +743,8 @@ function Invoke-HealthCheck_critical_events_7d {
             Write-Log "Full critical event export saved: $eventsExportPath"
         }
 
-        $r.Steps.Add([PSCustomObject]@{
+        $findings = @(Invoke-EventFindingClustering -CheckId 'critical_events_7d' -Events $critical)
+        $step = @{
             Name             = 'CriticalEvents'
             Status           = if ($eventCount -gt 20) { 'Warn' } else { 'Pass' }
             Detail           = $detailText
@@ -436,7 +754,11 @@ function Invoke-HealthCheck_critical_events_7d {
             Events           = $critical | Select-Object TimeCreated, ProviderName, Id, Message -First 20
             EventsExportPath = $eventsExportPath
             CheckId          = 'critical_events_7d'
-        })
+        }
+        if ($findings.Count -gt 0) {
+            Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $detailText
+        }
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
         $r.Steps.Add([PSCustomObject]@{ Name = 'CriticalEvents'; Status = 'Skip'; Detail = 'Cannot read event logs'; CheckId = 'critical_events_7d' })
     }
@@ -455,6 +777,7 @@ function Get-HealthCheckStepDispatchMap {
         windows_update_service   = { param($r, $ctx) Invoke-HealthCheck_windows_update_service $r }
         network_adapters         = { param($r, $ctx) Invoke-HealthCheck_network_adapters $r }
         gpu_info                 = { param($r, $ctx) Invoke-HealthCheck_gpu_info $r }
+        gpu_functional_tests     = { param($r, $ctx) Invoke-HealthCheck_gpu_functional_tests $r }
         critical_events_7d       = { param($r, $ctx) Invoke-HealthCheck_critical_events_7d -r $r -EventsExportScriptDir $ctx.WorkflowsDir }
     }
 }

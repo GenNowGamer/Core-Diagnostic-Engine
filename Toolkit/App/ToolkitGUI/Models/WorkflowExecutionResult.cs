@@ -17,6 +17,28 @@ namespace ToolkitGUI.Models
         public List<string> Errors { get; set; } = new();
     }
 
+    public sealed class HealthStructuredFindingActionDto
+    {
+        public string Type { get; set; } = string.Empty;
+        public string Target { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+    }
+
+    public sealed class HealthStructuredFindingDto
+    {
+        public string FindingId { get; set; } = string.Empty;
+        public string CheckId { get; set; } = string.Empty;
+        public string Subject { get; set; } = string.Empty;
+        public string Finding { get; set; } = string.Empty;
+        public string Impact { get; set; } = string.Empty;
+        public string Severity { get; set; } = string.Empty;
+        public int Confidence { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public List<string> Evidence { get; set; } = new();
+        public List<string> Recommendations { get; set; } = new();
+        public List<HealthStructuredFindingActionDto> Actions { get; set; } = new();
+    }
+
     public sealed class WorkflowExecutionStep
     {
         public string Name { get; set; } = string.Empty;
@@ -24,6 +46,7 @@ namespace ToolkitGUI.Models
         public string Output { get; set; } = string.Empty;
         public string Detail { get; set; } = string.Empty;
         public string CheckId { get; set; } = string.Empty;
+        public List<HealthStructuredFindingDto> StructuredFindings { get; set; } = new();
     }
 
     public sealed class WorkflowExecutionStepViewModel
@@ -32,6 +55,7 @@ namespace ToolkitGUI.Models
         public string Status { get; }
         public string Output { get; }
         public string CheckId { get; }
+        public IReadOnlyList<HealthStructuredFindingDto> StructuredFindings { get; }
         public Brush StatusBrush { get; }
 
         public WorkflowExecutionStepViewModel(WorkflowExecutionStep step)
@@ -42,6 +66,7 @@ namespace ToolkitGUI.Models
                 ? step.Output
                 : (step.Detail ?? string.Empty);
             CheckId = string.IsNullOrWhiteSpace(step.CheckId) ? string.Empty : step.CheckId;
+            StructuredFindings = step.StructuredFindings ?? new List<HealthStructuredFindingDto>();
             StatusBrush = Status.ToUpperInvariant() switch
             {
                 "PASS" => new SolidColorBrush(Color.FromRgb(0x0D, 0x7A, 0x3E)),

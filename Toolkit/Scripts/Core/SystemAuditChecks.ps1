@@ -82,7 +82,12 @@ function Invoke-InstalledSoftwareAudit {
         
         $formatted = Format-SoftwareList -Software $software
         Write-Log $formatted
-        $r.Steps.Add([PSCustomObject]@{ Name='InstalledSoftware'; Status='Pass'; Output=$formatted })
+        $step = @{ Name='InstalledSoftware'; Status='Pass'; Output=$formatted; Detail = "$($software.Count) application(s)" }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-InventoryHealthFinding -CheckId 'audit_installed_software' -Finding ("Installed software inventory: {0} item(s)" -f $software.Count) `
+                -Evidence @("$($software.Count) applications enumerated")
+        ) -SummaryText $step.Detail
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
         $r.Steps.Add([PSCustomObject]@{ Name='InstalledSoftware'; Status='Warn'; Output=$_.Exception.Message })
     }
@@ -98,7 +103,26 @@ function Invoke-DriversAudit {
         $formatted = Format-DriversList -Drivers $drivers -Stopped $stopped
         Write-Log $formatted
         $status = if (@($stopped).Count -gt 5) { 'Warn' } else { 'Pass' }
-        $r.Steps.Add([PSCustomObject]@{ Name='Drivers'; Status=$status; Output=$formatted })
+        $findings = @()
+        if (@($stopped).Count -gt 5) {
+            foreach ($s in @($stopped | Select-Object -First 12)) {
+                $findings += New-HealthFinding -FindingId 'driver.service.auto_stopped' -CheckId 'audit_drivers' `
+                    -Subject ([string]$s.DisplayName) -Finding 'Automatic driver is stopped' `
+                    -Impact 'Auto-start drivers that remain stopped can break devices or boot features.' `
+                    -Severity 'Medium' -Confidence 75 -Status 'Warn' `
+                    -Evidence @("Name=$($s.Name); State=$($s.State); StartMode=$($s.StartMode)") `
+                    -Recommendations @('Review the driver in Device Manager / services and repair or reinstall if unexpected.') `
+                    -Actions @(@{ type = 'shell'; target = 'devmgmt.msc'; label = 'Device Manager' })
+            }
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'driver.service.ok' -CheckId 'audit_drivers' `
+                -Finding 'Driver service states look acceptable' -Impact 'No large set of stopped auto-start drivers.' `
+                -Severity 'Info' -Confidence 80 -Status 'Pass' -Evidence @("Stopped auto drivers: $(@($stopped).Count)")
+        }
+        $step = @{ Name='Drivers'; Status=$status; Output=$formatted; Detail = "Stopped auto drivers: $(@($stopped).Count)" }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $step.Detail
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
         $r.Steps.Add([PSCustomObject]@{ Name='Drivers'; Status='Skip'; Output=$_.Exception.Message })
     }
@@ -159,7 +183,16 @@ function Test-PnPAuditProblemDevice {
 function Invoke-PnPDevicesAudit {
     param($r)
     if ((Get-EnvironmentMode) -eq 'WinPE') {
-        $r.Steps.Add([PSCustomObject]@{ Name='PnPDevices'; Status='N/A'; Output='Not applicable in WinPE. Plug-and-Play cmdlet is not available against offline Windows.' })
+        $step = @{
+            Name = 'PnPDevices'; Status = 'N/A'; CheckId = 'audit_pnp_devices'
+            Output = 'Not applicable in WinPE. Plug-and-Play cmdlet is not available against offline Windows.'
+        }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-HealthFinding -FindingId 'device.pnp.na_winpe' -CheckId 'audit_pnp_devices' `
+                -Finding 'PnP device audit unavailable in WinPE' -Impact 'Live Plug-and-Play status cannot be queried offline.' `
+                -Severity 'Info' -Confidence 95 -Status 'N/A' -Evidence @('Environment=WinPE')
+        ) -SummaryText $step.Output
+        $r.Steps.Add([PSCustomObject]$step)
         return
     }
 
@@ -176,10 +209,37 @@ function Invoke-PnPDevicesAudit {
 
         $formatted = Format-PnPDeviceList -Devices $inScope -Problems $problems -ExcludedCount $excludedCount
         Write-Log $formatted
-        $status = if ($problems.Count -gt 0) { 'Warn' } else { 'Pass' }
-        $r.Steps.Add([PSCustomObject]@{ Name='PnPDevices'; Status=$status; Output=$formatted })
+        $findings = @()
+        if ($problems.Count -gt 0) {
+            foreach ($dev in @($problems | Select-Object -First 15)) {
+                $name = [string]$dev.FriendlyName
+                if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$dev.InstanceId }
+                $statusText = [string]$dev.Status
+                $problemText = if ($dev.PSObject.Properties['Problem']) { [string]$dev.Problem } else { '' }
+                $findings += New-HealthFinding -FindingId 'device.pnp.problem' -CheckId 'audit_pnp_devices' `
+                    -Subject $name -Finding 'PnP device reports a problem state' `
+                    -Impact 'Problem devices can cause missing hardware, yellow bangs, or intermittent failures.' `
+                    -Severity 'Medium' -Confidence 85 -Status 'Warn' `
+                    -Evidence @("Status=$statusText", "Problem=$problemText", "InstanceId=$($dev.InstanceId)") `
+                    -Recommendations @('Open Device Manager, update/reinstall the driver, or replace the device if hardware-faulted.') `
+                    -Actions @(@{ type = 'shell'; target = 'devmgmt.msc'; label = 'Device Manager' })
+            }
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'device.pnp.ok' -CheckId 'audit_pnp_devices' `
+                -Finding 'No problem PnP devices detected' `
+                -Impact 'Present devices are reporting healthy status.' `
+                -Severity 'Info' -Confidence 80 -Status 'Pass' `
+                -Evidence @("In-scope devices: $($inScope.Count)", "Excluded: $excludedCount")
+        }
+        $step = @{
+            Name = 'PnPDevices'; Status = 'Pass'; Output = $formatted; CheckId = 'audit_pnp_devices'
+            Detail = "Problems: $($problems.Count) / in-scope $($inScope.Count)"
+        }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $step.Detail
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
-        $r.Steps.Add([PSCustomObject]@{ Name='PnPDevices'; Status='N/A'; Output='PnP cmdlet unavailable' })
+        $r.Steps.Add([PSCustomObject]@{ Name='PnPDevices'; Status='N/A'; Output='PnP cmdlet unavailable'; CheckId='audit_pnp_devices' })
     }
 }
 
@@ -195,7 +255,7 @@ function Invoke-ServicesAudit {
             $servicesKey = "HKLM:\Offline_SYSTEM\$controlSet\Services"
 
             if (-not (Test-Path $servicesKey)) {
-                $r.Steps.Add([PSCustomObject]@{ Name='Services'; Status='N/A'; Output='Offline SYSTEM hive is loaded, but services key was not found.' })
+                $r.Steps.Add([PSCustomObject]@{ Name='Services'; Status='N/A'; Output='Offline SYSTEM hive is loaded, but services key was not found.'; CheckId='audit_services' })
                 return
             }
 
@@ -233,19 +293,44 @@ function Invoke-ServicesAudit {
             }
 
             Write-Log $output
-            $r.Steps.Add([PSCustomObject]@{ Name='Services'; Status='Pass'; Output=$output })
+            $step = @{ Name='Services'; Status='Pass'; Output=$output; CheckId='audit_services'; Detail="Offline auto-start services: $($serviceItems.Count)" }
+            Add-HealthFindingsToStep -Step $step -Findings @(
+                New-InventoryHealthFinding -CheckId 'audit_services' -Finding ("Offline auto-start service inventory: {0}" -f @($serviceItems).Count) `
+                    -Evidence @("ControlSet=$controlSet", "Count=$(@($serviceItems).Count)")
+            ) -SummaryText $step.Detail
+            $r.Steps.Add([PSCustomObject]$step)
             return
         }
 
-        $services = Get-Service | Where-Object { $_.StartType -eq 'Automatic' }
-        $stopped  = $services | Where-Object { $_.Status -ne 'Running' }
+        $services = @(Get-Service | Where-Object { $_.StartType -eq 'Automatic' })
+        $stopped  = @($services | Where-Object { $_.Status -ne 'Running' })
 
         $formatted = Format-ServicesList -Services $services -Stopped $stopped
         Write-Log $formatted
-        $status = if ($stopped.Count -gt 10) { 'Warn' } else { 'Pass' }
-        $r.Steps.Add([PSCustomObject]@{ Name='Services'; Status=$status; Output=$formatted })
+        $findings = @()
+        if ($stopped.Count -gt 10) {
+            foreach ($svc in @($stopped | Select-Object -First 12)) {
+                $findings += New-HealthFinding -FindingId 'service.auto_stopped' -CheckId 'audit_services' `
+                    -Subject ([string]$svc.DisplayName) -Finding 'Automatic service is not running' `
+                    -Impact 'Stopped auto-start services can break updates, networking, security, or hardware features.' `
+                    -Severity 'Medium' -Confidence 75 -Status 'Warn' `
+                    -Evidence @("Name=$($svc.Name); Status=$($svc.Status); StartType=$($svc.StartType)") `
+                    -Recommendations @('Start the service if required, or change StartType if it is intentionally disabled.') `
+                    -Actions @(@{ type = 'shell'; target = 'services.msc'; label = 'Services' })
+            }
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'service.auto_ok' -CheckId 'audit_services' `
+                -Finding 'Automatic service states look acceptable' `
+                -Impact 'Stopped auto-start count is within a normal range.' `
+                -Severity 'Info' -Confidence 80 -Status 'Pass' `
+                -Evidence @("Automatic: $($services.Count)", "Stopped: $($stopped.Count)")
+        }
+        $step = @{ Name='Services'; Status='Pass'; Output=$formatted; CheckId='audit_services'; Detail="Stopped auto services: $($stopped.Count)" }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $step.Detail
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
-        $r.Steps.Add([PSCustomObject]@{ Name='Services'; Status='Warn'; Output=$_.Exception.Message })
+        $r.Steps.Add([PSCustomObject]@{ Name='Services'; Status='Warn'; Output=$_.Exception.Message; CheckId='audit_services' })
     }
 }
 
@@ -257,14 +342,25 @@ function Invoke-NetworkConfigAudit {
         
         $formatted = Format-NetworkConfig -IpConfig $ipConfig
         Write-Log $formatted
-        $r.Steps.Add([PSCustomObject]@{ Name='NetworkConfig'; Status='Pass'; Output=$formatted })
+        $count = @($ipConfig).Count
+        $step = @{ Name='NetworkConfig'; Status='Pass'; Output=$formatted; CheckId='audit_network_config'; Detail="$count interface configuration(s)" }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-InventoryHealthFinding -CheckId 'audit_network_config' -Finding ("Network configuration inventory: {0} interface(s)" -f $count) `
+                -Evidence @("$count interface configuration(s)")
+        ) -SummaryText $step.Detail
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
         try {
-            $adapters = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled }
+            $adapters = @(Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled })
             Write-Log "  Active adapters (WMI): $($adapters.Count)"
-            $r.Steps.Add([PSCustomObject]@{ Name='NetworkConfig'; Status='Pass'; Output="$($adapters.Count) active adapter(s):`n$(($adapters | ForEach-Object { "  $($_.Description): $($_.IPAddress -join ', ')" }) -join "`n")" })
+            $output = "$($adapters.Count) active adapter(s):`n$(($adapters | ForEach-Object { "  $($_.Description): $($_.IPAddress -join ', ')" }) -join "`n")"
+            $step = @{ Name='NetworkConfig'; Status='Pass'; Output=$output; CheckId='audit_network_config'; Detail="$($adapters.Count) active adapter(s) (WMI)" }
+            Add-HealthFindingsToStep -Step $step -Findings @(
+                New-InventoryHealthFinding -CheckId 'audit_network_config' -Finding $step.Detail -Evidence @($step.Detail)
+            ) -SummaryText $step.Detail
+            $r.Steps.Add([PSCustomObject]$step)
         } catch {
-            $r.Steps.Add([PSCustomObject]@{ Name='NetworkConfig'; Status='Skip'; Output=$_.Exception.Message })
+            $r.Steps.Add([PSCustomObject]@{ Name='NetworkConfig'; Status='Skip'; Output=$_.Exception.Message; CheckId='audit_network_config' })
         }
     }
 }
@@ -455,12 +551,30 @@ function Invoke-EventLogsAudit {
             $formatted = "SOURCE: Offline Windows EVTX`n`n" + $formatted
         }
 
-        $output = Add-EventLogStructuredOutput -FormattedText $formatted -DedupedEntries $deduped
-        $status = if (@($deduped).Count -gt 0) { 'Warn' } else { 'Pass' }
+        $clusterInputs = @()
+        foreach ($e in @($sysErr)) { if ($e) { $clusterInputs += $e } }
+        foreach ($e in @($appErr)) { if ($e) { $clusterInputs += $e } }
+        if ($clusterInputs.Count -eq 0 -and $deduped.Count -gt 0) {
+            $clusterInputs = $deduped
+        }
 
+        $findings = @(Invoke-EventFindingClustering -CheckId 'audit_event_logs' -Events $clusterInputs)
+        $output = Add-EventLogStructuredOutput -FormattedText $formatted -DedupedEntries $deduped
+        $step = @{
+            Name    = 'EventLogs'
+            Status  = if (@($deduped).Count -gt 0) { 'Warn' } else { 'Pass' }
+            Detail  = "Unique errors (last 24h): $(@($deduped).Count)"
+            Output  = $output
+        }
+        if ($findings.Count -gt 0) {
+            Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText ("Correlated {0} finding cluster(s) from {1} unique error group(s)." -f @(
+                @($findings | Where-Object { $_.findingId -notlike 'event.unclassified.*' }).Count
+                @($deduped).Count
+            ))
+        }
+        $r.Steps.Add([PSCustomObject]$step)
         Write-Log $formatted
         Write-Log "Unique errors (last 24h): $(@($deduped).Count)"
-        $r.Steps.Add([PSCustomObject]@{ Name='EventLogs'; Status=$status; Output=$output })
     } catch {
         $r.Steps.Add([PSCustomObject]@{ Name='EventLogs'; Status='Warn'; Output=$_.Exception.Message })
     }
@@ -470,13 +584,18 @@ function Invoke-PartitionTableAudit {
     param($r)
     Write-Log "Reading partition table..."
     try {
-        $parts = Get-Partition -ErrorAction Stop
+        $parts = @(Get-Partition -ErrorAction Stop)
         
         $formatted = Format-PartitionInfo -Partitions $parts
         Write-Log $formatted
-        $r.Steps.Add([PSCustomObject]@{ Name='PartitionTable'; Status='Pass'; Output=$formatted })
+        $step = @{ Name='PartitionTable'; Status='Pass'; Output=$formatted; CheckId='audit_partition_table'; Detail="$($parts.Count) partition(s)" }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-InventoryHealthFinding -CheckId 'audit_partition_table' -Finding ("Partition table inventory: {0} partition(s)" -f $parts.Count) `
+                -Evidence @("$($parts.Count) partition(s)")
+        ) -SummaryText $step.Detail
+        $r.Steps.Add([PSCustomObject]$step)
     } catch {
-        $r.Steps.Add([PSCustomObject]@{ Name='PartitionTable'; Status='Skip'; Output='Get-Partition unavailable' })
+        $r.Steps.Add([PSCustomObject]@{ Name='PartitionTable'; Status='Skip'; Output='Get-Partition unavailable'; CheckId='audit_partition_table' })
     }
 }
 
@@ -485,26 +604,34 @@ function Invoke-StartupAudit {
 
     $envMode = Get-EnvironmentMode
     if ($envMode -eq 'WinPE' -and $env:OFFLINE_REGISTRY_LOADED -ne '1') {
-        $r.Steps.Add([PSCustomObject]@{
-            Name   = 'StartupAudit'
-            Status = 'N/A'
+        $step = @{
+            Name = 'StartupAudit'; Status = 'N/A'; CheckId = 'audit_startup'
             Output = 'WinPE: load an offline Windows installation to audit startup registry hives.'
-        })
+        }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-HealthFinding -FindingId 'startup.na_winpe' -CheckId 'audit_startup' `
+                -Finding 'Startup audit unavailable without offline hives' -Impact 'Cannot review Run keys offline until a Windows hive is loaded.' `
+                -Severity 'Info' -Confidence 95 -Status 'N/A' -Evidence @('Environment=WinPE', 'OFFLINE_REGISTRY_LOADED!=1')
+        ) -SummaryText $step.Output
+        $r.Steps.Add([PSCustomObject]$step)
         return
     }
 
     Write-Log "Auditing startup entries..."
-    $entries = Get-PostOpStartupEntries
+    $entries = @(Get-PostOpStartupEntries)
     if ($entries.Count -eq 0) {
-        $r.Steps.Add([PSCustomObject]@{
-            Name   = 'StartupAudit'
-            Status = 'Pass'
-            Output = 'No startup entries found.'
-        })
+        $step = @{ Name='StartupAudit'; Status='Pass'; Output='No startup entries found.'; CheckId='audit_startup'; Detail='No startup entries found.' }
+        Add-HealthFindingsToStep -Step $step -Findings @(
+            New-HealthFinding -FindingId 'startup.none' -CheckId 'audit_startup' `
+                -Finding 'No startup entries found' -Impact 'Nothing to review in Run/Startup locations.' `
+                -Severity 'Info' -Confidence 85 -Status 'Pass' -Evidence @('Entry count: 0')
+        ) -SummaryText $step.Detail
+        $r.Steps.Add([PSCustomObject]$step)
         return
     }
 
     $lines = [System.Collections.Generic.List[string]]::new()
+    $findings = [System.Collections.Generic.List[object]]::new()
     $reviewCount = 0
     $safe = 0
 
@@ -537,7 +664,7 @@ function Invoke-StartupAudit {
 
         $reasonText = if ($assessment.Reasons.Count -gt 0) { " ($($assessment.Reasons -join ', '))" } else { '' }
         $pathText = if ($entry.ResolvedPath) { $entry.ResolvedPath } else { $entry.Command }
-        $line = "$tag [$($entry.SourceGroup)] $($entry.Name) — $($entry.RiskBand)$reasonText — $pathText"
+        $line = "$tag [$($entry.SourceGroup)] $($entry.Name) - $($entry.RiskBand)$reasonText - $pathText"
         Write-Log "  $line"
         $lines.Add($line) | Out-Null
 
@@ -552,17 +679,49 @@ function Invoke-StartupAudit {
             $startupJson = ($payload | ConvertTo-Json -Compress)
             Write-Host "[POSTOP:STARTUP] $startupJson"
             $lines.Add("[POSTOP:STARTUP] $startupJson") | Out-Null
+
+            $sev = switch -Regex ([string]$entry.RiskBand) {
+                '(?i)high|critical' { 'High' }
+                '(?i)medium' { 'Medium' }
+                default { 'Medium' }
+            }
+            $findings.Add((New-HealthFinding `
+                -FindingId 'startup.review' `
+                -CheckId 'audit_startup' `
+                -Subject ([string]$entry.Name) `
+                -Finding 'Startup entry needs review' `
+                -Impact 'Suspicious or high-risk startup items can persist malware or unwanted software.' `
+                -Severity $sev `
+                -Confidence 80 `
+                -Status 'Warn' `
+                -Evidence @(
+                    "Location=$($entry.SourceGroup)",
+                    "Risk=$($entry.RiskBand)",
+                    "Reasons=$($assessment.Reasons -join ', ')",
+                    "Path=$pathText"
+                ) `
+                -Recommendations @('Disable or remove the entry in Startup Manager if unexpected.', 'Run Hijack and Scam Repair if browser/search hijack is also present.') `
+                -Actions @(@{ type = 'cde'; target = 'StartupManager'; label = 'Startup Manager' })
+            )) | Out-Null
         }
     }
 
+    if ($reviewCount -eq 0) {
+        $findings.Add((New-HealthFinding -FindingId 'startup.ok' -CheckId 'audit_startup' `
+            -Finding 'Startup entries look acceptable' `
+            -Impact 'No suspicious startup persistence was flagged.' `
+            -Severity 'Info' -Confidence 80 -Status 'Pass' `
+            -Evidence @("Total: $($entries.Count)", "OK: $safe"))) | Out-Null
+    }
+
     Write-Log "Total: $($entries.Count) | Review: $reviewCount | OK: $safe"
-    $status = if ($reviewCount -gt 0) { 'Warn' } else { 'Pass' }
     $summary = "Total: $($entries.Count) | Review: $reviewCount | OK: $safe`n$($lines -join "`n")"
-    $r.Steps.Add([PSCustomObject]@{
-        Name   = 'StartupAudit'
-        Status = $status
-        Output = $summary
-    })
+    $step = @{
+        Name = 'StartupAudit'; Status = 'Pass'; Output = $summary; CheckId = 'audit_startup'
+        Detail = "Total: $($entries.Count) | Review: $reviewCount | OK: $safe"
+    }
+    Add-HealthFindingsToStep -Step $step -Findings @($findings.ToArray()) -SummaryText $summary
+    $r.Steps.Add([PSCustomObject]$step)
 }
 function Get-SystemAuditCheckDispatchMap {
     return @{

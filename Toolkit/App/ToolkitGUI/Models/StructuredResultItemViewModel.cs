@@ -30,6 +30,15 @@ namespace ToolkitGUI.Models
     public string StatusLabelText { get; init; } = string.Empty;
     public Brush StatusLabelBrush { get; init; } = Brushes.SteelBlue;
     public bool IsCompactStartupVerified { get; init; }
+    public bool IsStructuredHealthFinding { get; init; }
+    public string Impact { get; init; } = string.Empty;
+    public string ConfidenceDisplay { get; init; } = string.Empty;
+    public string EvidenceDisplay { get; init; } = string.Empty;
+    public string RecommendationDisplay { get; init; } = string.Empty;
+    public bool ShowImpact => IsStructuredHealthFinding && !string.IsNullOrWhiteSpace(Impact);
+    public bool ShowConfidence => IsStructuredHealthFinding && !string.IsNullOrWhiteSpace(ConfidenceDisplay);
+    public bool ShowEvidence => IsStructuredHealthFinding && !string.IsNullOrWhiteSpace(EvidenceDisplay);
+    public bool ShowRecommendation => IsStructuredHealthFinding && !string.IsNullOrWhiteSpace(RecommendationDisplay);
     public bool ShowCompactStartupRow => IsCompactStartupVerified;
     public bool ShowRichEntry =>
       !IsCompactStartupVerified
@@ -102,6 +111,32 @@ namespace ToolkitGUI.Models
       if (item.Compact && item.Status == FormattedItemStatus.Ok)
       {
         return FromStartupVerifiedCompact(item);
+      }
+
+      if (item.IsStructuredFinding)
+      {
+        var severityLabel = string.IsNullOrWhiteSpace(item.SeverityLabel)
+          ? item.StatusLabel
+          : item.SeverityLabel;
+        return new StructuredResultItemViewModel
+        {
+          Name = item.Title,
+          IsStructuredHealthFinding = true,
+          StatusLabelText = item.StatusLabel,
+          StatusLabelBrush = GetFormattedStatusBrush(item.Status),
+          EntryLocation = item.Location ?? string.Empty,
+          Impact = item.Impact ?? string.Empty,
+          ConfidenceDisplay = item.Confidence is int c ? $"{c}/100" : string.Empty,
+          EvidenceDisplay = item.Evidence.Count > 0 ? string.Join(Environment.NewLine, item.Evidence) : string.Empty,
+          RecommendationDisplay = item.Recommendations.Count > 0
+            ? string.Join(Environment.NewLine, item.Recommendations.Select(r => "• " + r))
+            : string.Empty,
+          DetailNotes = item.Notes ?? string.Empty,
+          Severity = severityLabel,
+          Classification = item.Impact ?? item.Notes ?? string.Empty,
+          SeverityBrush = GetFormattedStatusBrush(item.Status),
+          ClassificationBrush = new SolidColorBrush(Color.FromRgb(0x37, 0x47, 0x5F))
+        };
       }
 
       var subtitle = item.Subtitle ?? string.Empty;

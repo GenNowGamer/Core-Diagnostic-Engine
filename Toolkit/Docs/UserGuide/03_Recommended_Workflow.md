@@ -26,7 +26,7 @@ Ask what changed: updates, new software, malware pop-ups, no boot, slow performa
 
 Open **System Health Check** → choose a preset (**Recommended**, **Quick Vitals**, **Deep System**, or **Full Audit**) or pick checks manually → **Run Health Check**.
 
-Review grouped results. Yellow (Warn) and red (Fail) items tell you where to focus next.
+Review the scored findings and the full technical detail beneath them. Yellow (Warn) and red (Fail) items tell you where to focus next; Severity, Confidence, Evidence, and Recommendations explain why. The selected card is marked **VIEWING** in the left list.
 
 ### Step 4 — Deepen diagnostics as needed
 

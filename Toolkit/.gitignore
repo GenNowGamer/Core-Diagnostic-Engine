@@ -15,6 +15,10 @@ App/ToolkitGUI/bin/
 App/ToolkitGUI/obj/
 App/CdeCpuSimdCli/bin/
 App/CdeCpuSimdCli/obj/
+App/CdeBehaviorCollector/bin/
+App/CdeBehaviorCollector/obj/
+App/CdeGpuDiagCli/bin/
+App/CdeGpuDiagCli/obj/
 App/CDELauncher/bin/
 App/CDELauncher/obj/
 CDE/ToolkitGUI/bin/

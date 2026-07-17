@@ -46,7 +46,11 @@ namespace ToolkitGUI.Services
             RegexOptions.Compiled);
 
         private static readonly Regex InternalProtocolRegex = new(
-            @"^\[(POSTOP:STARTUP|AUDIT:EVENT|HEALTH:PHASE|HEALTH:RECOMMENDATION)\]",
+            @"^\[(POSTOP:STARTUP|AUDIT:EVENT|HEALTH:PHASE|HEALTH:RECOMMENDATION|HEALTH:FINDING)\]",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex HealthFindingMarkerRegex = new(
+            @"^\[HEALTH:FINDING\]\s*(?<json>\{.*\})\s*$",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex CstSectionUnderlineRegex = new(
@@ -88,7 +92,32 @@ namespace ToolkitGUI.Services
             "ScheduledTasksAudit"
         };
 
-        public static FormattedWorkflowOutput Format(string? stepName, string? output)
+        public static FormattedWorkflowOutput Format(
+            string? stepName,
+            string? output,
+            IReadOnlyList<ToolkitGUI.Models.HealthStructuredFindingDto>? structuredFindings = null)
+        {
+            var fromDto = FormatStructuredFindings(stepName, output, structuredFindings);
+            if (fromDto != null)
+            {
+                return fromDto;
+            }
+
+            var fromMarkers = TryFormatHealthFindingMarkers(stepName, output);
+            if (fromMarkers != null)
+            {
+                return fromMarkers;
+            }
+
+            return FormatLegacy(stepName, output);
+        }
+
+        /// <summary>
+        /// Pre-structured-findings formatting pipeline. Used directly for steps without
+        /// findings, and as the "detailed results" half of the hybrid output for steps
+        /// that do carry structured findings.
+        /// </summary>
+        private static FormattedWorkflowOutput FormatLegacy(string? stepName, string? output)
         {
             if (string.IsNullOrWhiteSpace(output))
             {
@@ -109,6 +138,13 @@ namespace ToolkitGUI.Services
                 return FormatCoreSecurityTool(output);
             }
 
+            if (string.Equals(stepName, "EventLogs", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(stepName, "EventLogErrors", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(stepName, "CriticalEvents", StringComparison.OrdinalIgnoreCase))
+            {
+                return FormatEventLogs(stepName, output);
+            }
+
             if (UsesGroupedPropertySections(stepName))
             {
                 return FormatGroupBlockOutput(stepName, output);
@@ -116,6 +152,281 @@ namespace ToolkitGUI.Services
 
             return FormatGenericOutput(stepName, output);
         }
+
+        private static FormattedWorkflowOutput? FormatStructuredFindings(
+            string? stepName,
+            string? output,
+            IReadOnlyList<ToolkitGUI.Models.HealthStructuredFindingDto>? structuredFindings)
+        {
+            if (structuredFindings == null || structuredFindings.Count == 0)
+            {
+                return null;
+            }
+
+            return BuildStructuredFindingOutput(stepName, output, structuredFindings);
+        }
+
+        private static FormattedWorkflowOutput? TryFormatHealthFindingMarkers(string? stepName, string? output)
+        {
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                return null;
+            }
+
+            var findings = new List<ToolkitGUI.Models.HealthStructuredFindingDto>();
+            foreach (var line in SplitLines(output))
+            {
+                var match = HealthFindingMarkerRegex.Match(line);
+                if (!match.Success)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var dto = JsonSerializer.Deserialize<ToolkitGUI.Models.HealthStructuredFindingDto>(
+                        match.Groups["json"].Value,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (dto != null && !string.IsNullOrWhiteSpace(dto.Finding))
+                    {
+                        findings.Add(dto);
+                    }
+                }
+                catch
+                {
+                    // Ignore malformed markers and fall back to legacy formatting.
+                }
+            }
+
+            return findings.Count == 0 ? null : BuildStructuredFindingOutput(stepName, output, findings);
+        }
+
+        private static FormattedWorkflowOutput BuildStructuredFindingOutput(
+            string? stepName,
+            string? output,
+            IReadOnlyList<ToolkitGUI.Models.HealthStructuredFindingDto> findings)
+        {
+            var actionable = new List<FormattedResultItem>();
+            var verified = new List<FormattedResultItem>();
+
+            foreach (var finding in findings
+                         .OrderByDescending(f => SeverityRank(f.Severity))
+                         .ThenByDescending(f => f.Confidence)
+                         .ThenBy(f => f.Finding, StringComparer.OrdinalIgnoreCase))
+            {
+                var item = ToFormattedFindingItem(finding);
+                if (IsActionableFinding(finding))
+                {
+                    actionable.Add(item);
+                }
+                else
+                {
+                    verified.Add(item);
+                }
+            }
+
+            // Hybrid presentation: structured findings first, then the classic
+            // detailed output (grouped adapters/devices/events/etc.) below them.
+            var legacyText = StripProtocolLines(output);
+            var legacy = string.IsNullOrWhiteSpace(legacyText)
+                ? null
+                : FormatLegacy(stepName, legacyText);
+
+            var overview = actionable.Count > 0
+                ? $"{actionable.Count} actionable finding{(actionable.Count == 1 ? string.Empty : "s")} requiring review."
+                : !string.IsNullOrWhiteSpace(legacy?.Overview)
+                    ? legacy!.Overview
+                    : verified.Count > 0
+                        ? $"Verified inventory for {ResolveStepDisplayName(stepName)}."
+                        : "No actionable findings.";
+
+            var sections = new List<FormattedResultSection>();
+            if (actionable.Count > 0)
+            {
+                sections.Add(new FormattedResultSection
+                {
+                    Title = $"Actionable findings ({actionable.Count})",
+                    Items = actionable
+                });
+            }
+
+            if (verified.Count > 0)
+            {
+                sections.Add(new FormattedResultSection
+                {
+                    Title = actionable.Count > 0
+                        ? $"Verified / informational ({verified.Count})"
+                        : $"Results ({verified.Count})",
+                    Items = verified,
+                    StartsCollapsed = actionable.Count > 0
+                });
+            }
+
+            var legacyItems = new List<FormattedResultItem>();
+            if (legacy != null)
+            {
+                var legacySections = legacy.Sections
+                    .Where(section => section.Items.Count > 0 || section.Lines.Count > 0)
+                    .ToList();
+
+                if (legacySections.Count > 0)
+                {
+                    foreach (var section in legacySections)
+                    {
+                        legacyItems.AddRange(section.Items);
+                        sections.Add(new FormattedResultSection
+                        {
+                            Title = string.IsNullOrWhiteSpace(section.Title)
+                                ? "Detailed output"
+                                : section.Title,
+                            Items = section.Items,
+                            Lines = section.Lines,
+                            UseCompactItems = section.UseCompactItems,
+                            StartsCollapsed = section.StartsCollapsed || actionable.Count > 0
+                        });
+                    }
+                }
+                else if (legacy.AllItems.Count > 0)
+                {
+                    legacyItems.AddRange(legacy.AllItems);
+                    sections.Add(new FormattedResultSection
+                    {
+                        Title = "Detailed output",
+                        Items = legacy.AllItems
+                    });
+                }
+                else
+                {
+                    var prose = ExtractNonProtocolProse(output);
+                    if (prose.Count > 0)
+                    {
+                        sections.Add(new FormattedResultSection
+                        {
+                            Title = "Detailed output",
+                            Lines = prose
+                        });
+                    }
+                }
+            }
+
+            return new FormattedWorkflowOutput
+            {
+                Overview = overview,
+                Sections = sections,
+                AllItems = actionable.Concat(verified).Concat(legacyItems).ToList()
+            };
+        }
+
+        private static string StripProtocolLines(string? output)
+        {
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                return string.Empty;
+            }
+
+            var kept = SplitLines(output)
+                .Where(line => !InternalProtocolRegex.IsMatch(line))
+                .ToList();
+            return string.Join(Environment.NewLine, kept).Trim();
+        }
+
+        private static FormattedResultItem ToFormattedFindingItem(ToolkitGUI.Models.HealthStructuredFindingDto finding)
+        {
+            var status = MapFindingStatus(finding.Status, finding.Severity);
+            var title = string.IsNullOrWhiteSpace(finding.Subject)
+                ? finding.Finding
+                : $"{finding.Subject}: {finding.Finding}";
+            var recommendations = finding.Recommendations ?? new List<string>();
+            var evidence = finding.Evidence ?? new List<string>();
+
+            return new FormattedResultItem
+            {
+                Status = status,
+                StatusLabel = string.IsNullOrWhiteSpace(finding.Status) ? status.ToString() : finding.Status,
+                Title = title,
+                Subtitle = finding.Finding,
+                Location = finding.Subject,
+                Notes = recommendations.Count > 0 ? string.Join(" · ", recommendations) : finding.Impact,
+                Impact = finding.Impact,
+                SeverityLabel = finding.Severity,
+                Confidence = finding.Confidence,
+                Evidence = evidence,
+                Recommendations = recommendations,
+                IsStructuredFinding = true
+            };
+        }
+
+        private static bool IsActionableFinding(ToolkitGUI.Models.HealthStructuredFindingDto finding)
+        {
+            var status = (finding.Status ?? string.Empty).Trim();
+            if (status.Equals("Fail", StringComparison.OrdinalIgnoreCase)
+                || status.Equals("Warn", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var severity = (finding.Severity ?? string.Empty).Trim();
+            return severity.Equals("Critical", StringComparison.OrdinalIgnoreCase)
+                || severity.Equals("High", StringComparison.OrdinalIgnoreCase)
+                || severity.Equals("Medium", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int SeverityRank(string? severity) =>
+            (severity ?? string.Empty).Trim().ToLowerInvariant() switch
+            {
+                "critical" => 5,
+                "high" => 4,
+                "medium" => 3,
+                "low" => 2,
+                _ => 1
+            };
+
+        private static FormattedItemStatus MapFindingStatus(string? status, string? severity)
+        {
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                return status.Trim().ToLowerInvariant() switch
+                {
+                    "fail" => FormattedItemStatus.Fail,
+                    "warn" or "warning" => FormattedItemStatus.Warning,
+                    "pass" or "ok" => FormattedItemStatus.Ok,
+                    "info" => FormattedItemStatus.Info,
+                    _ => FormattedItemStatus.Neutral
+                };
+            }
+
+            return severity?.Trim().ToLowerInvariant() switch
+            {
+                "critical" or "high" => FormattedItemStatus.Fail,
+                "medium" => FormattedItemStatus.Warning,
+                "low" => FormattedItemStatus.Review,
+                _ => FormattedItemStatus.Info
+            };
+        }
+
+        private static List<string> ExtractNonProtocolProse(string? output)
+        {
+            var prose = new List<string>();
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                return prose;
+            }
+
+            foreach (var line in SplitLines(output))
+            {
+                if (string.IsNullOrWhiteSpace(line) || InternalProtocolRegex.IsMatch(line))
+                {
+                    continue;
+                }
+
+                prose.Add(line);
+            }
+
+            return prose;
+        }
+
+        private static string ResolveStepDisplayName(string? stepName) =>
+            string.IsNullOrWhiteSpace(stepName) ? "this check" : stepName.Trim();
 
         public static bool UsesGroupedPropertySections(string? stepName)
             => !string.IsNullOrWhiteSpace(stepName) && GroupedHealthCheckSteps.Contains(stepName.Trim());

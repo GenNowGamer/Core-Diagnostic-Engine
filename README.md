@@ -6,6 +6,8 @@ Current preboot policy: **rEFInd** on the USB toolkit provides the primary UEFI 
 
 **Code review (2026-07-15):** Pass 1–2 toolkit fixes shipped; Pass 3 (publish/launcher/packaging) reviewed and **deferred** — canonical publish unchanged. See `Toolkit\session_handoff.md`.
 
+**2026-07-17:** System Health Check now combines persisted structured findings (impact, severity, confidence, evidence, recommendations/actions) with the original detailed technical output. Event-log clustering and a separate GPU functional check (`CdeGpuDiagCli`) were added; selected result cards now have a clear **VIEWING** indicator. See `session_handoff.md` and `Toolkit\session_handoff.md`.
+
 **2026-07-16:** Startup Manager service risk/filter/guarded delete, reliable Post-Op hosts restore, System Health Check findings order, scheduled-tasks audit tuning, Windows Update stack Pass for Manual `wuauserv`, Uninstall Manager cleanup, and Hyper-V lab verification/deployment. See `session_handoff.md` and `Toolkit\session_handoff.md`.
 
 Current field status:

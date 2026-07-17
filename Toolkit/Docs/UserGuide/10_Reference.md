@@ -29,6 +29,7 @@
 | **BCD** | Boot Configuration Data — Windows boot settings database |
 | **CHU** | Core Hardware Utility — UEFI pre-boot hardware diagnostics (`CHUPrep.efi` → `CoreDiag.efi` from rEFInd) |
 | **CdeCpuSimdCli** | Small .NET helper beside published `ToolkitGUI.exe`; runs real CPU SIMD tests when CDE uses PowerShell 5.1 |
+| **CdeGpuDiagCli** | Self-contained .NET helper beside published `ToolkitGUI.exe`; runs System Health GPU probe/functional tests with environment-aware N/A results |
 | **CST** | Core Security Tool — CDE malware scan engine |
 | **DISM** | Deployment Image Servicing and Management — repairs Windows component store |
 | **Hive** | A registry database file loaded offline in WinPE (e.g. customer's SOFTWARE) |
@@ -60,6 +61,7 @@
 | Boot repair greyed out | Boot from USB (WinPE) — not available on live Windows desktop |
 | DISM Warn 0x800f081f | Mount matching Windows ISO; rerun DISM and browse to `sources\install.wim`, or run Windows Update Repair first |
 | User guide missing | Re-run toolkit publish; confirm `HALP\CDE_User_Guide.pdf` on USB |
+| GPU Functional Tests unavailable | Confirm `CdeGpuDiagCli.exe` is beside the published `ToolkitGUI.exe`; republish the toolkit. WinPE/RDP/basic-display/API limitations may legitimately report N/A |
 | Workflow failed after success (exit code 1) | If clean/report looked OK but GUI shows errors, check `CDE\Runtime\Data\workflows\` for internal JSON or `Logs\` for the PDF; update toolkit scripts (`WorkOrder.ps1` fix 2026-06-26). Re-run the workflow |
 | Temp cleaner many "access denied" warns | Normal for files locked by running apps (IDEs, compilers); review freed space in the summary |
 | DNS flush / proxy reset / icon cache | Use **Post-Op Cleanup** (removed from Fast Fixes and OS Repair network reset) |

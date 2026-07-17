@@ -23,6 +23,13 @@ namespace ToolkitGUI.Services
         public string? Notes { get; init; }
         /// <summary>When true, render as a single compact row instead of a full card.</summary>
         public bool Compact { get; init; }
+
+        public string? Impact { get; init; }
+        public string? SeverityLabel { get; init; }
+        public int? Confidence { get; init; }
+        public IReadOnlyList<string> Evidence { get; init; } = new List<string>();
+        public IReadOnlyList<string> Recommendations { get; init; } = new List<string>();
+        public bool IsStructuredFinding { get; init; }
     }
 
     internal sealed class FormattedResultSection

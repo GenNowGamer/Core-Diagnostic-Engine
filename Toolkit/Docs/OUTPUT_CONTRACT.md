@@ -24,11 +24,19 @@ Prefix every JSON payload with the tag `[CDE:EVENT:v1]` (no space). One event pe
 
 Existing tags remain valid for parsers that already handle them:
 
+- `[HEALTH:FINDING] {json}` — one persisted System Health finding. Fields: `findingId`, `checkId`, `subject`, `finding`, `impact`, `severity`, `confidence` (deterministic 0–100 match score), `status`, `evidence[]`, `recommendations[]`, and trusted `actions[]`
+- `[AUDIT:EVENT]` — raw/deduplicated event evidence retained alongside correlated health findings
 - `[HIJACK:FINDING]` — hijack scan findings
+- `[POSTOP:STARTUP]` — startup-entry review evidence
 - `SFC_PROGRESS:` — OS Repair SFC percentage
 - `Write-HealthPhaseLine` output — system health live tags
 
 New workflows should prefer `[CDE:EVENT:v1]` for progress and status.
+
+System Health report JSON also stores the same objects on each workflow step as
+`StructuredFindings`. Human-readable `Output` remains populated with the check's
+full technical detail; finding markers are additive and must not replace that
+detail.
 
 ## PowerShell helper
 

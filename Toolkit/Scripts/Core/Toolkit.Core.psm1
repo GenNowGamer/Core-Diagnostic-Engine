@@ -862,7 +862,7 @@ function Generate-Report {
     }
 
     $exportObj = [PSCustomObject]$exportProps
-    $exportObj | ConvertTo-Json -Depth 10 | Set-Content -Path $jsonPath -Encoding UTF8
+    $exportObj | ConvertTo-Json -Depth 14 | Set-Content -Path $jsonPath -Encoding UTF8
     Write-Log "Report saved: $jsonPath"
 
     if (Get-Command Add-WorkOrderRun -ErrorAction SilentlyContinue) {

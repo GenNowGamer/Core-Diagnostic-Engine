@@ -22,6 +22,7 @@
         { "id": "windows_update_service", "label": "Windows Update Service", "description": "wuauserv, UsoSvc, BITS, and WaaSMedicSvc status and startup type.", "estimatedMinutes": 0.2, "winPe": "windows_only" },
         { "id": "network_adapters", "label": "Network Adapters", "description": "Present adapters and link status.", "estimatedMinutes": 0.3, "winPe": "available" },
         { "id": "gpu_info", "label": "GPU Information", "description": "Video controllers and driver versions.", "estimatedMinutes": 0.2, "winPe": "available" },
+        { "id": "gpu_functional_tests", "label": "GPU Functional Tests", "description": "Driver, DirectX, OpenGL, Vulkan, VRAM functional, and thermal probes per adapter.", "estimatedMinutes": 1.5, "winPe": "windows_only" },
         { "id": "critical_events_7d", "label": "Critical Events (7 days)", "description": "Critical and error events from System and Application logs.", "estimatedMinutes": 1.0, "winPe": "windows_only" }
       ]
     },
@@ -75,6 +76,7 @@
       "windows_update_service",
       "network_adapters",
       "gpu_info",
+      "gpu_functional_tests",
       "critical_events_7d"
     ],
     "full_audit": [
@@ -133,6 +135,7 @@
     "os_version",
     "system_info",
     "gpu_info",
+    "gpu_functional_tests",
     "cpu_load",
     "ram",
     "disk_space",
@@ -285,6 +288,16 @@
       "actions": [
         { "type": "cde", "target": "UninstallManager", "label": "Uninstall Manager" },
         { "type": "cde", "target": "StartupManager", "label": "Startup Manager" }
+      ]
+    },
+    {
+      "whenCheckId": "gpu_functional_tests",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review GPU functional failures",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "shell", "target": "devmgmt.msc", "label": "Device Manager" },
+        { "type": "cde", "target": "HardwareDiagnostics", "label": "Diag & Repair" }
       ]
     },
     {

@@ -521,7 +521,10 @@ namespace ToolkitGUI.ViewModels
                 _checkLabels.TryGetValue(checkId, out var catalogLabel);
                 var label = BuildFindingLabel(catalogLabel, stepName, checkId);
                 var category = _checkCategories.TryGetValue(checkId, out var c) ? c : "Other";
-                var formatted = WorkflowResultFormatter.Format(stepName, detail);
+                var formatted = WorkflowResultFormatter.Format(
+                    stepName,
+                    detail,
+                    step.StructuredFindings);
                 var formattedItems = formatted.AllItems
                     .Select(StructuredResultItemViewModel.FromFormattedItem)
                     .Where(item => !string.IsNullOrWhiteSpace(item.Name))
@@ -685,7 +688,8 @@ namespace ToolkitGUI.ViewModels
                 SelectedFinding.StepName,
                 SelectedFinding.CheckId,
                 SelectedFinding.Detail,
-                SelectedFinding.Status))
+                SelectedFinding.Status,
+                SelectedFinding.FormattedItems))
             {
                 SelectedAttentionItems.Add(item);
             }

@@ -38,13 +38,32 @@ namespace ToolkitGUI.Services
             string? stepName,
             string? checkId,
             string? detail,
-            string? status)
+            string? status,
+            IReadOnlyList<StructuredResultItemViewModel>? formattedItems = null)
         {
             // Startup Entry Audit already lists review items under "Needs review" in Detailed Results.
             // Skip the parallel Items-to-address list so each entry card appears once.
             if (IsStartupAuditStep(stepName, checkId))
             {
                 return Array.Empty<StructuredResultItemViewModel>();
+            }
+
+            if (formattedItems != null && formattedItems.Count > 0)
+            {
+                var actionable = formattedItems
+                    .Where(i => i.IsStructuredHealthFinding
+                        && (string.Equals(i.Severity, "Critical", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(i.Severity, "High", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(i.Severity, "Medium", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(i.Severity, "Fail", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(i.Severity, "Warning", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(i.StatusLabelText, "Fail", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(i.StatusLabelText, "Warn", StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
+                if (actionable.Count > 0)
+                {
+                    return actionable;
+                }
             }
 
             if (!IsIssueStatus(status))

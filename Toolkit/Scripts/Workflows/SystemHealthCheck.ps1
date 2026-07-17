@@ -17,6 +17,8 @@ $CoreDir      = Join-Path $WorkflowsDir '..\Core'
 $CoreModule   = Join-Path $CoreDir 'Toolkit.Core.psm1'
 
 Import-Module $CoreModule -Force -DisableNameChecking
+. (Join-Path $CoreDir 'HealthFindings.ps1')
+. (Join-Path $CoreDir 'EventFindingClusters.ps1')
 . (Join-Path $CoreDir 'HealthChecks.ps1')
 . (Join-Path $CoreDir 'SystemAuditChecks.ps1')
 . (Join-Path $CoreDir 'SecurityAuditChecks.ps1')

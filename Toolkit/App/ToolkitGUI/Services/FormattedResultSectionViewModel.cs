@@ -117,7 +117,13 @@ namespace ToolkitGUI.Services
                 Location = item.Location,
                 Path = item.Path,
                 Notes = item.Notes,
-                Compact = true
+                Compact = true,
+                Impact = item.Impact,
+                SeverityLabel = item.SeverityLabel,
+                Confidence = item.Confidence,
+                Evidence = item.Evidence,
+                Recommendations = item.Recommendations,
+                IsStructuredFinding = item.IsStructuredFinding
             };
         }
 

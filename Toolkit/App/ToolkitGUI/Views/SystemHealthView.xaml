@@ -198,33 +198,63 @@
                             </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="White" BorderBrush="{StaticResource BorderBrush}"
-                                            BorderThickness="1" CornerRadius="5" Padding="12" Cursor="Hand">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
-                                                                 Value="True">
-                                                        <Setter Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
-                                                        <Setter Property="BorderThickness" Value="2"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
-                                        <StackPanel>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding CheckLabel}" FontWeight="SemiBold" FontSize="14"/>
-                                                <Border Margin="8,0,0,0" Padding="6,2" CornerRadius="3"
-                                                        Background="{Binding StatusBrush}">
-                                                    <TextBlock Text="{Binding Status}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
-                                                </Border>
+                                    <Grid Cursor="Hand">
+                                        <Border x:Name="Card"
+                                                CornerRadius="5"
+                                                Padding="16,12,12,12">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="White"/>
+                                                    <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                                    <Setter Property="BorderThickness" Value="1"/>
+                                                </Style>
+                                            </Border.Style>
+                                            <StackPanel>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding CheckLabel}" FontWeight="SemiBold" FontSize="14"/>
+                                                        <Border Margin="8,0,0,0" Padding="6,2" CornerRadius="3"
+                                                                Background="{Binding StatusBrush}">
+                                                            <TextBlock Text="{Binding Status}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                                        </Border>
+                                                    </StackPanel>
+                                                    <Border x:Name="ViewingBadge" Grid.Column="1"
+                                                            Background="{StaticResource AccentBlueBrush}"
+                                                            CornerRadius="3" Padding="6,2"
+                                                            Margin="8,0,0,0"
+                                                            Visibility="Collapsed">
+                                                        <TextBlock Text="VIEWING" Foreground="White"
+                                                                   FontSize="9" FontWeight="Bold"/>
+                                                    </Border>
+                                                </Grid>
+                                                <TextBlock Text="{Binding CategoryLabel}" FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding DetailOverview}" FontSize="12" TextWrapping="Wrap"
+                                                           Margin="0,6,0,0" MaxHeight="72" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
-                                            <TextBlock Text="{Binding CategoryLabel}" FontSize="10"
-                                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
-                                            <TextBlock Text="{Binding DetailOverview}" FontSize="12" TextWrapping="Wrap"
-                                                       Margin="0,6,0,0" MaxHeight="72" TextTrimming="CharacterEllipsis"/>
-                                        </StackPanel>
-                                    </Border>
+                                        </Border>
+                                        <Border x:Name="SelectionIndicator"
+                                                Width="5"
+                                                Margin="1,7,0,7"
+                                                HorizontalAlignment="Left"
+                                                Background="{StaticResource AccentBlueBrush}"
+                                                CornerRadius="0,3,3,0"
+                                                Visibility="Collapsed"/>
+                                    </Grid>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                                                     Value="True">
+                                            <Setter TargetName="Card" Property="Background" Value="#EAF3FF"/>
+                                            <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
+                                            <Setter TargetName="Card" Property="BorderThickness" Value="2"/>
+                                            <Setter TargetName="SelectionIndicator" Property="Visibility" Value="Visible"/>
+                                            <Setter TargetName="ViewingBadge" Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                     </ListBox>
@@ -268,10 +298,6 @@
                                 <TextBlock Text="{Binding SelectedFindingHeadline}" FontSize="13" TextWrapping="Wrap"
                                            Margin="0,0,0,16"/>
 
-                                <TextBlock Text="DETAILED RESULTS" FontSize="10" FontWeight="Bold"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                           Margin="0,0,0,8"
-                                           Visibility="{Binding ShowGenericDetailHeading, Converter={StaticResource BoolToVis}}"/>
                                 <Border Margin="0,0,0,16"
                                         Padding="12"
                                         Background="White"
@@ -308,8 +334,22 @@
 
                                 <TextBlock Text="DETAILED RESULTS" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
-                                           Margin="0,0,0,8"
-                                           Visibility="{Binding ShowGenericDetailHeading, Converter={StaticResource BoolToVis}}"/>
+                                           Margin="0,0,0,8">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding ShowGenericDetailHeading}" Value="True"/>
+                                                        <Condition Binding="{Binding HasSelectedFindingSections}" Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                                 <ItemsControl ItemsSource="{Binding SelectedFindingSections}" Margin="0,0,0,16">
                                     <ItemsControl.Style>
                                         <Style TargetType="ItemsControl">

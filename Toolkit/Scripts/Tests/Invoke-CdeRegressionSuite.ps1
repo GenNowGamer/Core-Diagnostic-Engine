@@ -59,6 +59,7 @@ function Invoke-WorkflowSmoke {
 }
 
 Invoke-Tier -Name 'Unit: Workflow health semantics' -ScriptPath (Join-Path $testsRoot 'Test-WorkflowHealthSemantics.ps1')
+Invoke-Tier -Name 'Unit: Health findings + event clusters' -ScriptPath (Join-Path $testsRoot 'Test-HealthFindingsAndEventClusters.ps1')
 Invoke-Tier -Name 'Unit: Health check catalog' -ScriptPath (Join-Path $testsRoot 'Test-HealthCheckCatalog.ps1')
 Invoke-Tier -Name 'Unit: Symptom flows catalog' -ScriptPath (Join-Path $testsRoot 'Test-SymptomFlowsCatalog.ps1')
 Invoke-Tier -Name 'Unit: Health check output detail' -ScriptPath (Join-Path $testsRoot 'Test-HealthCheckOutputDetail.ps1')

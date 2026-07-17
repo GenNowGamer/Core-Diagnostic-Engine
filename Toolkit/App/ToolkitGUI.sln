@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CdeCpuSimdCli", "CdeCpuSimd
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CdeBehaviorCollector", "CdeBehaviorCollector\CdeBehaviorCollector.csproj", "{317F0C70-F0F2-4A2E-BAB4-0A4C6EFB61B5}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CdeGpuDiagCli", "CdeGpuDiagCli\CdeGpuDiagCli.csproj", "{9F2A1C8E-4B7D-4E11-9A55-CDE60A110001}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,5 +35,9 @@ Global
 		{317F0C70-F0F2-4A2E-BAB4-0A4C6EFB61B5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{317F0C70-F0F2-4A2E-BAB4-0A4C6EFB61B5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{317F0C70-F0F2-4A2E-BAB4-0A4C6EFB61B5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9F2A1C8E-4B7D-4E11-9A55-CDE60A110001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9F2A1C8E-4B7D-4E11-9A55-CDE60A110001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9F2A1C8E-4B7D-4E11-9A55-CDE60A110001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9F2A1C8E-4B7D-4E11-9A55-CDE60A110001}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
