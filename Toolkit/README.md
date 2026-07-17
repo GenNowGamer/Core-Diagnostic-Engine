@@ -149,7 +149,7 @@ dotnet build App\ToolkitGUI\ToolkitGUI.csproj -c Release
 
 ## Session Update (2026-06-25)
 
-- **Process Analyzer** — Expanded from a simple process list to live triage: CPU/RAM sampling, risk heuristics, filters (high CPU/RAM, unsigned, suspicious path, in startup, **Investigation** mode with NEW highlighting), tree view, freeze snapshot, **Open Report** (PDF). Investigation mode uses the **Investigation ON** button for state (no overlapping toolbar status banner). Detail pane: command line, session, parent PID, parent chain, loaded modules, SHA256, signature; **CST scan file** with structured results dialog; shortcuts to Startup Manager and Malware Cleanup. System Health Check recommendations can open Process Analyzer with high CPU/RAM presets (`HealthCheckCatalog.json`).
+- **Process Analyzer** — Expanded from a simple process list to live triage: CPU/RAM sampling, risk heuristics, filters (high CPU/RAM, unsigned, suspicious path, in startup, **Investigation** mode with NEW highlighting), tree view, freeze snapshot, **Open Report** (PDF). Investigation mode uses the **Investigation ON** button for state (no overlapping toolbar status banner). Detail pane: command line, session, parent PID, parent chain, loaded modules, module anomalies, network connections, SHA256, signature; credential-access / injection / miner risk flags (2026-07-17); **CST scan file** with structured results dialog; shortcuts to Startup Manager and Malware Cleanup. System Health Check recommendations can open Process Analyzer with high CPU/RAM presets (`HealthCheckCatalog.json`).
 - **WMI + UI fix** — `Services/ProcessWmiEnricher.cs` enriches list/detail from `Win32_Process`; detail updates clone `ProcessDetail` so the pane refreshes. Release publish sets **`PublishTrimmed=false`** (partial trim had broken JSON deserialization for session/command line in the field).
 - **Scripts** — `Scripts/Workflows/ProcessAnalyzer.ps1`, `Scripts/Core/ProcessAnalyzer.Core.ps1`. CST leaf-file enumeration fix synced on publish.
 - **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; relaunch after publish (kill stale `ToolkitGUI` if needed).
@@ -637,6 +637,8 @@ folder recursively to prevent Explorer windows from opening at sign-in.
 - [x] Workflow PDF reports (QuestPDF) + **Open PDF**; de-elevated viewer launch; readable formatted results in GUI/PDF (2026-06-15)
 - [x] System Health Check PDF — per-check catalog labels via `CheckId`; multi-page item cards repeat test name (2026-06-15)
 - [x] System Health Check catalog trim — hardware/Diag & Repair, SMART analyzer, Defender, CST scan-only removed from picker; Update Hash IOCs in CST config dialog (2026-06-18)
+- [x] Security capability closure — Defender exclusions, ransomware recovery, driver/minifilter inventory, miner behavior audit; Process Analyzer network/module anomalies; CST suppressed findings expander (2026-07-17)
+- [x] CST false-positive hardening — timeout-only Authenticode no finding; unsigned DLL risky-path Low/0.50 weak signal; stock Windows/Malwarebytes filter allowlist; Defender `0x800106BA` N/A (2026-07-17)
 - [x] File Manager — junction/reparse skip, custom context menus, checkbox multi-select (2026-06-23)
 - [x] Prepare-BootableUSB — drive letter reuse, diskpart-primary partition, aligned USB copy exclusions (2026-06-23)
 - [x] OS Repair DISM — optional install.wim source + 0x800f081f guidance (2026-06-23)
