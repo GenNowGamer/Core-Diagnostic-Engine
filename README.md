@@ -208,7 +208,7 @@ Set **`TOOLKIT_ROOT`** to the folder that contains `Scripts`, `Config`, and `App
 
 ### Diagnostics
 
-**System Health Check** is the single health diagnostic hub. Use catalog presets **Recommended**, **Quick Vitals**, **Deep System**, or **Full Audit** in the GUI picker, or run from PowerShell with `-Preset`. Completed workflows offer **Open Report** (QuestPDF deliverable under `Logs\`). Raw step text is formatted into readable cards via `WorkflowResultFormatter` in both the GUI and PDF.
+**System Health Check** is the single health diagnostic hub. Use catalog presets **Recommended**, **Quick Vitals**, **Deep System**, or **Full Audit** in the GUI picker, or run from PowerShell with `-Preset`. Completed workflows offer **Open Report** (QuestPDF deliverable under `Logs\`). Results combine persisted structured findings (Finding / Impact / Severity / deterministic Confidence / Evidence / Recommendations) with the detailed technical inventories, via `WorkflowResultFormatter` in both the GUI and PDF.
 
 | | System Health Check | Diag & Repair |
 |---|:--:|:--:|
@@ -217,8 +217,9 @@ Set **`TOOLKIT_ROOT`** to the folder that contains `Scripts`, `Config`, and `App
 | Disk SMART / S.M.A.R.T. analyzer | — *(use S.M.A.R.T. Analyzer or Diag & Repair)* | Yes (SMART + read stress) |
 | PC-Doctor-style line tests | — | Yes (Quick / Extended) |
 | CST security scan | — *(use Malware Cleanup or Diag & Repair)* | Yes (ThreatScan / FullScan, scan-only) |
-| Driver audit, GPU, network | Yes (Deep System preset) | — |
-| Event logs | 24h + 7d catalog checks | — |
+| Driver audit, GPU inventory, network | Yes (Deep System preset) | — |
+| GPU functional tests | Yes (`gpu_functional_tests` via `CdeGpuDiagCli`) | — |
+| Event logs | 24h + 7d catalog checks with correlated finding clusters | — |
 | System audit bundle | Yes (Full Audit preset) | — |
 | Security audits (autoruns, hosts, etc.) | Yes (catalog; no Defender/CST) | — |
 
@@ -247,9 +248,11 @@ Set **`TOOLKIT_ROOT`** to the folder that contains `Scripts`, `Config`, and `App
 
 ### System audit and security audits
 
-- **System Health Check** — catalog-driven multi-check orchestrator (`SystemHealthCheck.ps1`, `Config/HealthCheckCatalog.json`); categories **Quick Vitals**, **Deep System**, **System Audit**, **Security Audits** (installed software, drivers, startup, event logs, partitions, autoruns, hosts file, browser extensions, scheduled tasks — not Defender or CST). Unified results view with grouped per-check review and PDF labeled by `CheckId`. Hardware line tests, SMART analyzer, Defender, and CST scan-only are **not** in the catalog — use **Diag & Repair** or **Malware Cleanup**.
+- **System Health Check** — catalog-driven multi-check orchestrator (`SystemHealthCheck.ps1`, `Config/HealthCheckCatalog.json`); categories **Quick Vitals**, **Deep System**, **System Audit**, **Security Audits** (installed software, drivers, startup, event logs, partitions, autoruns, hosts file, browser extensions, scheduled tasks — not Defender or CST). Unified results view with scored findings + detailed inventories, selected-card **VIEWING** indicator, and PDF labeled by `CheckId`. Hardware line tests, SMART analyzer, Defender, and CST scan-only are **not** in the catalog — use **Diag & Repair** or **Malware Cleanup**.
+- **Structured findings** — `Scripts/Core/HealthFindings.ps1` persists `StructuredFindings` / `[HEALTH:FINDING]` markers; inventory checks stay informational unless a risky condition exists
+- **GPU checks** — Deep System keeps informational `gpu_info` separate from active `gpu_functional_tests` (`CdeGpuDiagCli.exe`: driver, DirectX, OpenGL, Vulkan, capped VRAM, best-effort thermal; unsupported environments report **N/A**)
 - **Startup Entry Audit** — auto-start registry/folder review (`audit_startup`); review/OK cards in Structured Results and PDF (`[REVIEW]` / `[OK]` lines; `[POSTOP:STARTUP]` for live structured parsing)
-- **Event Logs** — deduplicated System/Application **errors** (last 24h) via `audit_event_logs` (`[AUDIT:EVENT]` protocol)
+- **Event Logs** — deduplicated System/Application **errors** (last 24h) via `audit_event_logs` (`[AUDIT:EVENT]` protocol) plus correlated clusters from `Config/EventFindingClusters.json` / `Scripts/Core/EventFindingClusters.ps1`
 - Session + cold-boot uptime detail and event source in **System Information** (`system_info` / `Get-CdeBootUptimeInfo`)
 
 > **2026-06-19:** Standalone Maintenance **System Audit** (`SystemAudit.ps1`) and Malware Cleanup audit tools were removed; all checks above run from **System Health Check** only.
@@ -263,14 +266,16 @@ Toolkit/
 ├── App/
 │   ├── ToolkitGUI/           # WPF app (sln, csproj, Views, ViewModels, Services/)
 │   ├── CdeCpuSimdCli/        # PS 5.1 SIMD probe helper (published self-contained with GUI)
+│   ├── CdeGpuDiagCli/        # GPU probe/functional-test helper (published self-contained with GUI)
 │   └── UserGuideGenerator/   # Markdig + QuestPDF → HALP/CDE_User_Guide.pdf (publish step)
 ├── Docs/UserGuide/           # User guide Markdown source + manifest.json
 ├── HALP/                     # CDE_User_Guide.pdf, oscdimg.exe, help links
 ├── Scripts/
-│   ├── Core/                 # Toolkit.Core.psm1, HealthCheckOrchestrator.ps1, WinPE_OfflineStartup.ps1
+│   ├── Core/                 # Toolkit.Core.psm1, HealthCheckOrchestrator.ps1, HealthFindings.ps1, EventFindingClusters.ps1, WinPE_OfflineStartup.ps1
 │   └── Workflows/            # SystemHealthCheck, HardwareDiagnostics, OSRepair, MalwareSweep, etc.
 ├── Config/settings.json
 ├── Config/HealthCheckCatalog.json
+├── Config/EventFindingClusters.json
 ├── Tools/                    # Optional: your portable tools (subfolders by category)
 ├── WinPE/                    # build_winpe.ps1 and related helpers
 └── Logs/                     # Operator PDF reports (internal JSON under CDE/Runtime/Data/)
@@ -292,7 +297,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "Toolkit\App\Publish-Toolkit
 
 After clone:
 
-1. **Publish** — `Toolkit\App\Publish-ToolkitGUI.ps1` → canonical `Toolkit\CDE.exe` and self-contained GUI + `CdeCpuSimdCli.exe`.
+1. **Publish** — `Toolkit\App\Publish-ToolkitGUI.ps1` → canonical `Toolkit\CDE.exe` and self-contained GUI + `CdeCpuSimdCli.exe` + `CdeGpuDiagCli.exe`.
 2. **Large binaries** — Place vendor payloads per `Toolkit\Tools\PLACEHOLDER_ACQUISITION.md` and run `Toolkit\Tools\update_tools_manifest.ps1` (notably `sources\boot.wim`, optional `Diagnostics\Memory\MemTest86\memtest86-usb.img`).
 3. **USB media** — `Customize-WinPE.ps1` (admin) → `SyncUSB.bat`.
 
@@ -446,6 +451,9 @@ Bootable WinPE (USB/ISO)  →  X:\  →  startnet.cmd
                                         →  CDE.exe → ToolkitGUI.exe
                                               →  PowerShellService / workflows
                                               →  Toolkit.Core.psm1 + Scripts\Workflows\*.ps1
+                                              →  SystemHealthCheck.ps1
+                                                    →  HealthFindings.ps1 + EventFindingClusters.ps1
+                                                    →  CdeGpuDiagCli.exe (gpu_functional_tests)
                                               →  HardwareDiagnostics.ps1 ([HW:TEST] / [CST:PROGRESS] live lines)
 ```
 
