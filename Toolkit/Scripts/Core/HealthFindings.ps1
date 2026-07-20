@@ -179,21 +179,25 @@ function Convert-IssueListToHealthFindings {
         [string[]]$Issues = @(),
         [string[]]$Recommendations = @(),
         [object[]]$Actions = @(),
-        [string]$PassFinding = 'No issues detected'
+        [string]$PassFinding = 'No issues detected',
+        [string]$PassImpact = 'No actionable issues were detected for this check.',
+        [string[]]$PassEvidence = @()
     )
 
     $list = New-Object System.Collections.Generic.List[object]
     $issueArr = @($Issues | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($issueArr.Count -eq 0) {
+        $evidence = @($PassEvidence | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($evidence.Count -eq 0) { $evidence = @('Issue count: 0') }
         $list.Add((New-HealthFinding `
             -FindingId ("{0}.clean" -f $FindingIdPrefix) `
             -CheckId $CheckId `
             -Finding $PassFinding `
-            -Impact 'No actionable issues were detected for this check.' `
+            -Impact $PassImpact `
             -Severity 'Info' `
             -Confidence 85 `
             -Status 'Pass' `
-            -Evidence @('Issue count: 0')))
+            -Evidence $evidence))
         return @($list.ToArray())
     }
 

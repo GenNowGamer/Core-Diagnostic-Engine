@@ -44,9 +44,9 @@ CDE separates **active scanning** from **configuration audits**:
 
 **Scheduled Tasks Audit** flags non-Microsoft tasks with suspicious execute paths or unsigned COM handlers. Microsoft-signed software under AppData (e.g. OneDrive) is not flagged for path alone. COM-only actions show the resolved handler (`COM {guid} -> path`) and a **Review Reason** when flagged.
 
-**Security Tampering Audit** inventories risky Microsoft Defender exclusions when Defender is available. If Defender is disabled or another antivirus owns protection, an unavailable Defender service is treated as N/A rather than a malicious exclusion.
+**Security Tampering Audit** inventories risky Microsoft Defender exclusions when Defender is available. If an **active third-party antivirus** is registered in Windows Security Center (for example Malwarebytes), Defender disabled/passive state and Defender API errors such as `0x800106BA` are treated as expected coexistence — the Pass result names that product. Firewall, UAC, and SmartScreen weakenings still Warn. If Defender is disabled with **no** active third-party AV, those Defender findings remain Warns.
 
-**Ransomware Recovery Audit** reviews VSS/backup-service and Windows Recovery Environment state for recovery impairment. **Driver Signature Audit** also inventories file-system minifilters and disk/volume UpperFilters/LowerFilters; known Microsoft and installed security-product filters are not suspicious merely because they are present.
+**Ransomware Recovery Audit** reviews VSS/backup-service and Windows Recovery Environment state for recovery impairment. **Driver Signature Audit** also inventories file-system minifilters and disk/volume UpperFilters/LowerFilters; names on the shared CST filter allowlist (stock Windows and known security-product filters) are not suspicious merely because they are present.
 
 > **Important:** Do not look for Autoruns or Hosts File checks under Malware Cleanup — they were moved to System Health Check only.
 

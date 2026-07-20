@@ -205,17 +205,62 @@ function Test-HijackChromiumPrefsHijacked {
     return $false
 }
 
-function Test-HijackThirdPartyAvActive {
+function Test-HijackSecurityCenterAvEnabled {
+    <#
+    .SYNOPSIS
+      Decode WMI AntiVirusProduct.productState — middle byte 10 = enabled/on-access.
+    #>
+    param($ProductState)
+
+    if ($null -eq $ProductState) { return $false }
+    try {
+        $hex = ('{0:X6}' -f [int]$ProductState)
+        if ($hex.Length -lt 4) { return $false }
+        return ($hex.Substring($hex.Length - 4, 2) -eq '10')
+    } catch {
+        return $false
+    }
+}
+
+function Get-HijackThirdPartyAvProducts {
+    <#
+    .SYNOPSIS
+      Non-Defender Security Center AV products that report as enabled.
+    #>
+    $active = New-Object System.Collections.Generic.List[object]
     try {
         $products = @(Get-CimInstance -Namespace 'root\SecurityCenter2' -ClassName AntiVirusProduct -ErrorAction Stop)
         foreach ($product in $products) {
             $name = [string]$product.displayName
             if ([string]::IsNullOrWhiteSpace($name)) { continue }
             if ($name -match '(?i)windows defender|microsoft defender') { continue }
-            return $true
+            if (-not (Test-HijackSecurityCenterAvEnabled -ProductState $product.productState)) { continue }
+            $active.Add([PSCustomObject]@{
+                DisplayName  = $name
+                ProductState = $product.productState
+                InstanceGuid = [string]$product.instanceGuid
+            }) | Out-Null
         }
     } catch { }
-    return $false
+    # PS 5.1: @($genericList) can throw "Argument types do not match"
+    if ($active.Count -eq 0) { return @() }
+    return [object[]]$active.ToArray()
+}
+
+function Test-HijackThirdPartyAvActive {
+    return (@(Get-HijackThirdPartyAvProducts).Count -gt 0)
+}
+
+function Test-HijackDefenderUnavailableError {
+    param(
+        [int]$HResult = 0,
+        [string]$Message = ''
+    )
+
+    return (
+        $HResult -eq -2147416390 -or
+        $Message -match '(?i)0x800106ba|service.*(disabled|not available|not started|cannot be started)|failed to initialize|operation failed'
+    )
 }
 
 function Test-HijackSuspiciousProxySetting {
@@ -585,6 +630,7 @@ function Test-HijackRiskyDefenderExclusion {
 
 function Invoke-HijackSecurityTamperingAudit {
     $issues = [System.Collections.Generic.List[string]]::new()
+    $notes = [System.Collections.Generic.List[string]]::new()
     $envMode = if (Get-Command Get-EnvironmentMode -ErrorAction SilentlyContinue) { Get-EnvironmentMode } else { 'Windows' }
 
     if ($envMode -ne 'Windows') {
@@ -596,14 +642,57 @@ function Invoke-HijackSecurityTamperingAudit {
         }
     }
 
+    $thirdPartyAvProducts = @(Get-HijackThirdPartyAvProducts)
+    $thirdPartyAv = $thirdPartyAvProducts.Count -gt 0
+    $thirdPartyNames = @($thirdPartyAvProducts | ForEach-Object { [string]$_.DisplayName } | Sort-Object -Unique)
+    if ($thirdPartyAv) {
+        $notes.Add(("Third-party antivirus active ({0}); Defender passive/disabled state is expected coexistence, not treated as tampering." -f ($thirdPartyNames -join ', '))) | Out-Null
+    }
+
     try {
         $mp = Get-MpComputerStatus -ErrorAction Stop
-        if (-not $mp.AntivirusEnabled) { $issues.Add('Windows Defender antivirus is disabled.') | Out-Null }
-        if (-not $mp.RealTimeProtectionEnabled) { $issues.Add('Windows Defender real-time protection is off.') | Out-Null }
-        if ($mp.IsTamperProtected -eq $false) { $issues.Add('Defender tamper protection is off.') | Out-Null }
-        if ($mp.AMServiceEnabled -eq $false) { $issues.Add('Defender antimalware service is disabled.') | Out-Null }
+        if (-not $mp.AntivirusEnabled) {
+            if ($thirdPartyAv) {
+                $notes.Add('Windows Defender antivirus is disabled while third-party AV is active (expected).') | Out-Null
+            } else {
+                $issues.Add('Windows Defender antivirus is disabled.') | Out-Null
+            }
+        }
+        if (-not $mp.RealTimeProtectionEnabled) {
+            if ($thirdPartyAv -and $mp.AntivirusEnabled -eq $false) {
+                $notes.Add('Windows Defender real-time protection is off while third-party AV is active (expected).') | Out-Null
+            } else {
+                $issues.Add('Windows Defender real-time protection is off.') | Out-Null
+            }
+        }
+        if ($mp.IsTamperProtected -eq $false) {
+            if ($thirdPartyAv -and $mp.AntivirusEnabled -eq $false) {
+                $notes.Add('Defender tamper protection is off while third-party AV owns protection (expected).') | Out-Null
+            } else {
+                $issues.Add('Defender tamper protection is off.') | Out-Null
+            }
+        }
+        if ($mp.AMServiceEnabled -eq $false) {
+            if ($thirdPartyAv) {
+                $notes.Add('Defender antimalware service is disabled while third-party AV is active (expected).') | Out-Null
+            } else {
+                $issues.Add('Defender antimalware service is disabled.') | Out-Null
+            }
+        }
     } catch {
-        $issues.Add("Defender status unavailable: $($_.Exception.Message)") | Out-Null
+        $msg = [string]$_.Exception.Message
+        $hr = 0
+        try { $hr = [int]$_.Exception.HResult } catch { }
+        if ($thirdPartyAv -or (Test-HijackDefenderUnavailableError -HResult $hr -Message $msg)) {
+            if ($thirdPartyAv) {
+                $notes.Add("Defender status unavailable while third-party AV is active (expected): $msg") | Out-Null
+            } else {
+                $notes.Add("Defender status unavailable (service not usable): $msg") | Out-Null
+                $issues.Add("Defender status unavailable: $msg") | Out-Null
+            }
+        } else {
+            $issues.Add("Defender status unavailable: $msg") | Out-Null
+        }
     }
 
     try {
@@ -627,7 +716,17 @@ function Invoke-HijackSecurityTamperingAudit {
             }
         }
     } catch {
-        $issues.Add("Defender exclusion audit unavailable: $($_.Exception.Message)") | Out-Null
+        $msg = [string]$_.Exception.Message
+        $hr = 0
+        try { $hr = [int]$_.Exception.HResult } catch { }
+        # Only suppress when another AV owns protection. Alone, 0x800106BA still warrants review.
+        if ($thirdPartyAv -and (Test-HijackDefenderUnavailableError -HResult $hr -Message $msg)) {
+            $notes.Add("Defender exclusion audit skipped (Defender API unavailable under third-party AV): $msg") | Out-Null
+        } elseif ($thirdPartyAv) {
+            $notes.Add("Defender exclusion audit skipped while third-party AV is active: $msg") | Out-Null
+        } else {
+            $issues.Add("Defender exclusion audit unavailable: $msg") | Out-Null
+        }
     }
 
     try {
@@ -668,8 +767,23 @@ function Invoke-HijackSecurityTamperingAudit {
     $lines.Add('SECURITY TAMPERING AUDIT') | Out-Null
     $lines.Add('========================') | Out-Null
     $lines.Add('') | Out-Null
+    if ($thirdPartyAv) {
+        $lines.Add(("Third-party antivirus (active): {0}" -f ($thirdPartyNames -join ', '))) | Out-Null
+        $lines.Add('Windows Defender is disabled/passive because this product is providing protection.') | Out-Null
+        $lines.Add('That coexistence is expected and is not treated as security tampering.') | Out-Null
+        $lines.Add('') | Out-Null
+    }
+    if ($notes.Count -gt 0) {
+        $lines.Add('Notes:') | Out-Null
+        foreach ($note in $notes) { $lines.Add(" - $note") | Out-Null }
+        $lines.Add('') | Out-Null
+    }
     if ($issues.Count -eq 0) {
-        $lines.Add('Defender, firewall, UAC, SmartScreen, and exclusion settings look intact.') | Out-Null
+        if ($thirdPartyAv) {
+            $lines.Add('Result: Pass - no tampering indicators. Defender passive state explained by third-party AV above.') | Out-Null
+        } else {
+            $lines.Add('Defender, firewall, UAC, SmartScreen, and exclusion settings look intact.') | Out-Null
+        }
     } else {
         foreach ($issue in $issues) { $lines.Add(" - $issue") | Out-Null }
         $lines.Add('') | Out-Null
@@ -682,6 +796,9 @@ function Invoke-HijackSecurityTamperingAudit {
         Output  = ($lines -join "`n")
         Details = @($issues)
         Issues  = @($issues)
+        Notes   = @($notes)
+        ThirdPartyAvActive = $thirdPartyAv
+        ThirdPartyAvNames  = @($thirdPartyNames)
     }
 }
 

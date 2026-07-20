@@ -30,6 +30,36 @@ function Add-HijackHealthStep {
     }
 
     $status = [string]$AuditResult.Status
+    $passFinding = ("No {0} issues detected" -f $FindingTitle.ToLowerInvariant())
+    $passImpact = 'No actionable issues were detected for this check.'
+    $passEvidence = @('Issue count: 0')
+
+    $thirdPartyActive = $false
+    $thirdPartyNames = @()
+    if ($AuditResult.PSObject.Properties.Name -contains 'ThirdPartyAvActive') {
+        $thirdPartyActive = [bool]$AuditResult.ThirdPartyAvActive
+    }
+    if ($AuditResult.PSObject.Properties.Name -contains 'ThirdPartyAvNames') {
+        $thirdPartyNames = @($AuditResult.ThirdPartyAvNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    }
+    if ($thirdPartyActive -and $thirdPartyNames.Count -gt 0 -and $status -notin @('Fail', 'Warn')) {
+        $names = $thirdPartyNames -join ', '
+        $passFinding = "No tampering detected; Defender is passive under third-party AV ($names)"
+        $passImpact = "Windows Defender is disabled or limited because an active third-party antivirus ($names) is providing protection. This is expected coexistence, not security tampering."
+        $passEvidence = @(
+            "Active third-party antivirus: $names"
+            'Defender AV / real-time / tamper / service passive state is expected under third-party AV'
+            'Issue count: 0'
+        )
+        if ($AuditResult.PSObject.Properties.Name -contains 'Notes') {
+            foreach ($note in @($AuditResult.Notes | Select-Object -First 4)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$note)) {
+                    $passEvidence += [string]$note
+                }
+            }
+        }
+    }
+
     $findings = Convert-IssueListToHealthFindings `
         -CheckId $CheckId `
         -FindingIdPrefix $FindingIdPrefix `
@@ -40,7 +70,9 @@ function Add-HijackHealthStep {
         -Issues $issues `
         -Recommendations $Recommendations `
         -Actions $Actions `
-        -PassFinding ("No {0} issues detected" -f $FindingTitle.ToLowerInvariant())
+        -PassFinding $passFinding `
+        -PassImpact $passImpact `
+        -PassEvidence $passEvidence
 
     $step = @{
         Name    = $Name

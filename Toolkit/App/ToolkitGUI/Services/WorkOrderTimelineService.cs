@@ -70,7 +70,7 @@ namespace ToolkitGUI.Services
 
         private static WorkOrderTimelineEntry MapTimelineEntry(JsonObject runObj) => new()
         {
-            CompletedAt = runObj["CompletedAt"]?.GetValue<string>() ?? string.Empty,
+            CompletedAt = WorkOrderTimestampFormatter.Format(runObj["CompletedAt"]?.GetValue<string>()),
             DisplayLabel = runObj["DisplayLabel"]?.GetValue<string>() ?? string.Empty,
             WorkflowName = runObj["WorkflowName"]?.GetValue<string>() ?? "Workflow",
             EventKind = runObj["EventKind"]?.GetValue<string>() ?? "Workflow",

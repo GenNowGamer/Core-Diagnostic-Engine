@@ -14,6 +14,14 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-07-20)
+
+- **Health Check Results** — Finding review text is drag-selectable/copyable (`SelectableTextStyle` read-only TextBoxes).
+- **Driver Signature Audit** — Uses shared CST `allowlistedFilterNames` (incl. Volume class + `applockerfltr`). Harvest/merge scripts under `Scripts\Tools\`; lab helper `D:\Hyper-V\w11-infect-lab\Harvest-DriverFilters.ps1`.
+- **Security Tampering Audit** — Active third-party AV (Security Center enabled) explains Defender-passive Pass; firewall/UAC/SmartScreen and Defender-off-without-AV still Warn.
+- **Work orders** — Opened/Closed/run Completed times show as `Jul 20, 2026 9:48 AM`-style local text; JSON stays ISO.
+- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; GUI payload **2026-07-20 10:17:29 AM**.
+
 ## Session Update (2026-07-17)
 
 - **CST capability closure** — Defender exclusions, ransomware recovery tampering, and driver/minifilter inventory are available through System Health/Hijack/CST. Process and behavior collection add network, credential-access, injection, and miner indicators for CST correlation.
@@ -637,6 +645,7 @@ folder recursively to prevent Explorer windows from opening at sign-in.
 - [x] Workflow PDF reports (QuestPDF) + **Open PDF**; de-elevated viewer launch; readable formatted results in GUI/PDF (2026-06-15)
 - [x] System Health Check PDF — per-check catalog labels via `CheckId`; multi-page item cards repeat test name (2026-06-15)
 - [x] System Health Check catalog trim — hardware/Diag & Repair, SMART analyzer, Defender, CST scan-only removed from picker; Update Hash IOCs in CST config dialog (2026-06-18)
+- [x] Health Check Results selectable/copyable review text; Driver Signature Audit shared CST filter allowlist + harvest tools; Security Tampering third-party AV coexistence; work-order friendly timestamps (2026-07-20)
 - [x] Security capability closure — Defender exclusions, ransomware recovery, driver/minifilter inventory, miner behavior audit; Process Analyzer network/module anomalies; CST suppressed findings expander (2026-07-17)
 - [x] CST false-positive hardening — timeout-only Authenticode no finding; unsigned DLL risky-path Low/0.50 weak signal; stock Windows/Malwarebytes filter allowlist; Defender `0x800106BA` N/A (2026-07-17)
 - [x] File Manager — junction/reparse skip, custom context menus, checkbox multi-select (2026-06-23)

@@ -199,6 +199,31 @@
                 <Setter Property="Padding" Value="18"/>
             </Style>
 
+            <!-- Read-only TextBox that looks like TextBlock so operators can drag-select/copy -->
+            <Style x:Key="SelectableTextStyle" TargetType="TextBox">
+                <Setter Property="IsReadOnly" Value="True"/>
+                <Setter Property="IsTabStop" Value="False"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Margin" Value="0"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+                <Setter Property="AcceptsReturn" Value="True"/>
+                <Setter Property="Cursor" Value="IBeam"/>
+                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                <Setter Property="FontFamily" Value="Segoe UI"/>
+                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                <Setter Property="VerticalScrollBarVisibility" Value="Disabled"/>
+                <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
+                <Setter Property="CaretBrush" Value="{StaticResource AccentBlueBrush}"/>
+                <Setter Property="SelectionBrush" Value="{StaticResource AccentBlueBrush}"/>
+            </Style>
+            <Style x:Key="SelectableMonoTextStyle" TargetType="TextBox" BasedOn="{StaticResource SelectableTextStyle}">
+                <Setter Property="FontFamily" Value="Consolas, Courier New"/>
+                <Setter Property="FontSize" Value="12"/>
+            </Style>
+
             <!-- ScrollBar: Width applies to vertical bars; horizontal bars must clear Width
                  or they collapse to a ~12px square (unusable "tiny button"). -->
             <Style TargetType="ScrollBar">
@@ -249,13 +274,12 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0"
-                                       Text="{Binding CompactStartupSummary}"
-                                       TextWrapping="Wrap"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,12,0"
-                                       FontSize="12"
-                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding CompactStartupSummary, Mode=OneWay}"
+                                     Style="{StaticResource SelectableTextStyle}"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,12,0"
+                                     FontSize="12"/>
                             <Border Grid.Column="1"
                                     Padding="8,3"
                                     CornerRadius="4"
@@ -280,11 +304,10 @@
                                                FontWeight="SemiBold"
                                                Foreground="White"/>
                                 </Border>
-                                <TextBlock Text="{Binding Name}"
-                                           FontWeight="SemiBold"
-                                           FontSize="13"
-                                           TextWrapping="Wrap"
-                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                                <TextBox Text="{Binding Name, Mode=OneWay}"
+                                         Style="{StaticResource SelectableTextStyle}"
+                                         FontWeight="SemiBold"
+                                         FontSize="13"/>
                             </StackPanel>
 
                             <StackPanel Margin="0,8,0,0"
@@ -294,11 +317,9 @@
                                            FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
                                            Margin="0,0,0,4"/>
-                                <TextBlock Text="{Binding EntryPath}"
-                                           FontSize="11"
-                                           FontFamily="Consolas, Courier New"
-                                           Foreground="{StaticResource TextPrimaryBrush}"
-                                           TextWrapping="Wrap"/>
+                                <TextBox Text="{Binding EntryPath, Mode=OneWay}"
+                                         Style="{StaticResource SelectableMonoTextStyle}"
+                                         FontSize="11"/>
                             </StackPanel>
 
                             <StackPanel Margin="0,10,0,0"
@@ -306,8 +327,10 @@
                                 <TextBlock Text="IMPACT" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"
                                            Visibility="{Binding ShowImpact, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                <TextBlock Text="{Binding Impact}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"
-                                           Visibility="{Binding ShowImpact, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBox Text="{Binding Impact, Mode=OneWay}"
+                                         Style="{StaticResource SelectableTextStyle}"
+                                         FontSize="12" Margin="0,0,0,8"
+                                         Visibility="{Binding ShowImpact, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <StackPanel Margin="0,0,16,0"
                                                 Visibility="{Binding ShowSeverity, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -320,19 +343,25 @@
                                     <StackPanel Visibility="{Binding ShowConfidence, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <TextBlock Text="CONFIDENCE" FontSize="10" FontWeight="Bold"
                                                    Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                                        <TextBlock Text="{Binding ConfidenceDisplay}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBox Text="{Binding ConfidenceDisplay, Mode=OneWay}"
+                                                 Style="{StaticResource SelectableTextStyle}"
+                                                 FontSize="12" FontWeight="SemiBold"/>
                                     </StackPanel>
                                 </StackPanel>
                                 <TextBlock Text="EVIDENCE" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"
                                            Visibility="{Binding ShowEvidence, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                <TextBlock Text="{Binding EvidenceDisplay}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"
-                                           Visibility="{Binding ShowEvidence, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBox Text="{Binding EvidenceDisplay, Mode=OneWay}"
+                                         Style="{StaticResource SelectableTextStyle}"
+                                         FontSize="12" Margin="0,0,0,8"
+                                         Visibility="{Binding ShowEvidence, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 <TextBlock Text="RECOMMENDATION" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"
                                            Visibility="{Binding ShowRecommendation, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                <TextBlock Text="{Binding RecommendationDisplay}" FontSize="12" TextWrapping="Wrap"
-                                           Visibility="{Binding ShowRecommendation, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBox Text="{Binding RecommendationDisplay, Mode=OneWay}"
+                                         Style="{StaticResource SelectableTextStyle}"
+                                         FontSize="12"
+                                         Visibility="{Binding ShowRecommendation, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                             </StackPanel>
 
                             <StackPanel Margin="0,10,0,0"
@@ -348,18 +377,17 @@
                                 <TextBlock Text="STARTUP LOCATION" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
                                            Margin="0,10,0,4"/>
-                                <TextBlock Text="{Binding StartupLocation}" FontSize="12"
-                                           Foreground="{StaticResource TextPrimaryBrush}"
-                                           TextWrapping="Wrap"/>
+                                <TextBox Text="{Binding StartupLocation, Mode=OneWay}"
+                                         Style="{StaticResource SelectableTextStyle}"
+                                         FontSize="12"/>
                                 <TextBlock Text="TARGET PATH" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
                                            Margin="0,10,0,4"
                                            Visibility="{Binding ShowStartupTargetPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                <TextBlock Text="{Binding EntryPath}" FontSize="11"
-                                           FontFamily="Consolas, Courier New"
-                                           TextWrapping="Wrap"
-                                           Foreground="{StaticResource TextPrimaryBrush}"
-                                           Visibility="{Binding ShowStartupTargetPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBox Text="{Binding EntryPath, Mode=OneWay}"
+                                         Style="{StaticResource SelectableMonoTextStyle}"
+                                         FontSize="11"
+                                         Visibility="{Binding ShowStartupTargetPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 <TextBlock Text="RISK BAND" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}"
                                            Margin="0,10,0,4"
@@ -387,19 +415,22 @@
                                 <TextBlock Text="LOCATION" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"
                                            Visibility="{Binding ShowEntryLocation, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                <TextBlock Text="{Binding EntryLocation}" FontSize="12" TextWrapping="Wrap"
-                                           Margin="0,0,0,8"
-                                           Visibility="{Binding ShowEntryLocation, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBox Text="{Binding EntryLocation, Mode=OneWay}"
+                                         Style="{StaticResource SelectableTextStyle}"
+                                         FontSize="12" Margin="0,0,0,8"
+                                         Visibility="{Binding ShowEntryLocation, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 <TextBlock Text="TARGET PATH" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"
                                            Visibility="{Binding ShowEntryPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                <TextBlock Text="{Binding EntryPath}" FontSize="11" FontFamily="Consolas, Courier New"
-                                           TextWrapping="Wrap" Margin="0,0,0,8"
-                                           Visibility="{Binding ShowEntryPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                <TextBlock Text="{Binding DetailNotes}" FontSize="12"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                           TextWrapping="Wrap"
-                                           Visibility="{Binding ShowDetailNotes, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBox Text="{Binding EntryPath, Mode=OneWay}"
+                                         Style="{StaticResource SelectableMonoTextStyle}"
+                                         FontSize="11" Margin="0,0,0,8"
+                                         Visibility="{Binding ShowEntryPath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBox Text="{Binding DetailNotes, Mode=OneWay}"
+                                         Style="{StaticResource SelectableTextStyle}"
+                                         FontSize="12"
+                                         Foreground="{StaticResource TextSecondaryBrush}"
+                                         Visibility="{Binding ShowDetailNotes, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                             </StackPanel>
 
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
@@ -422,10 +453,12 @@
                                     <TextBlock Text="{Binding Severity}" Foreground="White"
                                                FontSize="10" FontWeight="SemiBold"/>
                                 </Border>
-                                <TextBlock Text="{Binding Classification}" FontSize="12"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                           TextWrapping="Wrap" VerticalAlignment="Center"
-                                           Visibility="{Binding ShowClassification, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBox Text="{Binding Classification, Mode=OneWay}"
+                                         Style="{StaticResource SelectableTextStyle}"
+                                         FontSize="12"
+                                         Foreground="{StaticResource TextSecondaryBrush}"
+                                         VerticalAlignment="Center"
+                                         Visibility="{Binding ShowClassification, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                             </StackPanel>
                         </StackPanel>
                     </StackPanel>

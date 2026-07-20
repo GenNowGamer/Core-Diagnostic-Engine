@@ -1,6 +1,36 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-17
+**Last updated:** 2026-07-20
+
+## 2026-07-20 — Health Check copy/select, shared filter allowlist, third-party AV coexistence, friendly work-order times
+
+### System Health Results UX
+
+- Review content (structured finding fields, overview, plain detail, property values, guidance) uses `SelectableTextStyle` / `SelectableMonoTextStyle` read-only TextBoxes so technicians can drag-select and copy evidence.
+
+### Driver Signature Audit / filter allowlist
+
+- **Shared source** — `Get-CdeDriverFilterAllowlistNames` reads CST `Security\CST\rules\rules.json` `driverFilterPolicies.allowlistedFilterNames`, with a stock Windows + Malwarebytes fallback list in `Scripts\Core\DriverFilterAllowlist.ps1`.
+- **Scope** — Disk, CD-ROM, and Volume class UpperFilters/LowerFilters plus `fltmc` minifilters.
+- **Harvest** — `Scripts\Tools\Harvest-DriverFilterAllowlist.ps1` (guest/host); `Merge-DriverFilterAllowlist.ps1` (host → CST rules + toolkit mirror); Hyper-V `Harvest-DriverFilters.ps1` copies JSON to `D:\Hyper-V\w11-infect-lab\harvest\`.
+- **Lab** — Clean `w11-infect-lab` harvest proposed `applockerfltr` (merged). Host harvest found no additional new names vs the shared list.
+
+### Security Tampering Audit
+
+- Detects **enabled** non-Defender Security Center AV (`productState` middle byte `10`).
+- When active (verified with Malwarebytes on the dev host): Defender AV/RTP/tamper/AM-service passive and exclusion `0x800106BA` become notes, not Warns.
+- Pass finding text names the product (e.g. “Defender is passive under third-party AV (Malwarebytes)”).
+- Still Warns: firewall off, UAC/SmartScreen weakened, Defender disabled with **no** active third-party AV, risky exclusions when Defender APIs work.
+- Tests: `Test-HijackRepairHelpers.ps1` (Security Center decode + unavailable HRESULT); live smoke Pass with Malwarebytes.
+
+### Work orders
+
+- `WorkOrderTimestampFormatter` formats CreatedAt/ClosedAt/CompletedAt for detail UI, Dashboard timeline, and work-order PDF (`MMM d, yyyy h:mm tt` local). Storage remains ISO `"o"`.
+
+### Publish / lab
+
+- Canonical publish → `Toolkit\CDE.exe`; GUI payload **2026-07-20 10:17:29 AM**.
+- `Push-CDE-Toolkit.ps1` → guest `C:\CDE` (`HV_CDE_PUSH_OK`).
 
 ## 2026-07-17 — CST capability gaps, Process Analyzer detail, and false-positive hardening
 

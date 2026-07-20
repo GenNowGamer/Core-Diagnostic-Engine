@@ -205,8 +205,12 @@ namespace ToolkitGUI.Services
                 ClientName = root["ClientName"]?.GetValue<string>() ?? string.Empty,
                 ClientPhone = root["ClientPhone"]?.GetValue<string>() ?? string.Empty,
                 TechnicianNotes = root["TechnicianNotes"]?.GetValue<string>() ?? string.Empty,
-                CreatedAt = root["CreatedAt"]?.GetValue<string>() ?? string.Empty,
-                ClosedAt = root["ClosedAt"]?.GetValue<string>() ?? string.Empty,
+                CreatedAt = WorkOrderTimestampFormatter.Format(root["CreatedAt"]?.GetValue<string>()),
+                ClosedAt = WorkOrderTimestampFormatter.Format(
+                    root["ClosedAt"]?.GetValue<string>(),
+                    emptyDisplay: string.Equals(root["Status"]?.GetValue<string>(), "Open", StringComparison.OrdinalIgnoreCase)
+                        ? "(still open)"
+                        : string.Empty),
                 FinalReportPdf = WorkOrderPathHelper.ResolveOperatorPdfPath(
                     caseId,
                     root["FinalReportPdf"]?.GetValue<string>()),
@@ -636,7 +640,7 @@ namespace ToolkitGUI.Services
             return new WorkOrderRunDetail
             {
                 WorkflowName = runObj["WorkflowName"]?.GetValue<string>() ?? "Workflow",
-                CompletedAt = runObj["CompletedAt"]?.GetValue<string>() ?? string.Empty,
+                CompletedAt = WorkOrderTimestampFormatter.Format(runObj["CompletedAt"]?.GetValue<string>()),
                 OverallHealth = runObj["OverallHealth"]?.GetValue<string>() ?? string.Empty,
                 Status = runObj["Status"]?.GetValue<string>() ?? string.Empty,
                 Summary = runObj["Summary"]?.GetValue<string>() ?? string.Empty,

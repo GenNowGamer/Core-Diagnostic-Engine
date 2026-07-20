@@ -48,11 +48,11 @@ After the boot menu (or when launching `CDE.exe` on a full Windows system):
 3. Click **Generate** or **Save** to start or update a work order.
 4. Run diagnostics and repairs from other sidebar tools — results are tied to the active case.
 
-**Case timeline** (active work order only) — newest-first list of workflow runs, CHU pre-boot result loads, and Process Analyzer CST scans. Use **Open Report** (PDF) or **Open artifact** on each row when paths are available.
+**Case timeline** (active work order only) — newest-first list of workflow runs, CHU pre-boot result loads, and Process Analyzer CST scans. Timestamps show as local friendly times (for example `Jul 20, 2026 9:48 AM`). Use **Open Report** (PDF) or **Open artifact** on each row when paths are available.
 
 **Suggested path** — under **What are you seeing?**, CDE highlights the best-matching symptom when you **Generate Work Order** (from notes keywords) or when you click a symptom chip. The hint text and accent highlight show the recommended path; the detail panel lists follow-up tools and health-check presets. Click a symptom to confirm or change the path.
 
-**Recent work orders** — lists saved cases from `CDE\Runtime\WorkOrders\`. Click a case for run history in the detail window. Use **Clear Recent** to remove all case JSON files (closed-case PDFs in `WorkOrders\` are kept).
+**Recent work orders** — lists saved cases from `CDE\Runtime\WorkOrders\`. Click a case for run history in the detail window (Opened/Closed times use local friendly dates such as `Jul 20, 2026 9:48 AM`). Use **Clear Recent** to remove all case JSON files (closed-case PDFs in `WorkOrders\` are kept).
 
 **Symptom cards** — five paths: Slow PC, Suspected Malware, Tech Support Scam, Network Issues, Won't Boot. Selecting one saves `GuidanceContext` on the work order and can jump you to the matching health preset or repair tool.
 

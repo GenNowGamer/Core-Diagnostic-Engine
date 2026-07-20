@@ -538,6 +538,9 @@ function Get-HijackStructuredSecurityFindings {
             }
         }
         if ($mp.IsTamperProtected -eq $false) {
+            if ($thirdPartyAv -and $mp.AntivirusEnabled -eq $false) {
+                # Third-party AV owns protection; Defender tamper protection off is expected.
+            } else {
             $findings.Add((New-HijackFinding `
                 -Category 'Security' `
                 -Name 'Defender tamper protection off' `
@@ -547,6 +550,7 @@ function Get-HijackStructuredSecurityFindings {
                 -RepairAction 'security.defender.enable' `
                 -RepairData @{} `
                 -Guidance 'CDE can attempt to re-enable tamper protection. If it remains off after repair, turn it on manually in Windows Security > Virus & threat protection > Manage settings.')) | Out-Null
+            }
         }
         if ($mp.AMServiceEnabled -eq $false -and -not $thirdPartyAv) {
             $findings.Add((New-HijackFinding `
@@ -559,13 +563,22 @@ function Get-HijackStructuredSecurityFindings {
                 -RepairData @{})) | Out-Null
         }
     } catch {
-        $findings.Add((New-HijackFinding `
-            -Category 'Security' `
-            -Name 'Defender status unavailable' `
-            -CurrentValue $_.Exception.Message `
-            -Severity 'Suspicious' `
-            -Repairable $false `
-            -RepairAction '')) | Out-Null
+        $msg = [string]$_.Exception.Message
+        $hr = 0
+        try { $hr = [int]$_.Exception.HResult } catch { }
+        $defenderUnavailable = $false
+        if (Get-Command Test-HijackDefenderUnavailableError -ErrorAction SilentlyContinue) {
+            $defenderUnavailable = [bool](Test-HijackDefenderUnavailableError -HResult $hr -Message $msg)
+        }
+        if (-not ($thirdPartyAv -or $defenderUnavailable)) {
+            $findings.Add((New-HijackFinding `
+                -Category 'Security' `
+                -Name 'Defender status unavailable' `
+                -CurrentValue $msg `
+                -Severity 'Suspicious' `
+                -Repairable $false `
+                -RepairAction '')) | Out-Null
+        }
     }
 
     try {

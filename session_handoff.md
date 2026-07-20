@@ -1,7 +1,15 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-17
+**Last updated:** 2026-07-20
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-20 update — Health Check UX, filter allowlist share, Defender coexistence, work-order times
+
+- **Health Check Results** — Review-pane text (findings, evidence, overview, property values) uses selectable read-only Text so operators can drag-select/copy.
+- **Driver Signature Audit** — Filter allowlist is loaded from CST `rules.json` `driverFilterPolicies.allowlistedFilterNames` via `Scripts\Core\DriverFilterAllowlist.ps1` (no second hardcoded 11-name list). Volume class filters included. Harvest/merge tools: `Scripts\Tools\Harvest-DriverFilterAllowlist.ps1`, `Merge-DriverFilterAllowlist.ps1`; lab runner `D:\Hyper-V\w11-infect-lab\Harvest-DriverFilters.ps1`. Clean lab harvest added `applockerfltr`.
+- **Security Tampering Audit** — Active Security Center third-party AV (e.g. Malwarebytes) suppresses expected Defender-passive Warns; Pass finding/evidence names the product. Firewall/UAC/SmartScreen and Defender-off-without-replacement still Warn.
+- **Work orders** — Opened/Closed/Completed display times use `MMM d, yyyy h:mm tt` local format; JSON storage remains ISO. Open cases show `Closed: (still open)`.
+- **Publish** — Canonical `App\Publish-ToolkitGUI.ps1`; GUI payload **2026-07-20 10:17:29 AM**. Lab push `HV_CDE_PUSH_OK`. Full notes: `Toolkit\session_handoff.md`.
 
 ## 2026-07-17 update — CST capability closure + results noise/UI
 

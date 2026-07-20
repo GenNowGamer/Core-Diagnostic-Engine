@@ -6,6 +6,8 @@ Current preboot policy: **rEFInd** on the USB toolkit provides the primary UEFI 
 
 **Code review (2026-07-15):** Pass 1–2 toolkit fixes shipped; Pass 3 (publish/launcher/packaging) reviewed and **deferred** — canonical publish unchanged. See `Toolkit\session_handoff.md`.
 
+**2026-07-20:** Health Check Results text is drag-selectable/copyable. Driver Signature Audit shares CST filter allowlists (harvest/merge tools + `applockerfltr`). Security Tampering Audit treats Defender-passive state under an active third-party AV (e.g. Malwarebytes) as expected coexistence and names the product on Pass. Work-order Opened/Closed times display as local friendly dates. See `session_handoff.md` and `Toolkit\session_handoff.md`.
+
 **2026-07-17:** System Health Check now combines persisted structured findings with the original detailed technical output. Event clustering and GPU functional checks were added. Security coverage now includes Defender exclusions, ransomware recovery tamper, driver/minifilter inventory, and network/credential/injection/miner behavior signals. Process Analyzer renders network connections and module anomalies. CST suppressed rows moved under one collapsed expander; timeout-only signer checks and unsigned developer DLLs no longer pollute primary findings. See `session_handoff.md` and `Toolkit\session_handoff.md`.
 
 **2026-07-16:** Startup Manager service risk/filter/guarded delete, reliable Post-Op hosts restore, System Health Check findings order, scheduled-tasks audit tuning, Windows Update stack Pass for Manual `wuauserv`, Uninstall Manager cleanup, and Hyper-V lab verification/deployment. See `session_handoff.md` and `Toolkit\session_handoff.md`.

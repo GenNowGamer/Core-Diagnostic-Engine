@@ -88,6 +88,23 @@ Assert-True -Name 'Benign Defender Program Files exclusion' -Condition (
     -not (Test-HijackRiskyDefenderExclusion -ExclusionType 'Path' -Value 'C:\Program Files\Contoso')
 )
 
+# Security Center productState: 0x061000 → middle byte 10 = enabled; 0x060000 = disabled
+Assert-True -Name 'Security Center enabled state decode' -Condition (
+    (Test-HijackSecurityCenterAvEnabled -ProductState 0x061000)
+)
+Assert-True -Name 'Security Center disabled state decode' -Condition (
+    -not (Test-HijackSecurityCenterAvEnabled -ProductState 0x060000)
+)
+Assert-True -Name 'Defender unavailable HRESULT 0x800106BA' -Condition (
+    (Test-HijackDefenderUnavailableError -HResult -2147416390 -Message 'Operation failed')
+)
+Assert-True -Name 'Defender unavailable message 0x800106ba' -Condition (
+    (Test-HijackDefenderUnavailableError -HResult -1 -Message 'Exception from HRESULT: 0x800106BA')
+)
+Assert-True -Name 'Unrelated Defender error not treated as unavailable' -Condition (
+    -not (Test-HijackDefenderUnavailableError -HResult -1 -Message 'Access is denied')
+)
+
 $f1 = New-HijackFinding -Category 'Browser' -Name 'Test' -Location 'HKCU:\Test' -CurrentValue 'x' -RepairAction 'browser.policy.remove' -RepairData @{ policyPath = 'HKCU:\Test'; propertyName = 'Homepage' }
 $f2 = New-HijackFinding -Category 'Browser' -Name 'Test' -Location 'HKCU:\Test' -CurrentValue 'x' -RepairAction 'browser.policy.remove' -RepairData @{ policyPath = 'HKCU:\Test'; propertyName = 'Homepage' }
 Assert-True -Name 'Finding id is stable' -Condition ($f1.id -eq $f2.id)

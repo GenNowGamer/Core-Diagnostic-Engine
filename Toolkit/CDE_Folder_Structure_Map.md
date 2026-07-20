@@ -3,6 +3,8 @@
 > Historical snapshot note (2026-05-22): this map captures a prior restructuring phase plan.
 > For current operational behavior, follow `README.md` and `session_handoff.md` at the Toolkit root.
 > Current canonical source/build flow is `App/ToolkitGUI/` -> `App/Publish-ToolkitGUI.ps1` -> published GUI payload under `CDE/ToolkitGUI/bin/Release/net8.0-windows/` (not source).
+> **Operational addendum (2026-07-20):** System Health Driver Signature Audit loads CST `rules.json` filter allowlists via `Scripts/Core/DriverFilterAllowlist.ps1`. Filter harvest/merge tools live under `Scripts/Tools/`. Security Tampering Audit suppresses expected Defender-passive Warns when an enabled third-party AV is present. Work-order UI/PDF timestamps use `WorkOrderTimestampFormatter` (friendly local display; JSON remains ISO).
+
 > **Operational addendum (2026-07-17):** System Health uses `Scripts/Core/HealthFindings.ps1` plus `Config/EventFindingClusters.json` / `Scripts/Core/EventFindingClusters.ps1` for persisted structured findings and event correlation. Deep System `gpu_functional_tests` invokes the self-contained `App/CdeGpuDiagCli/` helper published beside ToolkitGUI. GUI/PDF retain detailed legacy output alongside scored findings.
 > **Operational addendum (2026-07-03):** WinPE boot menu options 1–2 hand off to main `MainWindow` in-process (opaque shell; `WinPeStartupLog.cs` → `CDE\Runtime\winpe_startup.log`). GUI-only USB sync after `Publish-ToolkitGUI.ps1`; no `boot.wim` rebuild unless `startnet.cmd` changed.
 > **Operational addendum (2026-07-01):** Operator PDFs only in `Logs\`; internal JSON/session logs under `CDE\Runtime\Data\` (`workflows`, `scans`, `cst`, `sessions`); work order case JSON under `CDE\Runtime\WorkOrders\` (cleared via **Dashboard → Clear Recent**, not Settings). GUI **Open Report** (no Save report / Open HTML). Dashboard **suggested path** from `SymptomFlows.json` keywords on work order generate; **Verify case** removed. Case timeline light-theme cards.
@@ -263,14 +265,18 @@ Scripts/
 │   ├── HealthCheckOrchestrator.ps1  # System Health Check catalog, phase lines, child workflow merge
 │   ├── HealthChecks.ps1     # Quick vitals / deep system dispatchers (incl. Windows Update + GPU functional tests)
 │   ├── HealthFindings.ps1   # Canonical structured finding schema, markers, status rollup
+│   ├── DriverFilterAllowlist.ps1  # Shared CST filter allowlist loader for Driver Signature Audit
 │   ├── EventFindingClusters.ps1 # Event-log correlation and confidence scoring
 │   ├── SystemAuditChecks.ps1  # Shared audit functions (System Health Check audit_* checks)
 │   ├── SecurityAuditChecks.ps1  # Shared security audit functions (System Health Check sec_* checks)
 │   ├── ProcessAnalyzer.Core.ps1  # Process detail, network/module anomaly collection, credential/injection/miner risk flags, CST invoke
 │   ├── HijackRepairChecks.ps1  # Hijack scan category checks (browser, network, security, startup, remote)
 │   ├── HijackRepairFindings.ps1  # Hijack scan orchestration + tagged [HIJACK:FINDING] output
-│   ├── HijackRepairHelpers.ps1  # Hijack repair actions (browser policy, hosts, Defender RTP, Winlogon, etc.)
+│   ├── HijackRepairHelpers.ps1  # Hijack repair actions (browser policy, hosts, Defender RTP, Winlogon, third-party AV coexistence)
 │   └── WinPE_OfflineStartup.ps1  # WinPE boot initialization
+├── Tools/
+│   ├── Harvest-DriverFilterAllowlist.ps1  # Clean-machine fltmc/class-filter harvest JSON
+│   └── Merge-DriverFilterAllowlist.ps1    # Merge harvest into CST rules.json allowlist
 └── Workflows/
     ├── BackupAndImage.ps1
     ├── HardwareDiagnostics.ps1   # Diag & Repair: CPU/Memory/Storage + optional CST (Quick|Extended; -ToolName CstScan)

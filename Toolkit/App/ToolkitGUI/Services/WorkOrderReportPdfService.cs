@@ -250,15 +250,8 @@ namespace ToolkitGUI.Services
             return normalized;
         }
 
-        private static string FormatTimestamp(string? raw)
-        {
-            if (string.IsNullOrWhiteSpace(raw))
-                return string.Empty;
-
-            return DateTime.TryParse(raw, out var parsed)
-                ? parsed.ToString("yyyy-MM-dd HH:mm")
-                : raw;
-        }
+        private static string FormatTimestamp(string? raw) =>
+            WorkOrderTimestampFormatter.Format(raw);
 
         private static string HealthColor(string health)
         {

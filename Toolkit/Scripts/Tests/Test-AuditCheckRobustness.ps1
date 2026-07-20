@@ -4,6 +4,8 @@ $ErrorActionPreference = 'Stop'
 $testsRoot = Split-Path $MyInvocation.MyCommand.Path
 $coreDir = Join-Path $testsRoot '..\Core'
 Import-Module (Join-Path $coreDir 'Toolkit.Core.psm1') -Force -DisableNameChecking
+. (Join-Path $coreDir 'HealthFindings.ps1')
+. (Join-Path $coreDir 'DriverFilterAllowlist.ps1')
 . (Join-Path $coreDir 'HealthChecks.ps1')
 . (Join-Path $coreDir 'SystemAuditChecks.ps1')
 
@@ -48,6 +50,18 @@ if ($actionable.Count -ne 1 -or $actionable[0].DeviceName -ne 'Sketchy NIC') {
     exit 1
 }
 
-Write-Host '  PASS: event log, driver list, and unsigned-driver filtering'
+$allow = @(Get-CdeDriverFilterAllowlistNames)
+foreach ($must in @('WdFilter', 'partmgr', 'volsnap', 'iorate', 'rdyboost')) {
+    if (-not (Test-CdeDriverFilterAllowlisted -FilterName $must -Allowlist $allow)) {
+        Write-Error "Driver filter allowlist missing stock name: $must"
+        exit 1
+    }
+}
+if (Test-CdeDriverFilterAllowlisted -FilterName 'TotallyFakeRootkitFlt' -Allowlist $allow) {
+    Write-Error 'Driver filter allowlist unexpectedly contains fake name.'
+    exit 1
+}
+
+Write-Host '  PASS: event log, driver list, unsigned-driver filtering, filter allowlist'
 Write-Host 'Test-AuditCheckRobustness: PASS'
 exit 0

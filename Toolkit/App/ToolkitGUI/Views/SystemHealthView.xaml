@@ -283,20 +283,26 @@
 
                                 <StackPanel DataContext="{Binding SelectedFinding}">
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                        <TextBlock Text="{Binding CheckLabel}" FontSize="18" FontWeight="Bold"/>
+                                        <TextBox Text="{Binding CheckLabel, Mode=OneWay}"
+                                                 Style="{StaticResource SelectableTextStyle}"
+                                                 FontSize="18" FontWeight="Bold"/>
                                         <Border Margin="10,0,0,0" Padding="8,3" CornerRadius="4"
                                                 VerticalAlignment="Center" Background="{Binding StatusBrush}">
                                             <TextBlock Text="{Binding Status}" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
                                         </Border>
                                     </StackPanel>
-                                    <TextBlock Text="{Binding CategoryLabel}" FontSize="11"
-                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                                    <TextBox Text="{Binding CategoryLabel, Mode=OneWay}"
+                                             Style="{StaticResource SelectableTextStyle}"
+                                             FontSize="11"
+                                             Foreground="{StaticResource TextSecondaryBrush}"
+                                             Margin="0,0,0,12"/>
                                 </StackPanel>
 
                                 <TextBlock Text="OVERVIEW" FontSize="10" FontWeight="Bold"
                                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                                <TextBlock Text="{Binding SelectedFindingHeadline}" FontSize="13" TextWrapping="Wrap"
-                                           Margin="0,0,0,16"/>
+                                <TextBox Text="{Binding SelectedFindingHeadline, Mode=OneWay}"
+                                         Style="{StaticResource SelectableTextStyle}"
+                                         FontSize="13" Margin="0,0,0,16"/>
 
                                 <Border Margin="0,0,0,16"
                                         Padding="12"
@@ -306,11 +312,9 @@
                                         CornerRadius="6"
                                         Visibility="{Binding HasSelectedFindingPlainText, Converter={StaticResource BoolToVis}}">
                                     <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
-                                        <TextBlock Text="{Binding SelectedFindingPlainText}"
-                                                   FontFamily="Consolas, Courier New"
-                                                   FontSize="12"
-                                                   TextWrapping="Wrap"
-                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                        <TextBox Text="{Binding SelectedFindingPlainText, Mode=OneWay}"
+                                                 Style="{StaticResource SelectableMonoTextStyle}"
+                                                 FontSize="12"/>
                                     </ScrollViewer>
                                 </Border>
 
@@ -394,11 +398,10 @@
                                                                                        FontSize="12"
                                                                                        FontWeight="SemiBold"
                                                                                        Foreground="{StaticResource TextSecondaryBrush}"/>
-                                                                            <TextBlock Grid.Column="1"
-                                                                                       Text="{Binding Value}"
-                                                                                       FontSize="12"
-                                                                                       TextWrapping="Wrap"
-                                                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                            <TextBox Grid.Column="1"
+                                                                                     Text="{Binding Value, Mode=OneWay}"
+                                                                                     Style="{StaticResource SelectableTextStyle}"
+                                                                                     FontSize="12"/>
                                                                         </Grid>
                                                                     </DataTemplate>
                                                                 </ItemsControl.ItemTemplate>
@@ -427,11 +430,10 @@
                                                                                    FontSize="12"
                                                                                    FontWeight="SemiBold"
                                                                                    Foreground="{StaticResource TextSecondaryBrush}"/>
-                                                                        <TextBlock Grid.Column="1"
-                                                                                   Text="{Binding Value}"
-                                                                                   FontSize="12"
-                                                                                   TextWrapping="Wrap"
-                                                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                        <TextBox Grid.Column="1"
+                                                                                 Text="{Binding Value, Mode=OneWay}"
+                                                                                 Style="{StaticResource SelectableTextStyle}"
+                                                                                 FontSize="12"/>
                                                                     </Grid>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
@@ -467,10 +469,12 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
-                                <TextBlock Text="{Binding SelectedFindingGuidance}" FontSize="13" TextWrapping="Wrap"
-                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,8,0,0">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
+                                <TextBox Text="{Binding SelectedFindingGuidance, Mode=OneWay}"
+                                         FontSize="13"
+                                         Foreground="{StaticResource TextSecondaryBrush}"
+                                         Margin="0,8,0,0">
+                                    <TextBox.Style>
+                                        <Style TargetType="TextBox" BasedOn="{StaticResource SelectableTextStyle}">
                                             <Setter Property="Visibility" Value="Visible"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding SelectedFindingGuidance}" Value="">
@@ -478,8 +482,8 @@
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
+                                    </TextBox.Style>
+                                </TextBox>
                             </StackPanel>
                         </ScrollViewer>
                     </Grid>

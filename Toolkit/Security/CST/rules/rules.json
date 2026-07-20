@@ -1,4 +1,4 @@
-{
+﻿{
     "rulesVersion":  "1.4.3",
     "updatedUtc":  "2026-07-10T16:39:17Z",
     "hashes":  [
@@ -43139,30 +43139,31 @@
                                                                "Microsoft Windows Hardware Compatibility Publisher"
                                                            ],
                                  "allowlistedFilterNames":  [
-                                                                "WdFilter",
-                                                                "luafv",
-                                                                "npsvctrig",
-                                                                "FileInfo",
-                                                                "Wof",
-                                                                "storqosflt",
-                                                                "wcifs",
-                                                                "FileCrypt",
+                                                                "applockerfltr",
+                                                                "bfs",
                                                                 "bindflt",
                                                                 "CldFlt",
-                                                                "PrjFlt",
-                                                                "bfs",
-                                                                "gameflt",
-                                                                "UCPD",
-                                                                "UnionFS",
                                                                 "EhStorClass",
+                                                                "FileCrypt",
+                                                                "FileInfo",
                                                                 "fvevol",
-                                                                "partmgr",
-                                                                "volsnap",
+                                                                "gameflt",
                                                                 "iorate",
-                                                                "rdyboost",
+                                                                "luafv",
                                                                 "mbamchameleon",
                                                                 "MBAMFarflt",
-                                                                "MBAMProtection"
+                                                                "MBAMProtection",
+                                                                "npsvctrig",
+                                                                "partmgr",
+                                                                "PrjFlt",
+                                                                "rdyboost",
+                                                                "storqosflt",
+                                                                "UCPD",
+                                                                "UnionFS",
+                                                                "volsnap",
+                                                                "wcifs",
+                                                                "WdFilter",
+                                                                "Wof"
                                                             ]
                              },
     "patterns":  {

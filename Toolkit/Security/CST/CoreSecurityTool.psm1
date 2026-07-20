@@ -386,7 +386,7 @@ function Get-CstRuleSet {
                 'WdFilter', 'luafv', 'npsvctrig', 'FileInfo', 'Wof', 'storqosflt', 'wcifs',
                 'FileCrypt', 'bindflt', 'CldFlt', 'PrjFlt', 'bfs', 'gameflt', 'UCPD',
                 'UnionFS', 'EhStorClass', 'fvevol', 'partmgr', 'volsnap', 'iorate', 'rdyboost',
-                'mbamchameleon', 'MBAMFarflt', 'MBAMProtection'
+                'applockerfltr', 'mbamchameleon', 'MBAMFarflt', 'MBAMProtection'
             )
         }) -Force
     }
@@ -399,7 +399,7 @@ function Get-CstRuleSet {
             'WdFilter', 'luafv', 'npsvctrig', 'FileInfo', 'Wof', 'storqosflt', 'wcifs',
             'FileCrypt', 'bindflt', 'CldFlt', 'PrjFlt', 'bfs', 'gameflt', 'UCPD',
             'UnionFS', 'EhStorClass', 'fvevol', 'partmgr', 'volsnap', 'iorate', 'rdyboost',
-            'mbamchameleon', 'MBAMFarflt', 'MBAMProtection'
+            'applockerfltr', 'mbamchameleon', 'MBAMFarflt', 'MBAMProtection'
         ) -Force
     }
 

@@ -4,7 +4,7 @@ This chapter covers the main **find problems** tools in the MAIN sidebar section
 
 ## System Health Check
 
-**What this does:** Runs a catalog of automated checks (vitals, deep system info, audits, security reviews) and presents scored findings together with detailed technical inventories and a PDF report.
+**What this does:** Runs a catalog of automated checks (vitals, deep system info, audits, security reviews) and presents scored findings together with detailed technical inventories and a PDF report. On the results screen, you can drag-select and copy text from the REVIEW pane (evidence, impact, recommendations, and detailed output).
 
 ### When to use it
 

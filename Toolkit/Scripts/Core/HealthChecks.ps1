@@ -384,7 +384,8 @@ function Invoke-HealthCheck_driver_signature_audit {
                 }
             }
 
-            $allowFilters = @('WdFilter', 'luafv', 'npsvctrig', 'FileInfo', 'Wof', 'storqosflt', 'wcifs', 'FileCrypt', 'bindflt', 'CldFlt', 'PrjFlt')
+            # Shared allowlist with CST rules.json (stock Windows + known security products).
+            $allowFilters = @(Get-CdeDriverFilterAllowlistNames)
             $unexpectedFilters = [System.Collections.Generic.List[string]]::new()
             try {
                 $fltOut = & fltmc.exe filters 2>&1 | Out-String
@@ -392,9 +393,9 @@ function Invoke-HealthCheck_driver_signature_audit {
                     if ($line -match '^\s*Filter\s+Name' -or $line -match '^-{3,}' -or [string]::IsNullOrWhiteSpace($line)) { continue }
                     if ($line -match '^\s*(\S+)\s+\d+') {
                         $fname = $Matches[1]
-                        $allowed = $false
-                        foreach ($a in $allowFilters) { if ($fname -ieq $a) { $allowed = $true; break } }
-                        if (-not $allowed) { $unexpectedFilters.Add($fname) | Out-Null }
+                        if (-not (Test-CdeDriverFilterAllowlisted -FilterName $fname -Allowlist $allowFilters)) {
+                            $unexpectedFilters.Add($fname) | Out-Null
+                        }
                     }
                 }
             } catch { }
@@ -410,8 +411,9 @@ function Invoke-HealthCheck_driver_signature_audit {
             }
 
             $filterKeys = @(
-                'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e967-e325-11ce-bfc1-08002be10318}',
-                'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e96a-e325-11ce-bfc1-08002be10318}'
+                'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e967-e325-11ce-bfc1-08002be10318}', # DiskDrive
+                'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e96a-e325-11ce-bfc1-08002be10318}', # CDROM
+                'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{71a27cdd-812a-11d0-bec7-08002be2092f}'  # Volume
             )
             foreach ($key in $filterKeys) {
                 if (-not (Test-Path -LiteralPath $key)) { continue }
@@ -421,9 +423,7 @@ function Invoke-HealthCheck_driver_signature_audit {
                         if (-not $item.PSObject.Properties[$propName]) { continue }
                         foreach ($val in @($item.$propName)) {
                             if ([string]::IsNullOrWhiteSpace([string]$val)) { continue }
-                            $allowed = $false
-                            foreach ($a in $allowFilters) { if ([string]$val -ieq $a) { $allowed = $true; break } }
-                            if (-not $allowed) {
+                            if (-not (Test-CdeDriverFilterAllowlisted -FilterName ([string]$val) -Allowlist $allowFilters)) {
                                 $findings += New-HealthFinding -FindingId 'driver.filter.registry' -CheckId 'driver_signature_audit' `
                                     -Subject ([string]$val) -Finding ("Unexpected $propName entry") `
                                     -Impact 'Unexpected class filter registrations should be reviewed.' `
