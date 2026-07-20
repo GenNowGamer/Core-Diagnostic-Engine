@@ -396,6 +396,16 @@ namespace ToolkitGUI.Services
                         });
                     }
 
+                    if (!string.IsNullOrWhiteSpace(item.EvidenceClassification))
+                    {
+                        column.Item().Text(text =>
+                        {
+                            text.Span("Classification: ").SemiBold().FontSize(8.5f).FontColor("#5A6B80");
+                            text.Span(HealthFindingClassification.GetDisplayLabel(item.EvidenceClassification))
+                                .FontSize(8.5f).FontColor("#1B2B40");
+                        });
+                    }
+
                     if (item.Confidence is int confidence)
                     {
                         column.Item().Text(text =>

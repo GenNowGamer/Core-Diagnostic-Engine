@@ -2,6 +2,36 @@
 
 **Last updated:** 2026-07-20
 
+## 2026-07-20 — Fault-vs-noise hardening (P0–P2)
+
+Audit-driven System Health / Diag & Repair intelligence: classify evidence, demote noise, corroborate signals, expand vitals coverage.
+
+### P0 — Evidence quality and demotion
+
+- **Classification** — Findings use `ConfirmedFault` | `CorroboratedSuspect` | `SingleSignal` | `Inventory` | `ExpectedLimitation` | `Incomplete`. Attention / actionable lists exclude Inventory, ExpectedLimitation, Incomplete (and SingleSignal that is not Warn/Fail). GUI: `HealthFindingClassification.cs`; PS: `HealthFindings.ps1`.
+- **Event clusters (v2)** — Higher `minEventCount` gates; WHEA split (`whea_corrected_error` vs `whea_uncorrected_error`); unclassified residuals capped (`maxUnclassifiedFindings` + aggregate). `Config\EventFindingClusters.json`, `EventFindingClusters.ps1`.
+- **Multi-sample vitals** — CPU/RAM Warn only on sustained high load (3 samples); miner `high_cpu+writable_path` must sustain across two CPU maps. `HealthChecks.ps1`, `SecurityAuditChecks.ps1`.
+- **SMART tiers** — Media attrs (5/10/184/187/196–198) vs interconnect (188/199); NVMe mediaErrors/temp/%used tiers. `CdeSmartReader.cs`, `HardwareSmartEngine.ps1`.
+- **Corroboration** — Post-run promote/demote across crash/disk/WHEA/shutdown/vitals. `HealthFindingCorroboration.ps1` (wired in `SystemHealthCheck.ps1`).
+- **Publisher-aware autorun/tasks** — Trusted Authenticode vendors demote writable-path autoruns to Inventory; unsigned stays Medium/SingleSignal; Winlogon deviate stays High. Task findings severity by reason. `SecurityAuditChecks.ps1`.
+
+### P1 — Rollup, confidence, HW Incomplete
+
+- **OverallHealth** — Soft/hard: `Critical` → `Warning` → `HealthyWithNotes` → `Healthy` (classification-aware when `StructuredFindings` present). `Toolkit.Core.psm1`; GUI brushes updated.
+- **Confidence calibration** — Floors/caps after corroboration (ConfirmedFault ≥90; Inventory Info ≤40; etc.). Documented in `Docs\OUTPUT_CONTRACT.md`.
+- **Diag & Repair Incomplete + confirm-on-Fail** — First-class `Incomplete` step/event status (memory coverage, soft CPU stress); hard Fail retried once (Pass on retry → Warn). `HardwareCommon.ps1`, memory/CPU tests, Diag GUI status labels.
+
+### P2 — Coverage and baselines
+
+- **New Health checks** — `battery_health` (ROOT\WMI design vs full charge), `thermal_events` (7d Kernel-Power/ACPI), `reliability_monitor` (Stability Index + RAC records). Catalog presets updated.
+- **Per-machine baselines** — `CDE\Runtime\Data\baselines\{machineId}.json`; Health/SMART delta findings on next run. `MachineBaseline.ps1`.
+- **Lab suppressor packs** — `Config\EventSuppressorPacks\` (`hyperv_guest`, `dock_usb`, `winpe`); auto-detect or `CDE_EVENT_SUPPRESSOR_PACKS`. Merged in `Get-EventFindingClustersCatalog`.
+
+### Tests / publish
+
+- Regression suite adds: corroboration, confidence calibration, sustained samples, SMART tiers, publisher scoring, HW Incomplete/confirm, battery/thermal/reliability, machine baseline, suppressor packs.
+- Canonical `App\Publish-ToolkitGUI.ps1` — launch `Toolkit\CDE.exe` (**2026-07-20 10:59 AM**); GUI payload **2026-07-20 11:31 AM**; `HALP\CDE_User_Guide.pdf` regenerated after user-guide MD polish (post-P2 docs pass).
+
 ## 2026-07-20 — Health Check copy/select, shared filter allowlist, third-party AV coexistence, friendly work-order times
 
 ### System Health Results UX

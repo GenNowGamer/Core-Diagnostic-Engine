@@ -118,6 +118,12 @@ namespace ToolkitGUI.Models
         var severityLabel = string.IsNullOrWhiteSpace(item.SeverityLabel)
           ? item.StatusLabel
           : item.SeverityLabel;
+        var evidenceClass = HealthFindingClassification.Resolve(
+          item.EvidenceClassification,
+          item.StatusLabel,
+          item.SeverityLabel,
+          item.Confidence ?? 0);
+        var classificationLabel = HealthFindingClassification.GetDisplayLabel(evidenceClass);
         return new StructuredResultItemViewModel
         {
           Name = item.Title,
@@ -133,9 +139,9 @@ namespace ToolkitGUI.Models
             : string.Empty,
           DetailNotes = item.Notes ?? string.Empty,
           Severity = severityLabel,
-          Classification = item.Impact ?? item.Notes ?? string.Empty,
+          Classification = classificationLabel,
           SeverityBrush = GetFormattedStatusBrush(item.Status),
-          ClassificationBrush = new SolidColorBrush(Color.FromRgb(0x37, 0x47, 0x5F))
+          ClassificationBrush = GetEvidenceClassificationBrush(evidenceClass)
         };
       }
 
@@ -626,6 +632,20 @@ namespace ToolkitGUI.Models
         "CAUTION" => new SolidColorBrush(Color.FromRgb(0xD2, 0x99, 0x22)),
         "SAFE" => new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)),
         _ => new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00))
+      };
+    }
+
+    private static Brush GetEvidenceClassificationBrush(string classification)
+    {
+      return classification switch
+      {
+        HealthFindingClassification.ConfirmedFault => new SolidColorBrush(Color.FromRgb(0xC4, 0x2B, 0x1C)),
+        HealthFindingClassification.CorroboratedSuspect => new SolidColorBrush(Color.FromRgb(0xD2, 0x99, 0x22)),
+        HealthFindingClassification.SingleSignal => new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00)),
+        HealthFindingClassification.ExpectedLimitation => new SolidColorBrush(Color.FromRgb(0x5A, 0x6B, 0x80)),
+        HealthFindingClassification.Incomplete => new SolidColorBrush(Color.FromRgb(0x60, 0x67, 0x6E)),
+        HealthFindingClassification.Inventory => new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD4)),
+        _ => new SolidColorBrush(Color.FromRgb(0x37, 0x47, 0x5F))
       };
     }
 

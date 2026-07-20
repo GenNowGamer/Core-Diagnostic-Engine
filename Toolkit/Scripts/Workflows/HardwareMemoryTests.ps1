@@ -54,6 +54,9 @@ function Invoke-MemoryTests {
         Invoke-SingleTest -Category 'Memory' -TestName $displayName -Result $r -Counter $counter -Total $total -Phase $phase -TestAction {
             $result = [HardwareTestEngine]::RunMemoryTest($impl, $sizeMB)
             if ($result.StartsWith('Passed')) {
+                if ($script:HwMemoryCoverageIncomplete) {
+                    return ('Incomplete: {0} — below Windows coverage threshold; run CHU for physical validation' -f $coverage)
+                }
                 return ('Passed: {0}' -f $coverage)
             }
             return $result

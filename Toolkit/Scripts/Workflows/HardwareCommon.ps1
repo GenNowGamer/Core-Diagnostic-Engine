@@ -199,6 +199,19 @@ function Write-HwProgress {
     Write-Host "[HW:PROGRESS] $($payload | ConvertTo-Json -Compress)"
 }
 
+function Test-HwTestResultIsHardFail {
+    param($TestResult)
+
+    if ($TestResult -is [bool]) { return -not [bool]$TestResult }
+    if ($TestResult -is [string]) {
+        $s = [string]$TestResult
+        if ($s.StartsWith('Failed')) { return $true }
+        if ($s -eq 'False' -or $s -eq 'false') { return $true }
+        return $false
+    }
+    return $false
+}
+
 function Invoke-SingleTest {
     param(
         [string]$Category,
@@ -225,11 +238,26 @@ function Invoke-SingleTest {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $testResult = & $TestAction
+
+        # Confirm-on-Fail: re-run once; intermittent Fail → Warn with note; persistent Fail stays Fail.
+        if (Test-HwTestResultIsHardFail -TestResult $testResult) {
+            Write-Log ("Confirm-on-Fail: re-running '{0}' once" -f $TestName) -Level Verbose
+            $retryResult = & $TestAction
+            if (-not (Test-HwTestResultIsHardFail -TestResult $retryResult)) {
+                $firstDetail = if ($testResult -is [string]) { [string]$testResult } else { 'Verification failed' }
+                $testResult = ('Warn: Failed once, confirmed Pass on retry ({0})' -f $firstDetail)
+            }
+            else {
+                $testResult = $retryResult
+            }
+        }
+
         $passed = $false
         $detail = ''
 
         $isWarn = $false
         $isSkip = $false
+        $isIncomplete = $false
         $failOnSkip = $script:HwProfileName -eq 'Extended' -and $script:HwProfileParams.failOnSkipInExtended
         if ($testResult -is [bool]) {
             $passed = $testResult
@@ -245,6 +273,10 @@ function Invoke-SingleTest {
                     $passed = $true
                     $isSkip = $true
                 }
+            } elseif ($testResult.StartsWith('Incomplete:')) {
+                $passed = $true
+                $isIncomplete = $true
+                $detail = $testResult.Substring(11).Trim()
             } elseif ($testResult.StartsWith('Warn:')) {
                 $passed = $true
                 $isWarn = $true
@@ -273,6 +305,8 @@ function Invoke-SingleTest {
 
         $status = if (-not $passed) {
             'Failed'
+        } elseif ($isIncomplete) {
+            'Incomplete'
         } elseif ($isSkip -or $detail -match '^Skipped:') {
             'Skipped'
         } elseif ($isWarn -or $detail -match 'SIMD intrinsics not verified') {
@@ -297,6 +331,7 @@ function Invoke-SingleTest {
             'Failed' { 'Fail' }
             'Warn' { 'Warn' }
             'Skipped' { 'Skip' }
+            'Incomplete' { 'Incomplete' }
             default { 'Pass' }
         }
         $Result.Steps.Add([PSCustomObject]@{

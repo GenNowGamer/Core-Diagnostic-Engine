@@ -1,357 +1,687 @@
-{
-  "version": 1,
-  "defaultWindowMinutes": 10,
-  "clusters": [
-    {
-      "clusterId": "unexpected_shutdown",
-      "title": "Unexpected Shutdown",
-      "severityFloor": "High",
-      "windowMinutes": 10,
-      "required": [
-        { "providerContains": "Kernel-Power", "eventId": 41, "weight": 45 },
-        { "providerContains": "EventLog", "eventId": 6008, "weight": 35 }
-      ],
-      "optional": [
-        { "providerContains": "Kernel-Power", "eventId": 109, "weight": 5 }
-      ],
-      "suppressors": [
-        { "providerContains": "User32", "eventId": 1074, "windowMinutes": 15 }
-      ],
-      "repeatBonus": 5,
-      "maxConfidence": 95,
-      "impact": "The system resumed after an improper shutdown. Data loss or hardware stress is possible if this repeats.",
-      "likelyCauses": [
-        "Forced restart or holding the power button",
-        "Power interruption or unstable PSU/battery",
-        "System freeze requiring a manual restart"
-      ],
-      "recommendations": [
-        "Ask whether the machine was force-restarted or lost power",
-        "Review thermal and hardware diagnostics if repeated",
-        "Check for BugCheck 1001 nearby to distinguish a crash"
-      ],
-      "actions": [
-        { "type": "cde", "target": "HardwareDiagnostics", "label": "Diag & Repair" },
-        { "type": "shell", "target": "eventvwr.msc", "label": "Event Viewer" }
-      ]
-    },
-    {
-      "clusterId": "system_crash",
-      "title": "System Crash / BSOD",
-      "severityFloor": "Critical",
-      "windowMinutes": 15,
-      "required": [
-        { "providerContains": "BugCheck", "eventId": 1001, "weight": 70 }
-      ],
-      "optional": [
-        { "providerContains": "Kernel-Power", "eventId": 41, "weight": 20 },
-        { "providerContains": "EventLog", "eventId": 6008, "weight": 10 }
-      ],
-      "suppressors": [],
-      "repeatBonus": 5,
-      "maxConfidence": 98,
-      "impact": "Windows recorded a bug check. Stability, driver, or hardware faults may cause recurring crashes.",
-      "likelyCauses": [
-        "Faulty or outdated device driver",
-        "Memory or storage hardware fault",
-        "Kernel-mode software conflict"
-      ],
-      "recommendations": [
-        "Capture the bugcheck code and parameters from Event Viewer",
-        "Run memory and storage diagnostics",
-        "Update or roll back recently changed drivers"
-      ],
-      "actions": [
-        { "type": "cde", "target": "HardwareDiagnostics", "label": "Diag & Repair" },
-        { "type": "shell", "target": "eventvwr.msc", "label": "Event Viewer" }
-      ]
-    },
-    {
-      "clusterId": "application_crash",
-      "title": "Application Crash",
-      "severityFloor": "Medium",
-      "windowMinutes": 5,
-      "required": [
-        { "providerContains": "Application Error", "eventId": 1000, "weight": 50 }
-      ],
-      "optional": [
-        { "providerContains": "Windows Error Reporting", "eventId": 1001, "weight": 30 },
-        { "providerContains": "Application Hang", "eventId": 1002, "weight": 15 }
-      ],
-      "suppressors": [],
-      "repeatBonus": 10,
-      "maxConfidence": 90,
-      "impact": "One or more applications terminated unexpectedly, which can interrupt work and indicate software or compatibility issues.",
-      "likelyCauses": [
-        "Application bug or corrupted install",
-        "Incompatible update or plugin",
-        "Insufficient resources or access denied"
-      ],
-      "recommendations": [
-        "Identify the faulting module from the event message",
-        "Repair or reinstall the affected application",
-        "Check recent Windows or app updates"
-      ],
-      "actions": [
-        { "type": "shell", "target": "eventvwr.msc", "label": "Event Viewer" }
-      ]
-    },
-    {
-      "clusterId": "user_profile_failure",
-      "title": "User Profile Service Failure",
-      "severityFloor": "High",
-      "windowMinutes": 30,
-      "requiredAny": [
-        { "providerContains": "User Profile Service", "eventId": 1500, "weight": 40 },
-        { "providerContains": "User Profile Service", "eventId": 1502, "weight": 40 },
-        { "providerContains": "User Profile Service", "eventId": 1508, "weight": 35 },
-        { "providerContains": "User Profile Service", "eventId": 1511, "weight": 45 },
-        { "providerContains": "User Profile Service", "eventId": 1515, "weight": 35 }
-      ],
-      "optional": [],
-      "suppressors": [],
-      "repeatBonus": 10,
-      "maxConfidence": 92,
-      "minRequiredAny": 1,
-      "impact": "The user may be unable to log on normally or may receive a temporary profile.",
-      "likelyCauses": [
-        "Corrupted user profile hive",
-        "Permission problems under C:\\Users",
-        "Incomplete profile migration or antivirus lock"
-      ],
-      "recommendations": [
-        "Confirm whether logon used a temporary profile",
-        "Back up the user profile then repair or recreate it",
-        "Check disk health before major profile repair"
-      ],
-      "actions": [
-        { "type": "cde", "target": "OSRepair", "label": "OS Repair" },
-        { "type": "shell", "target": "eventvwr.msc", "label": "Event Viewer" }
-      ]
-    },
-    {
-      "clusterId": "disk_instability",
-      "title": "Disk / Storage Instability",
-      "severityFloor": "High",
-      "windowMinutes": 60,
-      "requiredAny": [
-        { "providerContains": "Disk", "eventId": 7, "weight": 40 },
-        { "providerContains": "Disk", "eventId": 51, "weight": 35 },
-        { "providerContains": "Disk", "eventId": 153, "weight": 40 },
-        { "providerContains": "storahci", "eventId": 129, "weight": 30 },
-        { "providerContains": "stornvme", "eventId": 11, "weight": 35 },
-        { "providerContains": "StorPort", "eventId": 129, "weight": 30 }
-      ],
-      "optional": [],
-      "suppressors": [],
-      "repeatBonus": 10,
-      "maxConfidence": 93,
-      "minRequiredAny": 1,
-      "impact": "Storage timeouts or retries can cause freezes, boot failures, and data corruption.",
-      "likelyCauses": [
-        "Failing drive or unstable cable/connection",
-        "Controller or firmware issue",
-        "Power delivery problems under load"
-      ],
-      "recommendations": [
-        "Back up important data immediately",
-        "Run SMART and storage diagnostics",
-        "Inspect cabling and drive health before imaging"
-      ],
-      "actions": [
-        { "type": "cde", "target": "SmartAnalyzer", "label": "S.M.A.R.T. Analyzer" },
-        { "type": "cde", "target": "HardwareDiagnostics", "label": "Diag & Repair" }
-      ]
-    },
-    {
-      "clusterId": "ntfs_corruption",
-      "title": "File System Corruption",
-      "severityFloor": "Critical",
-      "windowMinutes": 60,
-      "requiredAny": [
-        { "providerContains": "Ntfs", "eventId": 55, "weight": 55 },
-        { "providerContains": "Ntfs", "eventId": 98, "weight": 40 },
-        { "providerContains": "Ntfs", "eventId": 140, "weight": 45 }
-      ],
-      "optional": [],
-      "suppressors": [],
-      "repeatBonus": 10,
-      "maxConfidence": 95,
-      "minRequiredAny": 1,
-      "impact": "NTFS reported corruption. File loss or boot failure is possible.",
-      "likelyCauses": [
-        "Unexpected power loss during writes",
-        "Failing storage media",
-        "Driver or filter interference"
-      ],
-      "recommendations": [
-        "Back up data before repair attempts",
-        "Run chkdsk from OS Repair / WinPE as appropriate",
-        "Correlate with disk instability findings"
-      ],
-      "actions": [
-        { "type": "cde", "target": "OSRepair", "label": "OS Repair" },
-        { "type": "cde", "target": "SmartAnalyzer", "label": "S.M.A.R.T. Analyzer" }
-      ]
-    },
-    {
-      "clusterId": "whea_hardware_fault",
-      "title": "WHEA Hardware Fault",
-      "severityFloor": "High",
-      "windowMinutes": 60,
-      "requiredAny": [
-        { "providerContains": "WHEA-Logger", "eventId": 17, "weight": 40 },
-        { "providerContains": "WHEA-Logger", "eventId": 18, "weight": 45 },
-        { "providerContains": "WHEA-Logger", "eventId": 19, "weight": 45 },
-        { "providerContains": "WHEA-Logger", "eventId": 20, "weight": 40 }
-      ],
-      "optional": [],
-      "suppressors": [],
-      "repeatBonus": 10,
-      "maxConfidence": 94,
-      "minRequiredAny": 1,
-      "impact": "Windows Hardware Error Architecture recorded a machine-check or corrected/uncorrected error.",
-      "likelyCauses": [
-        "CPU, RAM, or chipset fault",
-        "Overheating or unstable overclock/undervolt",
-        "Power delivery instability"
-      ],
-      "recommendations": [
-        "Run CPU and memory diagnostics",
-        "Check temperatures and power settings",
-        "Disable overclocking/undervolting if enabled"
-      ],
-      "actions": [
-        { "type": "cde", "target": "HardwareDiagnostics", "label": "Diag & Repair" }
-      ]
-    },
-    {
-      "clusterId": "service_startup_failure",
-      "title": "Service Startup Failure",
-      "severityFloor": "Medium",
-      "windowMinutes": 30,
-      "requiredAny": [
-        { "providerContains": "Service Control Manager", "eventId": 7000, "weight": 35 },
-        { "providerContains": "Service Control Manager", "eventId": 7009, "weight": 35 },
-        { "providerContains": "Service Control Manager", "eventId": 7031, "weight": 40 },
-        { "providerContains": "Service Control Manager", "eventId": 7034, "weight": 40 }
-      ],
-      "optional": [
-        { "providerContains": "Service Control Manager", "eventId": 7001, "weight": 15 }
-      ],
-      "suppressors": [],
-      "repeatBonus": 10,
-      "maxConfidence": 88,
-      "minRequiredAny": 1,
-      "impact": "Critical or automatic services failed to start or crashed, which can break updates, networking, or security features.",
-      "likelyCauses": [
-        "Missing dependency or delayed driver",
-        "Corrupt service binary",
-        "Policy or malware tampering"
-      ],
-      "recommendations": [
-        "Identify the service name from the event message",
-        "Review Services and Startup Manager",
-        "Repair Windows Update stack if wuauserv/BITS related"
-      ],
-      "actions": [
-        { "type": "cde", "target": "FastFixes", "label": "Fast Fixes" },
-        { "type": "shell", "target": "services.msc", "label": "Services" }
-      ]
-    },
-    {
-      "clusterId": "tpm_security",
-      "title": "TPM / Security Provider Issue",
-      "severityFloor": "Medium",
-      "windowMinutes": 60,
-      "requiredAny": [
-        { "providerContains": "TPM-WMI", "eventId": 1040, "weight": 30 },
-        { "providerContains": "TPM", "eventId": 19, "weight": 30 },
-        { "providerContains": "Microsoft-Windows-TPM-WMI", "eventId": 1796, "weight": 35 }
-      ],
-      "optional": [],
-      "suppressors": [],
-      "repeatBonus": 5,
-      "maxConfidence": 80,
-      "minRequiredAny": 1,
-      "impact": "TPM or related security services reported errors that may affect BitLocker, Windows Hello, or measured boot.",
-      "likelyCauses": [
-        "Firmware TPM glitch after BIOS update",
-        "Policy mismatch",
-        "Transient TPM ownership or attestation issue"
-      ],
-      "recommendations": [
-        "Confirm BitLocker and Secure Boot status before clearing TPM",
-        "Check for BIOS/UEFI updates from the OEM",
-        "Do not clear TPM without recovering BitLocker keys"
-      ],
-      "actions": [
-        { "type": "shell", "target": "tpm.msc", "label": "TPM Management" }
-      ]
-    },
-    {
-      "clusterId": "windows_update_failure",
-      "title": "Windows Update Failure",
-      "severityFloor": "Medium",
-      "windowMinutes": 120,
-      "requiredAny": [
-        { "providerContains": "WindowsUpdateClient", "eventId": 20, "weight": 35 },
-        { "providerContains": "WindowsUpdateClient", "eventId": 25, "weight": 30 },
-        { "providerContains": "WindowsUpdateClient", "eventId": 31, "weight": 35 },
-        { "providerContains": "WindowsUpdateClient", "eventId": 34, "weight": 30 }
-      ],
-      "optional": [],
-      "suppressors": [],
-      "repeatBonus": 10,
-      "maxConfidence": 88,
-      "minRequiredAny": 1,
-      "impact": "Windows Update failed to download or install updates, leaving the system unpatched.",
-      "likelyCauses": [
-        "Broken Windows Update service stack",
-        "Corrupt SoftwareDistribution store",
-        "Network or proxy interference"
-      ],
-      "recommendations": [
-        "Verify wuauserv, BITS, and UsoSvc status",
-        "Run Windows Update Repair / Fast Fixes",
-        "Check network hijack findings if updates never reach Microsoft"
-      ],
-      "actions": [
-        { "type": "cde", "target": "WindowsUpdateRepair", "label": "Windows Update Repair" },
-        { "type": "cde", "target": "FastFixes", "label": "Fast Fixes" }
-      ]
-    },
-    {
-      "clusterId": "display_driver_reset",
-      "title": "Display / Driver Reset",
-      "severityFloor": "Medium",
-      "windowMinutes": 15,
-      "required": [
-        { "providerContains": "Display", "eventId": 4101, "weight": 50 }
-      ],
-      "optional": [
-        { "providerContains": "Application Error", "eventId": 1000, "weight": 20 },
-        { "providerContains": "nvlddmkm", "eventId": 14, "weight": 25 },
-        { "providerContains": "amdkmdag", "eventId": 0, "weight": 15 }
-      ],
-      "suppressors": [],
-      "repeatBonus": 10,
-      "maxConfidence": 90,
-      "impact": "The display driver stopped responding and was reset. Apps may freeze or the screen may blank briefly.",
-      "likelyCauses": [
-        "Unstable GPU driver",
-        "GPU thermal or power limit",
-        "Faulty GPU hardware"
-      ],
-      "recommendations": [
-        "Run GPU functional tests",
-        "Clean-install the GPU driver",
-        "Monitor thermals under load"
-      ],
-      "actions": [
-        { "type": "cde", "target": "SystemHealth", "label": "System Health (GPU tests)" },
-        { "type": "shell", "target": "devmgmt.msc", "label": "Device Manager" }
-      ]
-    }
-  ]
+﻿{
+    "version":  2,
+    "defaultWindowMinutes":  10,
+    "clusters":  [
+                     {
+                         "clusterId":  "unexpected_shutdown",
+                         "title":  "Unexpected Shutdown",
+                         "severityFloor":  "High",
+                         "windowMinutes":  10,
+                         "required":  [
+                                          {
+                                              "providerContains":  "Kernel-Power",
+                                              "eventId":  41,
+                                              "weight":  45
+                                          },
+                                          {
+                                              "providerContains":  "EventLog",
+                                              "eventId":  6008,
+                                              "weight":  35
+                                          }
+                                      ],
+                         "optional":  [
+                                          {
+                                              "providerContains":  "Kernel-Power",
+                                              "eventId":  109,
+                                              "weight":  5
+                                          }
+                                      ],
+                         "suppressors":  [
+                                             {
+                                                 "providerContains":  "User32",
+                                                 "eventId":  1074,
+                                                 "windowMinutes":  15
+                                             }
+                                         ],
+                         "repeatBonus":  5,
+                         "maxConfidence":  95,
+                         "impact":  "The system resumed after an improper shutdown. Data loss or hardware stress is possible if this repeats.",
+                         "likelyCauses":  [
+                                              "Forced restart or holding the power button",
+                                              "Power interruption or unstable PSU/battery",
+                                              "System freeze requiring a manual restart"
+                                          ],
+                         "recommendations":  [
+                                                 "Ask whether the machine was force-restarted or lost power",
+                                                 "Review thermal and hardware diagnostics if repeated",
+                                                 "Check for BugCheck 1001 nearby to distinguish a crash"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "type":  "cde",
+                                             "target":  "HardwareDiagnostics",
+                                             "label":  "Diag \u0026 Repair"
+                                         },
+                                         {
+                                             "type":  "shell",
+                                             "target":  "eventvwr.msc",
+                                             "label":  "Event Viewer"
+                                         }
+                                     ]
+                     },
+                     {
+                         "clusterId":  "system_crash",
+                         "title":  "System Crash / BSOD",
+                         "severityFloor":  "Critical",
+                         "windowMinutes":  15,
+                         "required":  [
+                                          {
+                                              "providerContains":  "BugCheck",
+                                              "eventId":  1001,
+                                              "weight":  70
+                                          }
+                                      ],
+                         "optional":  [
+                                          {
+                                              "providerContains":  "Kernel-Power",
+                                              "eventId":  41,
+                                              "weight":  20
+                                          },
+                                          {
+                                              "providerContains":  "EventLog",
+                                              "eventId":  6008,
+                                              "weight":  10
+                                          }
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  5,
+                         "maxConfidence":  98,
+                         "impact":  "Windows recorded a bug check. Stability, driver, or hardware faults may cause recurring crashes.",
+                         "likelyCauses":  [
+                                              "Faulty or outdated device driver",
+                                              "Memory or storage hardware fault",
+                                              "Kernel-mode software conflict"
+                                          ],
+                         "recommendations":  [
+                                                 "Capture the bugcheck code and parameters from Event Viewer",
+                                                 "Run memory and storage diagnostics",
+                                                 "Update or roll back recently changed drivers"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "type":  "cde",
+                                             "target":  "HardwareDiagnostics",
+                                             "label":  "Diag \u0026 Repair"
+                                         },
+                                         {
+                                             "type":  "shell",
+                                             "target":  "eventvwr.msc",
+                                             "label":  "Event Viewer"
+                                         }
+                                     ]
+                     },
+                     {
+                         "clusterId":  "application_crash",
+                         "title":  "Application Crash",
+                         "severityFloor":  "Medium",
+                         "windowMinutes":  5,
+                         "required":  [
+                                          {
+                                              "providerContains":  "Application Error",
+                                              "eventId":  1000,
+                                              "weight":  50
+                                          }
+                                      ],
+                         "optional":  [
+                                          {
+                                              "providerContains":  "Windows Error Reporting",
+                                              "eventId":  1001,
+                                              "weight":  30
+                                          },
+                                          {
+                                              "providerContains":  "Application Hang",
+                                              "eventId":  1002,
+                                              "weight":  15
+                                          }
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  10,
+                         "maxConfidence":  90,
+                         "impact":  "One or more applications terminated unexpectedly, which can interrupt work and indicate software or compatibility issues.",
+                         "likelyCauses":  [
+                                              "Application bug or corrupted install",
+                                              "Incompatible update or plugin",
+                                              "Insufficient resources or access denied"
+                                          ],
+                         "recommendations":  [
+                                                 "Identify the faulting module from the event message",
+                                                 "Repair or reinstall the affected application",
+                                                 "Check recent Windows or app updates"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "type":  "shell",
+                                             "target":  "eventvwr.msc",
+                                             "label":  "Event Viewer"
+                                         }
+                                     ],
+                         "minEventCount":  3
+                     },
+                     {
+                         "clusterId":  "user_profile_failure",
+                         "title":  "User Profile Service Failure",
+                         "severityFloor":  "High",
+                         "windowMinutes":  30,
+                         "requiredAny":  [
+                                             {
+                                                 "providerContains":  "User Profile Service",
+                                                 "eventId":  1500,
+                                                 "weight":  40
+                                             },
+                                             {
+                                                 "providerContains":  "User Profile Service",
+                                                 "eventId":  1502,
+                                                 "weight":  40
+                                             },
+                                             {
+                                                 "providerContains":  "User Profile Service",
+                                                 "eventId":  1508,
+                                                 "weight":  35
+                                             },
+                                             {
+                                                 "providerContains":  "User Profile Service",
+                                                 "eventId":  1511,
+                                                 "weight":  45
+                                             },
+                                             {
+                                                 "providerContains":  "User Profile Service",
+                                                 "eventId":  1515,
+                                                 "weight":  35
+                                             }
+                                         ],
+                         "optional":  [
+
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  10,
+                         "maxConfidence":  92,
+                         "minRequiredAny":  1,
+                         "impact":  "The user may be unable to log on normally or may receive a temporary profile.",
+                         "likelyCauses":  [
+                                              "Corrupted user profile hive",
+                                              "Permission problems under C:\\Users",
+                                              "Incomplete profile migration or antivirus lock"
+                                          ],
+                         "recommendations":  [
+                                                 "Confirm whether logon used a temporary profile",
+                                                 "Back up the user profile then repair or recreate it",
+                                                 "Check disk health before major profile repair"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "type":  "cde",
+                                             "target":  "OSRepair",
+                                             "label":  "OS Repair"
+                                         },
+                                         {
+                                             "type":  "shell",
+                                             "target":  "eventvwr.msc",
+                                             "label":  "Event Viewer"
+                                         }
+                                     ],
+                         "minEventCount":  1
+                     },
+                     {
+                         "clusterId":  "disk_instability",
+                         "title":  "Disk / Storage Instability",
+                         "severityFloor":  "High",
+                         "windowMinutes":  60,
+                         "requiredAny":  [
+                                             {
+                                                 "providerContains":  "Disk",
+                                                 "eventId":  7,
+                                                 "weight":  40
+                                             },
+                                             {
+                                                 "providerContains":  "Disk",
+                                                 "eventId":  51,
+                                                 "weight":  35
+                                             },
+                                             {
+                                                 "providerContains":  "Disk",
+                                                 "eventId":  153,
+                                                 "weight":  40
+                                             },
+                                             {
+                                                 "providerContains":  "storahci",
+                                                 "eventId":  129,
+                                                 "weight":  30
+                                             },
+                                             {
+                                                 "providerContains":  "stornvme",
+                                                 "eventId":  11,
+                                                 "weight":  35
+                                             },
+                                             {
+                                                 "providerContains":  "StorPort",
+                                                 "eventId":  129,
+                                                 "weight":  30
+                                             }
+                                         ],
+                         "optional":  [
+
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  10,
+                         "maxConfidence":  93,
+                         "minRequiredAny":  1,
+                         "impact":  "Storage timeouts or retries can cause freezes, boot failures, and data corruption.",
+                         "likelyCauses":  [
+                                              "Failing drive or unstable cable/connection",
+                                              "Controller or firmware issue",
+                                              "Power delivery problems under load"
+                                          ],
+                         "recommendations":  [
+                                                 "Back up important data immediately",
+                                                 "Run SMART and storage diagnostics",
+                                                 "Inspect cabling and drive health before imaging"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "type":  "cde",
+                                             "target":  "SmartAnalyzer",
+                                             "label":  "S.M.A.R.T. Analyzer"
+                                         },
+                                         {
+                                             "type":  "cde",
+                                             "target":  "HardwareDiagnostics",
+                                             "label":  "Diag \u0026 Repair"
+                                         }
+                                     ],
+                         "minEventCount":  2
+                     },
+                     {
+                         "clusterId":  "ntfs_corruption",
+                         "title":  "File System Corruption",
+                         "severityFloor":  "Critical",
+                         "windowMinutes":  60,
+                         "requiredAny":  [
+                                             {
+                                                 "providerContains":  "Ntfs",
+                                                 "eventId":  55,
+                                                 "weight":  55
+                                             },
+                                             {
+                                                 "providerContains":  "Ntfs",
+                                                 "eventId":  98,
+                                                 "weight":  40
+                                             },
+                                             {
+                                                 "providerContains":  "Ntfs",
+                                                 "eventId":  140,
+                                                 "weight":  45
+                                             }
+                                         ],
+                         "optional":  [
+
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  10,
+                         "maxConfidence":  95,
+                         "minRequiredAny":  1,
+                         "impact":  "NTFS reported corruption. File loss or boot failure is possible.",
+                         "likelyCauses":  [
+                                              "Unexpected power loss during writes",
+                                              "Failing storage media",
+                                              "Driver or filter interference"
+                                          ],
+                         "recommendations":  [
+                                                 "Back up data before repair attempts",
+                                                 "Run chkdsk from OS Repair / WinPE as appropriate",
+                                                 "Correlate with disk instability findings"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "type":  "cde",
+                                             "target":  "OSRepair",
+                                             "label":  "OS Repair"
+                                         },
+                                         {
+                                             "type":  "cde",
+                                             "target":  "SmartAnalyzer",
+                                             "label":  "S.M.A.R.T. Analyzer"
+                                         }
+                                     ],
+                         "minEventCount":  1
+                     },
+                     {
+                         "clusterId":  "whea_corrected_error",
+                         "title":  "WHEA Corrected Hardware Error",
+                         "severityFloor":  "Medium",
+                         "windowMinutes":  60,
+                         "requiredAny":  [
+                                             {
+                                                 "eventId":  17,
+                                                 "providerContains":  "WHEA-Logger",
+                                                 "weight":  40
+                                             },
+                                             {
+                                                 "eventId":  19,
+                                                 "providerContains":  "WHEA-Logger",
+                                                 "weight":  40
+                                             }
+                                         ],
+                         "optional":  [
+
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  10,
+                         "maxConfidence":  85,
+                         "minRequiredAny":  1,
+                         "minEventCount":  3,
+                         "impact":  "Windows recorded corrected hardware errors (often PCIe/MCA soft errors). Occasional events can be benign; repeated bursts warrant hardware diagnostics.",
+                         "likelyCauses":  [
+                                              "Transient PCIe / chipset corrected error",
+                                              "Driver or power-management quirk",
+                                              "Marginal memory/CPU that still corrects"
+                                          ],
+                         "recommendations":  [
+                                                 "Ignore isolated one-off corrected WHEA entries when the system is stable",
+                                                 "If repeated, run CPU and memory diagnostics",
+                                                 "Update BIOS/chipset/GPU drivers and check thermals"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "label":  "Diag \u0026 Repair",
+                                             "target":  "HardwareDiagnostics",
+                                             "type":  "cde"
+                                         }
+                                     ]
+                     },
+                     {
+                         "clusterId":  "whea_uncorrected_error",
+                         "title":  "WHEA Uncorrected Hardware Fault",
+                         "severityFloor":  "High",
+                         "windowMinutes":  60,
+                         "requiredAny":  [
+                                             {
+                                                 "eventId":  18,
+                                                 "providerContains":  "WHEA-Logger",
+                                                 "weight":  55
+                                             },
+                                             {
+                                                 "eventId":  20,
+                                                 "providerContains":  "WHEA-Logger",
+                                                 "weight":  45
+                                             }
+                                         ],
+                         "optional":  [
+
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  10,
+                         "maxConfidence":  96,
+                         "minRequiredAny":  1,
+                         "minEventCount":  1,
+                         "impact":  "Windows recorded an uncorrected or fatal-class WHEA hardware error. Stability and data integrity may be at risk.",
+                         "likelyCauses":  [
+                                              "CPU, RAM, or chipset fault",
+                                              "Overheating or unstable overclock/undervolt",
+                                              "Power delivery instability"
+                                          ],
+                         "recommendations":  [
+                                                 "Run CPU and memory diagnostics immediately",
+                                                 "Check temperatures and power settings",
+                                                 "Disable overclocking/undervolting if enabled"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "label":  "Diag \u0026 Repair",
+                                             "target":  "HardwareDiagnostics",
+                                             "type":  "cde"
+                                         }
+                                     ]
+                     },
+                     {
+                         "clusterId":  "service_startup_failure",
+                         "title":  "Service Startup Failure",
+                         "severityFloor":  "Medium",
+                         "windowMinutes":  30,
+                         "requiredAny":  [
+                                             {
+                                                 "providerContains":  "Service Control Manager",
+                                                 "eventId":  7000,
+                                                 "weight":  35
+                                             },
+                                             {
+                                                 "providerContains":  "Service Control Manager",
+                                                 "eventId":  7009,
+                                                 "weight":  35
+                                             },
+                                             {
+                                                 "providerContains":  "Service Control Manager",
+                                                 "eventId":  7031,
+                                                 "weight":  40
+                                             },
+                                             {
+                                                 "providerContains":  "Service Control Manager",
+                                                 "eventId":  7034,
+                                                 "weight":  40
+                                             }
+                                         ],
+                         "optional":  [
+                                          {
+                                              "providerContains":  "Service Control Manager",
+                                              "eventId":  7001,
+                                              "weight":  15
+                                          }
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  10,
+                         "maxConfidence":  88,
+                         "minRequiredAny":  1,
+                         "impact":  "Critical or automatic services failed to start or crashed, which can break updates, networking, or security features.",
+                         "likelyCauses":  [
+                                              "Missing dependency or delayed driver",
+                                              "Corrupt service binary",
+                                              "Policy or malware tampering"
+                                          ],
+                         "recommendations":  [
+                                                 "Identify the service name from the event message",
+                                                 "Review Services and Startup Manager",
+                                                 "Repair Windows Update stack if wuauserv/BITS related"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "type":  "cde",
+                                             "target":  "FastFixes",
+                                             "label":  "Fast Fixes"
+                                         },
+                                         {
+                                             "type":  "shell",
+                                             "target":  "services.msc",
+                                             "label":  "Services"
+                                         }
+                                     ],
+                         "minEventCount":  2
+                     },
+                     {
+                         "clusterId":  "tpm_security",
+                         "title":  "TPM / Security Provider Issue",
+                         "severityFloor":  "Medium",
+                         "windowMinutes":  60,
+                         "requiredAny":  [
+                                             {
+                                                 "providerContains":  "TPM-WMI",
+                                                 "eventId":  1040,
+                                                 "weight":  30
+                                             },
+                                             {
+                                                 "providerContains":  "TPM",
+                                                 "eventId":  19,
+                                                 "weight":  30
+                                             },
+                                             {
+                                                 "providerContains":  "Microsoft-Windows-TPM-WMI",
+                                                 "eventId":  1796,
+                                                 "weight":  35
+                                             }
+                                         ],
+                         "optional":  [
+
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  5,
+                         "maxConfidence":  80,
+                         "minRequiredAny":  1,
+                         "impact":  "TPM or related security services reported errors that may affect BitLocker, Windows Hello, or measured boot.",
+                         "likelyCauses":  [
+                                              "Firmware TPM glitch after BIOS update",
+                                              "Policy mismatch",
+                                              "Transient TPM ownership or attestation issue"
+                                          ],
+                         "recommendations":  [
+                                                 "Confirm BitLocker and Secure Boot status before clearing TPM",
+                                                 "Check for BIOS/UEFI updates from the OEM",
+                                                 "Do not clear TPM without recovering BitLocker keys"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "type":  "shell",
+                                             "target":  "tpm.msc",
+                                             "label":  "TPM Management"
+                                         }
+                                     ],
+                         "minEventCount":  2
+                     },
+                     {
+                         "clusterId":  "windows_update_failure",
+                         "title":  "Windows Update Failure",
+                         "severityFloor":  "Medium",
+                         "windowMinutes":  120,
+                         "requiredAny":  [
+                                             {
+                                                 "providerContains":  "WindowsUpdateClient",
+                                                 "eventId":  20,
+                                                 "weight":  35
+                                             },
+                                             {
+                                                 "providerContains":  "WindowsUpdateClient",
+                                                 "eventId":  25,
+                                                 "weight":  30
+                                             },
+                                             {
+                                                 "providerContains":  "WindowsUpdateClient",
+                                                 "eventId":  31,
+                                                 "weight":  35
+                                             },
+                                             {
+                                                 "providerContains":  "WindowsUpdateClient",
+                                                 "eventId":  34,
+                                                 "weight":  30
+                                             }
+                                         ],
+                         "optional":  [
+
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  10,
+                         "maxConfidence":  88,
+                         "minRequiredAny":  1,
+                         "impact":  "Windows Update failed to download or install updates, leaving the system unpatched.",
+                         "likelyCauses":  [
+                                              "Broken Windows Update service stack",
+                                              "Corrupt SoftwareDistribution store",
+                                              "Network or proxy interference"
+                                          ],
+                         "recommendations":  [
+                                                 "Verify wuauserv, BITS, and UsoSvc status",
+                                                 "Run Windows Update Repair / Fast Fixes",
+                                                 "Check network hijack findings if updates never reach Microsoft"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "type":  "cde",
+                                             "target":  "WindowsUpdateRepair",
+                                             "label":  "Windows Update Repair"
+                                         },
+                                         {
+                                             "type":  "cde",
+                                             "target":  "FastFixes",
+                                             "label":  "Fast Fixes"
+                                         }
+                                     ],
+                         "minEventCount":  2
+                     },
+                     {
+                         "clusterId":  "display_driver_reset",
+                         "title":  "Display / Driver Reset",
+                         "severityFloor":  "Medium",
+                         "windowMinutes":  15,
+                         "required":  [
+                                          {
+                                              "providerContains":  "Display",
+                                              "eventId":  4101,
+                                              "weight":  50
+                                          }
+                                      ],
+                         "optional":  [
+                                          {
+                                              "providerContains":  "Application Error",
+                                              "eventId":  1000,
+                                              "weight":  20
+                                          },
+                                          {
+                                              "providerContains":  "nvlddmkm",
+                                              "eventId":  14,
+                                              "weight":  25
+                                          },
+                                          {
+                                              "providerContains":  "amdkmdag",
+                                              "eventId":  0,
+                                              "weight":  15
+                                          }
+                                      ],
+                         "suppressors":  [
+
+                                         ],
+                         "repeatBonus":  10,
+                         "maxConfidence":  90,
+                         "impact":  "The display driver stopped responding and was reset. Apps may freeze or the screen may blank briefly.",
+                         "likelyCauses":  [
+                                              "Unstable GPU driver",
+                                              "GPU thermal or power limit",
+                                              "Faulty GPU hardware"
+                                          ],
+                         "recommendations":  [
+                                                 "Run GPU functional tests",
+                                                 "Clean-install the GPU driver",
+                                                 "Monitor thermals under load"
+                                             ],
+                         "actions":  [
+                                         {
+                                             "type":  "cde",
+                                             "target":  "SystemHealth",
+                                             "label":  "System Health (GPU tests)"
+                                         },
+                                         {
+                                             "type":  "shell",
+                                             "target":  "devmgmt.msc",
+                                             "label":  "Device Manager"
+                                         }
+                                     ],
+                         "minEventCount":  2
+                     }
+                 ],
+    "maxUnclassifiedFindings":  5
 }

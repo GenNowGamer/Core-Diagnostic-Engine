@@ -10,6 +10,7 @@
         { "id": "ram", "label": "RAM Availability", "description": "Physical memory used and free.", "estimatedMinutes": 0.1, "winPe": "available" },
         { "id": "disk_space", "label": "Disk Free Space", "description": "Free space on all file-system drives.", "estimatedMinutes": 0.2, "winPe": "available" },
         { "id": "activation", "label": "Windows Activation", "description": "Whether Windows is activated.", "estimatedMinutes": 0.2, "winPe": "windows_only" },
+        { "id": "battery_health", "label": "Battery Health", "description": "Design vs full-charge capacity wear (ROOT\\WMI battery classes).", "estimatedMinutes": 0.3, "winPe": "windows_only" },
         { "id": "event_errors_24h", "label": "System Event Errors (24h)", "description": "Count of System log errors in the last 24 hours.", "estimatedMinutes": 0.5, "winPe": "windows_only" }
       ]
     },
@@ -23,6 +24,8 @@
         { "id": "network_adapters", "label": "Network Adapters", "description": "Present adapters and link status.", "estimatedMinutes": 0.3, "winPe": "available" },
         { "id": "gpu_info", "label": "GPU Information", "description": "Video controllers and driver versions.", "estimatedMinutes": 0.2, "winPe": "available" },
         { "id": "gpu_functional_tests", "label": "GPU Functional Tests", "description": "Driver, DirectX, OpenGL, Vulkan, VRAM functional, and thermal probes per adapter.", "estimatedMinutes": 1.5, "winPe": "windows_only" },
+        { "id": "thermal_events", "label": "Thermal Events (7 days)", "description": "Kernel-Power / ACPI thermal warnings and critical trip events.", "estimatedMinutes": 0.5, "winPe": "windows_only" },
+        { "id": "reliability_monitor", "label": "Reliability Monitor", "description": "Stability index and recent critical reliability records.", "estimatedMinutes": 0.5, "winPe": "windows_only" },
         { "id": "critical_events_7d", "label": "Critical Events (7 days)", "description": "Critical and error events from System and Application logs.", "estimatedMinutes": 1.0, "winPe": "windows_only" }
       ]
     },
@@ -70,6 +73,7 @@
       "ram",
       "disk_space",
       "activation",
+      "battery_health",
       "event_errors_24h"
     ],
     "deep_system": [
@@ -79,6 +83,8 @@
       "network_adapters",
       "gpu_info",
       "gpu_functional_tests",
+      "thermal_events",
+      "reliability_monitor",
       "critical_events_7d"
     ],
     "full_audit": [
@@ -95,6 +101,9 @@
       "cpu_load",
       "ram",
       "disk_space",
+      "battery_health",
+      "thermal_events",
+      "reliability_monitor",
       "audit_startup",
       "audit_event_logs",
       "audit_services"
@@ -143,10 +152,13 @@
     "cpu_load",
     "ram",
     "disk_space",
+    "battery_health",
     "network_adapters",
     "audit_network_config",
     "windows_update_service",
     "event_errors_24h",
+    "thermal_events",
+    "reliability_monitor",
     "critical_events_7d",
     "audit_event_logs",
     "driver_signature_audit",

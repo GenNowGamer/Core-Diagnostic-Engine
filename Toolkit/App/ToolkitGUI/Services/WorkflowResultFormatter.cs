@@ -210,7 +210,8 @@ namespace ToolkitGUI.Services
             var verified = new List<FormattedResultItem>();
 
             foreach (var finding in findings
-                         .OrderByDescending(f => SeverityRank(f.Severity))
+                         .OrderByDescending(f => HealthFindingClassification.Rank(f.Classification))
+                         .ThenByDescending(f => SeverityRank(f.Severity))
                          .ThenByDescending(f => f.Confidence)
                          .ThenBy(f => f.Finding, StringComparer.OrdinalIgnoreCase))
             {
@@ -338,6 +339,11 @@ namespace ToolkitGUI.Services
                 : $"{finding.Subject}: {finding.Finding}";
             var recommendations = finding.Recommendations ?? new List<string>();
             var evidence = finding.Evidence ?? new List<string>();
+            var classification = HealthFindingClassification.Resolve(
+                finding.Classification,
+                finding.Status,
+                finding.Severity,
+                finding.Confidence);
 
             return new FormattedResultItem
             {
@@ -349,6 +355,7 @@ namespace ToolkitGUI.Services
                 Notes = recommendations.Count > 0 ? string.Join(" · ", recommendations) : finding.Impact,
                 Impact = finding.Impact,
                 SeverityLabel = finding.Severity,
+                EvidenceClassification = classification,
                 Confidence = finding.Confidence,
                 Evidence = evidence,
                 Recommendations = recommendations,
@@ -358,17 +365,11 @@ namespace ToolkitGUI.Services
 
         private static bool IsActionableFinding(ToolkitGUI.Models.HealthStructuredFindingDto finding)
         {
-            var status = (finding.Status ?? string.Empty).Trim();
-            if (status.Equals("Fail", StringComparison.OrdinalIgnoreCase)
-                || status.Equals("Warn", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            var severity = (finding.Severity ?? string.Empty).Trim();
-            return severity.Equals("Critical", StringComparison.OrdinalIgnoreCase)
-                || severity.Equals("High", StringComparison.OrdinalIgnoreCase)
-                || severity.Equals("Medium", StringComparison.OrdinalIgnoreCase);
+            return HealthFindingClassification.RequiresAttention(
+                finding.Classification,
+                finding.Status,
+                finding.Severity,
+                finding.Confidence);
         }
 
         private static int SeverityRank(string? severity) =>

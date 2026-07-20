@@ -9,12 +9,103 @@ function Get-EventFindingClustersCatalogPath {
     return (Join-Path (Join-Path $coreDir '..\..') 'Config\EventFindingClusters.json')
 }
 
+function Get-EventSuppressorPacksRoot {
+    $coreDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $MyInvocation.MyCommand.Path }
+    return (Join-Path (Join-Path $coreDir '..\..') 'Config\EventSuppressorPacks')
+}
+
+function Get-ActiveEventSuppressorPackIds {
+    <#
+    .SYNOPSIS
+      Auto-detect lab/environment packs. Override with $env:CDE_EVENT_SUPPRESSOR_PACKS=csv.
+    #>
+    $forced = [string]$env:CDE_EVENT_SUPPRESSOR_PACKS
+    if (-not [string]::IsNullOrWhiteSpace($forced)) {
+        return @($forced.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+
+    $ids = New-Object System.Collections.Generic.List[string]
+    try {
+        if ((Get-Command Get-EnvironmentMode -ErrorAction SilentlyContinue) -and (Get-EnvironmentMode) -eq 'WinPE') {
+            [void]$ids.Add('winpe')
+        }
+    } catch { }
+
+    try {
+        $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue | Select-Object -First 1
+        $model = if ($cs) { [string]$cs.Model } else { '' }
+        $mfr = if ($cs) { [string]$cs.Manufacturer } else { '' }
+        if ($model -match '(?i)Virtual Machine|VMware|VirtualBox|KVM|QEMU|Xen|Hyper-V' -or
+            $mfr -match '(?i)Microsoft Corporation|VMware|innotek|QEMU|Xen') {
+            [void]$ids.Add('hyperv_guest')
+        }
+    } catch { }
+
+    try {
+        $usb = @(Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue |
+            Where-Object { [string]$_.InterfaceType -eq 'USB' -or [string]$_.PNPDeviceID -match '(?i)USBSTOR' })
+        if ($usb.Count -gt 0) {
+            [void]$ids.Add('dock_usb')
+        }
+    } catch { }
+
+    return @($ids | Select-Object -Unique)
+}
+
+function Merge-EventSuppressorPacksIntoCatalog {
+    param(
+        [Parameter(Mandatory)]$Catalog,
+        [string[]]$PackIds = @()
+    )
+
+    if ($null -eq $Catalog -or $null -eq $Catalog.clusters) { return $Catalog }
+    if (-not $PackIds -or $PackIds.Count -eq 0) {
+        $PackIds = @(Get-ActiveEventSuppressorPackIds)
+    }
+
+    $root = Get-EventSuppressorPacksRoot
+    if (-not (Test-Path -LiteralPath $root)) { return $Catalog }
+
+    $applied = New-Object System.Collections.Generic.List[string]
+    foreach ($packId in $PackIds) {
+        $packPath = Join-Path $root ("{0}.json" -f $packId)
+        if (-not (Test-Path -LiteralPath $packPath)) { continue }
+        try {
+            $pack = Get-Content -LiteralPath $packPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        }
+        catch { continue }
+
+        $map = $pack.clusterSuppressors
+        if ($null -eq $map) { continue }
+
+        foreach ($cluster in @($Catalog.clusters)) {
+            $cid = [string]$cluster.clusterId
+            $extra = $null
+            if ($map.PSObject.Properties[$cid]) {
+                $extra = @($map.$cid)
+            }
+            if ($null -eq $extra -or $extra.Count -eq 0) { continue }
+
+            $existing = @()
+            if ($cluster.PSObject.Properties['suppressors'] -and $null -ne $cluster.suppressors) {
+                $existing = @($cluster.suppressors)
+            }
+            $cluster.suppressors = @($existing) + @($extra)
+        }
+        [void]$applied.Add([string]$pack.packId)
+    }
+
+    $Catalog | Add-Member -NotePropertyName AppliedSuppressorPacks -NotePropertyValue @($applied) -Force
+    return $Catalog
+}
+
 function Get-EventFindingClustersCatalog {
     $path = Get-EventFindingClustersCatalogPath
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Event finding clusters catalog not found: $path"
     }
-    return Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    $catalog = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    return Merge-EventSuppressorPacksIntoCatalog -Catalog $catalog
 }
 
 function ConvertTo-NormalizedClusterEvent {
@@ -122,6 +213,28 @@ function Get-ClusterEvidenceLines {
     return @($lines.ToArray())
 }
 
+function Get-ClusterMatchedEventVolume {
+    param(
+        [object[]]$Events,
+        [object[]]$Specs,
+        [datetime]$AnchorTime,
+        [int]$WindowMinutes
+    )
+
+    $volume = 0
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($spec in @($Specs)) {
+        $hits = @(Find-MatchingClusterEvents -Events $Events -Spec $spec -AnchorTime $AnchorTime -WindowMinutes $WindowMinutes)
+        foreach ($h in $hits) {
+            $key = "{0}|{1}|{2}|{3}" -f $h.Key, $h.EventId, $(if ($null -ne $h.Time) { $h.Time.ToString('o') } else { '' }), $h.Count
+            if ($seen.Add($key)) {
+                $volume += [math]::Max(1, [int]$h.Count)
+            }
+        }
+    }
+    return $volume
+}
+
 function Invoke-EventFindingClustering {
     param(
         [Parameter(Mandatory)][string]$CheckId,
@@ -138,18 +251,30 @@ function Invoke-EventFindingClustering {
 
     $findings = New-Object System.Collections.Generic.List[object]
     $defaultWindow = if ($catalog.defaultWindowMinutes) { [int]$catalog.defaultWindowMinutes } else { 10 }
+    $maxUnclassified = if ($catalog.maxUnclassifiedFindings) { [int]$catalog.maxUnclassifiedFindings } else { 5 }
 
     foreach ($cluster in @($catalog.clusters)) {
         $window = if ($cluster.windowMinutes) { [int]$cluster.windowMinutes } else { $defaultWindow }
-        $required = @($cluster.required)
-        $requiredAny = @($cluster.requiredAny)
-        $optional = @($cluster.optional)
-        $suppressors = @($cluster.suppressors)
+        # @($null) has Count 1 in Windows PowerShell — only wrap real arrays.
+        $required = @(
+            if ($null -ne $cluster.required) { $cluster.required } else { @() }
+        ) | Where-Object { $null -ne $_ }
+        $requiredAny = @(
+            if ($null -ne $cluster.requiredAny) { $cluster.requiredAny } else { @() }
+        ) | Where-Object { $null -ne $_ }
+        $optional = @(
+            if ($null -ne $cluster.optional) { $cluster.optional } else { @() }
+        ) | Where-Object { $null -ne $_ }
+        $suppressors = @(
+            if ($null -ne $cluster.suppressors) { $cluster.suppressors } else { @() }
+        ) | Where-Object { $null -ne $_ }
+        $minEventCount = if ($cluster.minEventCount) { [int]$cluster.minEventCount } else { 1 }
 
         $matchedRequired = New-Object System.Collections.Generic.List[object]
         $matchedOptional = New-Object System.Collections.Generic.List[object]
         $score = 0
         $anchor = $null
+        $volumeSpecs = @()
 
         if ($required.Count -gt 0) {
             $allRequiredOk = $true
@@ -184,6 +309,7 @@ function Invoke-EventFindingClustering {
                 $score += [int]$spec.weight
             }
             if (-not $allRequiredOk) { continue }
+            $volumeSpecs = $required
         }
         elseif ($requiredAny.Count -gt 0) {
             $minAny = if ($cluster.minRequiredAny) { [int]$cluster.minRequiredAny } else { 1 }
@@ -198,10 +324,18 @@ function Invoke-EventFindingClustering {
                 }
             }
             if ($matchedRequired.Count -lt $minAny) { continue }
+            $volumeSpecs = $requiredAny
         }
         else {
             continue
         }
+
+        $eventVolume = Get-ClusterMatchedEventVolume `
+            -Events $normalized `
+            -Specs $volumeSpecs `
+            -AnchorTime $(if ($null -ne $anchor) { $anchor } else { [datetime]::MinValue }) `
+            -WindowMinutes $(if ($null -ne $anchor) { $window } else { 0 })
+        if ($eventVolume -lt $minEventCount) { continue }
 
         $suppressed = $false
         foreach ($spec in $suppressors) {
@@ -234,6 +368,9 @@ function Invoke-EventFindingClustering {
         foreach ($evt in $allMatched) { $evt.Consumed = $true }
 
         $evidence = Get-ClusterEvidenceLines -Events $allMatched
+        if ($eventVolume -gt $repeatCount) {
+            $evidence = @($evidence) + @("Matched event volume in window: $eventVolume")
+        }
         $causes = @($cluster.likelyCauses)
         if ($causes.Count -gt 0) {
             $evidence = @($evidence) + @('Likely causes: ' + ($causes -join '; '))
@@ -244,6 +381,14 @@ function Invoke-EventFindingClustering {
             '^(?i)high$'     { 'Warn' }
             '^(?i)medium$'   { 'Warn' }
             default          { 'Warn' }
+        }
+
+        $classification = switch -Regex ([string]$cluster.severityFloor) {
+            '^(?i)critical$' { 'ConfirmedFault' }
+            '^(?i)high$' {
+                if ($confidence -ge 90) { 'CorroboratedSuspect' } else { 'SingleSignal' }
+            }
+            default { 'SingleSignal' }
         }
 
         $actionObjs = @()
@@ -265,16 +410,22 @@ function Invoke-EventFindingClustering {
             -Severity ([string]$cluster.severityFloor) `
             -Confidence $confidence `
             -Status $status `
+            -Classification $classification `
             -Evidence $evidence `
             -Recommendations @($cluster.recommendations) `
             -Actions $actionObjs))
     }
 
-    # Residual unmatched significant events
-    foreach ($evt in $normalized) {
-        if ($evt.Consumed) { continue }
-        if ([int]$evt.EventId -le 0) { continue }
+    # Residual unmatched significant events (capped; overflow aggregated)
+    $residuals = @(
+        $normalized |
+            Where-Object { -not $_.Consumed -and [int]$_.EventId -gt 0 } |
+            Sort-Object @{ Expression = { - [int]$_.Count } }, @{ Expression = { $_.Time }; Descending = $true }
+    )
+    $shown = @($residuals | Select-Object -First $maxUnclassified)
+    $overflow = @($residuals | Select-Object -Skip $maxUnclassified)
 
+    foreach ($evt in $shown) {
         $evidence = Get-ClusterEvidenceLines -Events @($evt)
         $findings.Add((New-HealthFinding `
             -FindingId ("event.unclassified.{0}.{1}" -f ($evt.Source -replace '[^\w\-]', '_'), $evt.EventId) `
@@ -285,8 +436,27 @@ function Invoke-EventFindingClustering {
             -Severity 'Low' `
             -Confidence 35 `
             -Status 'Info' `
+            -Classification 'Inventory' `
             -Evidence $evidence `
             -Recommendations @('Review the event message in Event Viewer if symptoms persist.') `
+            -Actions @([PSCustomObject]@{ type = 'shell'; target = 'eventvwr.msc'; label = 'Event Viewer' })))
+    }
+
+    if ($overflow.Count -gt 0) {
+        $overflowVolume = ($overflow | Measure-Object -Property Count -Sum).Sum
+        $sample = Get-ClusterEvidenceLines -Events @($overflow | Select-Object -First 3)
+        $findings.Add((New-HealthFinding `
+            -FindingId 'event.unclassified.aggregate' `
+            -CheckId $CheckId `
+            -Subject 'Additional unclassified errors' `
+            -Finding ("{0} additional unclassified event group(s) omitted from detail" -f $overflow.Count) `
+            -Impact 'Remaining unmatched errors were aggregated to reduce noise. Expand Event Viewer if symptoms persist.' `
+            -Severity 'Low' `
+            -Confidence 30 `
+            -Status 'Info' `
+            -Classification 'Inventory' `
+            -Evidence (@("Omitted groups: $($overflow.Count)", "Omitted volume: $overflowVolume") + @($sample)) `
+            -Recommendations @('Review System/Application error logs if the customer reports ongoing symptoms.') `
             -Actions @([PSCustomObject]@{ type = 'shell'; target = 'eventvwr.msc'; label = 'Event Viewer' })))
     }
 

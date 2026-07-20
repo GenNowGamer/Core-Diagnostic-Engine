@@ -40,7 +40,7 @@ CDE separates **active scanning** from **configuration audits**:
 | Activity | Where to run it |
 |----------|-----------------|
 | Defender scan, CST malware scan | **Malware Cleanup** |
-| Autoruns, hosts file, browser extensions, scheduled tasks, browser/network hijack, Defender exclusions/security tampering, ransomware recovery, driver/filter inventory, remote access | **System Health Check** → Security Audits or Deep System category |
+| Autoruns (publisher-aware), hosts file, browser extensions, scheduled tasks (publisher-aware), browser/network hijack, Defender exclusions/security tampering, ransomware recovery, driver/filter inventory, remote access | **System Health Check** → Security Audits or Deep System category |
 
 **Scheduled Tasks Audit** flags non-Microsoft tasks with suspicious execute paths or unsigned COM handlers. Microsoft-signed software under AppData (e.g. OneDrive) is not flagged for path alone. COM-only actions show the resolved handler (`COM {guid} -> path`) and a **Review Reason** when flagged.
 

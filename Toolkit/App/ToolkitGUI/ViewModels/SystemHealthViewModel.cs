@@ -503,9 +503,10 @@ namespace ToolkitGUI.ViewModels
             catch { }
 
             OverallHealthDisplay = string.IsNullOrWhiteSpace(overall) ? "Unknown" : overall!;
-            OverallHealthBrush = overall?.ToUpperInvariant() switch
+            OverallHealthBrush = overall?.Replace(" ", "", StringComparison.Ordinal)?.ToUpperInvariant() switch
             {
                 "HEALTHY" => new SolidColorBrush(Color.FromRgb(0x0D, 0x7A, 0x3E)),
+                "HEALTHYWITHNOTES" => new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0x4E)),
                 "WARNING" => new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00)),
                 "CRITICAL" => new SolidColorBrush(Color.FromRgb(0xC4, 0x2B, 0x1C)),
                 _ => new SolidColorBrush(Color.FromRgb(0x5A, 0x6B, 0x80))
@@ -794,6 +795,8 @@ namespace ToolkitGUI.ViewModels
             "PASS" => new SolidColorBrush(Color.FromRgb(0x0D, 0x7A, 0x3E)),
             "WARN" => new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00)),
             "FAIL" => new SolidColorBrush(Color.FromRgb(0xC4, 0x2B, 0x1C)),
+            "INCOMPLETE" => new SolidColorBrush(Color.FromRgb(0x5A, 0x6B, 0x80)),
+            "N/A" => new SolidColorBrush(Color.FromRgb(0x5A, 0x6B, 0x80)),
             _ => new SolidColorBrush(Color.FromRgb(0x5A, 0x6B, 0x80))
         };
     }

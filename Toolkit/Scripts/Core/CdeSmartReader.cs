@@ -161,11 +161,18 @@ namespace CdeSmart
             }
         }
 
-        // ATA attributes whose nonzero raw count signals trouble.
-        static bool IsCriticalAta(int id)
+        // ATA media-failure predictors (Backblaze/Seagate-style): nonzero raw → Overall Warn.
+        static bool IsMediaFailureAta(int id)
         {
             return id == 5 || id == 10 || id == 184 || id == 187 ||
-                   id == 188 || id == 196 || id == 197 || id == 198 || id == 199;
+                   id == 196 || id == 197 || id == 198;
+        }
+
+        // Interface/transport counters: often cabling/controller noise (esp. 199 CRC),
+        // not platter failure — attribute Info only unless count is extreme.
+        static bool IsInterconnectAta(int id)
+        {
+            return id == 188 || id == 199;
         }
 
         public static List<SmartDrive> ReadAll()
@@ -325,7 +332,15 @@ namespace CdeSmart
 
                 string st = "OK";
                 if (a.Threshold > 0 && a.Current <= a.Threshold) { st = "Fail"; anyFail = true; }
-                else if (IsCriticalAta(id) && a.Raw > 0) { st = "Warn"; anyWarn = true; }
+                else if (IsMediaFailureAta(id) && a.Raw > 0) { st = "Warn"; anyWarn = true; }
+                else if (IsInterconnectAta(id) && a.Raw > 0)
+                {
+                    // CRC/timeouts: treat modest counts as interconnect noise (Info);
+                    // very high 199 still elevates Overall Warn.
+                    if (id == 199 && a.Raw >= 100) { st = "Warn"; anyWarn = true; }
+                    else if (id == 188 && a.Raw >= 50) { st = "Warn"; anyWarn = true; }
+                    else { st = "Info"; }
+                }
                 a.Status = st;
                 d.Attributes.Add(a);
 
@@ -469,7 +484,8 @@ namespace CdeSmart
             if (crit != 0) fail = true;
 
             string tempStatus = "OK";
-            if (d.TemperatureC >= 0 && d.TemperatureC > 70) { tempStatus = "Warn"; warn = true; }
+            // NVMe often runs warmer under load; 70C single snapshot is noisy.
+            if (d.TemperatureC >= 0 && d.TemperatureC > 80) { tempStatus = "Warn"; warn = true; }
             AddNvme(d, 2, "Composite Temperature (C)", d.TemperatureC, tempStatus);
 
             string spareStatus = "OK";
@@ -480,15 +496,17 @@ namespace CdeSmart
 
             string usedStatus = "OK";
             if (pctUsed >= 100) { usedStatus = "Warn"; warn = true; }
-            else if (pctUsed >= 90) { usedStatus = "Warn"; warn = true; }
+            else if (pctUsed >= 95) { usedStatus = "Warn"; warn = true; }
             AddNvme(d, 5, "Percentage Used (%)", pctUsed, usedStatus);
 
             AddNvme(d, 12, "Power Cycle Count", powerCycles, "OK");
             AddNvme(d, 9, "Power-On Hours", powerOnHours, "OK");
             AddNvme(d, 174, "Unsafe Shutdowns", unsafeShut, "OK");
 
-            string mediaStatus = (mediaErrors > 0) ? "Warn" : "OK";
-            if (mediaErrors > 0) warn = true;
+            // Sticky media error counters: small historical counts are Info; larger elevate Warn.
+            string mediaStatus = "OK";
+            if (mediaErrors >= 10) { mediaStatus = "Warn"; warn = true; }
+            else if (mediaErrors > 0) { mediaStatus = "Info"; }
             AddNvme(d, 198, "Media & Data Integrity Errors", mediaErrors, mediaStatus);
             AddNvme(d, 199, "Error Log Entries", errLogEntries, "OK");
 

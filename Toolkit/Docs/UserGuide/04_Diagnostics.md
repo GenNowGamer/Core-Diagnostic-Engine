@@ -19,27 +19,31 @@ This chapter covers the main **find problems** tools in the MAIN sidebar section
 3. Click **Run Health Check**
 4. Review the left-side cards — green Pass, yellow Warn, red Fail. The currently open card has a blue highlight, left accent, and **VIEWING** badge
 5. In the right panel, review:
-   - **Actionable / verified findings** — Finding, Impact, Severity, deterministic Confidence (0–100 match score), Evidence, and Recommendations
+   - **Actionable / verified findings** — Finding, Impact, Severity, evidence-quality Classification (Confirmed fault / Corroborated suspect / Single signal / Inventory / Expected limitation / Incomplete), deterministic Confidence (0–100 match score), Evidence, and Recommendations
    - **Detailed results** — the full adapter, device, service, event, or inventory information collected by the check
 6. The **Findings** list follows the catalog order in `Config/HealthCheckCatalog.json` (`findingsDisplayOrder`: Activation through Remote Access)
 7. Click **Open Report** for a printable PDF summary (`Logs\`)
 
 > **Confidence:** This is a deterministic rule/evidence match score from 0–100, not a probability that hardware or software is faulty.
+>
+> **Classification:** Evidence quality for triage (aligned with validate-then-confirm practice). Inventory, expected limitations, and incomplete checks are kept out of the Items-to-address list even when severity text looks serious.
 
 ### What is included
 
 | Category | Examples |
 |----------|----------|
-| Quick Vitals | OS version, CPU load, RAM, disk space, activation, recent errors |
-| Deep System | Driver signatures and filter inventory, Windows Update stack (idle **Stopped** + **Manual** `wuauserv` is normal on Win10/11), network adapters, GPU information, GPU functional tests, critical events |
+| Quick Vitals | OS version, CPU load (multi-sample sustained), RAM (multi-sample sustained), disk space, activation, battery health, recent errors |
+| Deep System | Driver signatures and filter inventory, Windows Update stack (idle **Stopped** + **Manual** `wuauserv` is normal on Win10/11), network adapters, GPU information, GPU functional tests, thermal events (7 days), Reliability Monitor, critical events |
 | System Audit | Installed software, services, startup entries, event logs, partitions |
-| Security Audits | Autoruns, hosts file, browser extensions, scheduled tasks, browser/network hijack, Defender exclusions and security tampering, ransomware recovery, miner behavior, remote access |
+| Security Audits | Autoruns (publisher-aware), hosts file, browser extensions, scheduled tasks (publisher-aware), browser/network hijack, Defender exclusions and security tampering, ransomware recovery, miner behavior (sustained CPU sample), remote access |
+
+> **Overall health:** Runs may report **Healthy**, **Healthy with notes** (soft limitations/incomplete only), **Warning**, or **Critical** — driven by finding Classification, not raw Warn count.
 
 > **Important:** Heavy scans (SMART deep tests, Defender, line-item hardware tests) are **not** in Health Check — use **S.M.A.R.T. Analyzer**, **Diag & Repair**, and **Malware Cleanup** instead.
 
 ### Event and GPU findings
 
-- Event-log checks correlate related records into findings such as unexpected shutdown, BSOD, application crash, storage/NTFS, WHEA hardware, service, update, and display-driver failures. Raw/deduplicated event evidence remains available in the detailed output.
+- Event-log checks correlate related records into findings such as unexpected shutdown, BSOD, application crash, storage/NTFS, WHEA corrected vs uncorrected hardware errors, service, update, and display-driver failures. Noisy clusters require a minimum event count before they become actionable; unmatched errors are capped with an aggregate remainder. Raw/deduplicated event evidence remains available in the detailed output.
 - **GPU Information** is inventory-only. **GPU Functional Tests** is a separate active check covering driver state, DirectX, OpenGL, Vulkan, a capped VRAM write/readback test, and best-effort temperature reporting.
 - WinPE, Remote Desktop, Microsoft Basic Display, missing graphics runtimes, or unavailable vendor temperature tools can produce **N/A**. That means the test could not run in that environment; it is not automatically a failure.
 
@@ -139,4 +143,12 @@ The status bar shows a **rollup** (pass / warn / fail counts). When a test maps 
 
 Use both when a machine has intermittent hardware faults — CHU for pre-boot proof, Diag & Repair for documented in-session runs with PDF workflow output.
 
-When Diag & Repair reports **partial memory coverage**, **CPU stress warnings**, or **storage elevation warnings**, the view shows a CHU guidance banner with a link to **CHU Pre-Boot Results**. That means Windows-side coverage is incomplete for clearing intermittent hardware risk — run CHU from the USB pre-boot menu for physical validation.
+When Diag & Repair reports **Incomplete** (partial memory coverage, soft CPU stress shortfalls) or **storage elevation warnings**, the view shows a CHU guidance banner with a link to **CHU Pre-Boot Results**. Incomplete is not a Fail — Windows-side coverage could not clear intermittent hardware risk; run CHU from the USB pre-boot menu for physical validation. Hard Fail rows are re-tried once (confirm-on-Fail); a Pass on retry becomes Warn with a confirmation note.
+
+### Battery, thermal, and reliability (Health Check)
+
+- **Battery Health** — design vs full-charge capacity via `ROOT\WMI` battery classes (same sources `powercfg /batteryreport` uses when Win32_Battery capacities are empty).
+- **Thermal Events (7 days)** — Kernel-Power / ACPI thermal-related System events.
+- **Reliability Monitor** — Stability Index + recent critical reliability records.
+
+Per-machine baselines (last Health/SMART snapshot) live under `CDE\Runtime\Data\baselines\` and can surface SMART counter growth on the next run.

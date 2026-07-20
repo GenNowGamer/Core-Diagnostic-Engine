@@ -694,12 +694,44 @@ function Invoke-AutorunsAudit {
         $findings = @()
         if ($suspicious.Count -gt 0) {
             foreach ($item in @($suspicious | Select-Object -First 15)) {
-                $findings += New-HealthFinding -FindingId 'security.autorun.suspicious' -CheckId 'sec_autoruns' `
-                    -Subject ([string]$item.Name) -Finding 'Suspicious autorun entry' `
-                    -Impact 'Writable-folder or Winlogon-deviated autoruns can persist unwanted software.' `
-                    -Severity 'High' -Confidence 80 -Status 'Warn' `
-                    -Evidence @("Location=$($item.Location)", "Value=$($item.Value)", "Deviated=$($item.IsDeviated)") `
-                    -Recommendations @('Disable or remove unexpected autoruns in Startup Manager.', 'Investigate the command path before trusting the entry.') `
+                $cmd = [string]$item.Value
+                $publisherTrusted = $false
+                $signer = ''
+                try {
+                    $exePath = $null
+                    if ($cmd -match '(?i)^"([^"]+\.(?:exe|com|scr))"') { $exePath = $Matches[1] }
+                    elseif ($cmd -match '(?i)^([^\s"]+\.(?:exe|com|scr))\b') { $exePath = $Matches[1] }
+                    if ($exePath -and (Test-Path -LiteralPath $exePath -PathType Leaf)) {
+                        $sig = Get-AuthenticodeSignature -LiteralPath $exePath -ErrorAction SilentlyContinue
+                        if ($sig -and $sig.Status -eq 'Valid' -and $sig.SignerCertificate) {
+                            $signer = [string]$sig.SignerCertificate.Subject
+                            $publisherTrusted = Test-IsTrustedAuthenticodePublisher -SignedBy $signer
+                        }
+                    }
+                } catch { }
+
+                $tier = Resolve-AutorunPublisherFindingTier `
+                    -IsDeviated ([bool]$item.IsDeviated) `
+                    -PublisherTrusted $publisherTrusted
+
+                $evidence = [System.Collections.Generic.List[string]]::new()
+                $evidence.Add("Location=$($item.Location)") | Out-Null
+                $evidence.Add("Value=$cmd") | Out-Null
+                $evidence.Add("Deviated=$([bool]$item.IsDeviated)") | Out-Null
+                if ($signer) { $evidence.Add("Signer=$signer") | Out-Null }
+
+                $recs = if ($tier.Classification -eq 'Inventory') {
+                    @('Confirm the user expects this app at startup.', 'Remove only if unrecognized.')
+                } else {
+                    @('Disable or remove unexpected autoruns in Startup Manager.', 'Investigate the command path before trusting the entry.')
+                }
+
+                $findings += New-HealthFinding -FindingId $tier.FindingId -CheckId 'sec_autoruns' `
+                    -Subject ([string]$item.Name) -Finding $tier.Finding -Impact $tier.Impact `
+                    -Severity $tier.Severity -Confidence $tier.Confidence -Status $tier.Status `
+                    -Classification $tier.Classification `
+                    -Evidence @($evidence) `
+                    -Recommendations $recs `
                     -Actions @(@{ type = 'cde'; target = 'StartupManager'; label = 'Startup Manager' })
             }
         }
@@ -1058,14 +1090,122 @@ function Invoke-CstRulesUpdate {
     }
 }
 
-function Test-IsTrustedScheduledTaskPublisher {
+function Test-IsTrustedAuthenticodePublisher {
     <#
-    .SYNOPSIS True when Authenticode subject is a well-known OS/browser vendor.
+    .SYNOPSIS
+      True when Authenticode subject matches a well-known OS/browser/vendor identity.
+      Aligns with Microsoft Authenticode guidance: a Valid signature identifies the
+      publisher; CDE only demotes path heuristics for a curated known-good set
+      (not every CA-issued cert).
     #>
     param([string]$SignedBy)
 
     if ([string]::IsNullOrWhiteSpace($SignedBy)) { return $false }
-    return [bool]($SignedBy -match '(?i)(Microsoft Corporation|Microsoft Windows|Microsoft OneDrive|Google LLC|Google Inc|Mozilla Corporation)')
+    return [bool]($SignedBy -match '(?i)(Microsoft Corporation|Microsoft Windows|Microsoft OneDrive|Google LLC|Google Inc|Mozilla Corporation|Adobe|Apple|Intel|NVIDIA|AMD|Realtek|Logitech)')
+}
+
+function Test-IsTrustedScheduledTaskPublisher {
+    <#
+    .SYNOPSIS Alias for Test-IsTrustedAuthenticodePublisher (scheduled-task callers).
+    #>
+    param([string]$SignedBy)
+    return Test-IsTrustedAuthenticodePublisher -SignedBy $SignedBy
+}
+
+function Resolve-AutorunPublisherFindingTier {
+    <#
+    .SYNOPSIS Map autorun path/deviation + publisher trust to Severity/Classification.
+    #>
+    param(
+        [bool]$IsDeviated,
+        [bool]$PublisherTrusted
+    )
+
+    if ($IsDeviated) {
+        return [PSCustomObject]@{
+            FindingId      = 'security.autorun.suspicious'
+            Finding        = 'Suspicious autorun entry'
+            Impact         = 'Winlogon-deviated autoruns can persist unwanted software.'
+            Severity       = 'High'
+            Confidence     = 85
+            Status         = 'Warn'
+            Classification = 'CorroboratedSuspect'
+            Attention      = $true
+        }
+    }
+
+    if ($PublisherTrusted) {
+        return [PSCustomObject]@{
+            FindingId      = 'security.autorun.path_review'
+            Finding        = 'Autorun in writable path with trusted publisher'
+            Impact         = 'Path heuristic matched, but Authenticode publisher looks known-good. Review only if unexpected.'
+            Severity       = 'Low'
+            Confidence     = 55
+            Status         = 'Info'
+            Classification = 'Inventory'
+            Attention      = $false
+        }
+    }
+
+    return [PSCustomObject]@{
+        FindingId      = 'security.autorun.suspicious'
+        Finding        = 'Suspicious autorun entry'
+        Impact         = 'Writable-folder autoruns without a trusted publisher can persist unwanted software.'
+        Severity       = 'Medium'
+        Confidence     = 70
+        Status         = 'Warn'
+        Classification = 'SingleSignal'
+        Attention      = $true
+    }
+}
+
+function Resolve-ScheduledTaskSuspiciousFindingTier {
+    <#
+    .SYNOPSIS
+      Map scheduled-task suspicion reasons to Severity/Classification.
+      High-risk paths/scripts stay High; unsigned/untrusted AppData alone is Medium.
+    #>
+    param([string[]]$Reasons)
+
+    $list = @($Reasons | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $highMarkers = @(
+        'risky path',
+        'script action',
+        'unknown action',
+        'unreadable actions',
+        'no actions',
+        'unresolved COM handler'
+    )
+    $highHits = @($list | Where-Object { $highMarkers -contains $_ })
+
+    if ($highHits.Count -ge 2) {
+        return [PSCustomObject]@{
+            Severity       = 'High'
+            Confidence     = 88
+            Status         = 'Warn'
+            Classification = 'CorroboratedSuspect'
+            Attention      = $true
+        }
+    }
+
+    if ($highHits.Count -eq 1) {
+        return [PSCustomObject]@{
+            Severity       = 'High'
+            Confidence     = 82
+            Status         = 'Warn'
+            Classification = 'SingleSignal'
+            Attention      = $true
+        }
+    }
+
+    # unsigned / untrusted publisher / missing target in writable path
+    return [PSCustomObject]@{
+        Severity       = 'Medium'
+        Confidence     = 70
+        Status         = 'Warn'
+        Classification = 'SingleSignal'
+        Attention      = $true
+    }
 }
 
 function Test-IsScheduledTaskScriptExecute {
@@ -1451,16 +1591,19 @@ function Invoke-ScheduledTasksAudit {
         $findings = @()
         if ($suspect.Count -gt 0) {
             foreach ($task in @($suspect | Select-Object -First 15)) {
-                $reasons = if ($task.PSObject.Properties['SuspiciousReasons']) { @($task.SuspiciousReasons) -join ', ' } else { '' }
+                $reasons = if ($task.PSObject.Properties['SuspiciousReasons']) { @($task.SuspiciousReasons) } else { @() }
+                $reasonText = ($reasons -join ', ')
                 $actionText = ''
                 try {
                     $actionText = (@($task.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join '; ')
                 } catch { }
+                $tier = Resolve-ScheduledTaskSuspiciousFindingTier -Reasons $reasons
                 $findings += New-HealthFinding -FindingId 'security.task.suspicious' -CheckId 'sec_scheduled_tasks' `
                     -Subject ([string]$task.TaskName) -Finding 'Suspicious scheduled task' `
                     -Impact 'Malicious or unexpected tasks can reinstall malware and run with elevated rights.' `
-                    -Severity 'High' -Confidence 80 -Status 'Warn' `
-                    -Evidence @("Path=$($task.TaskPath)", "Reasons=$reasons", "Action=$actionText") `
+                    -Severity $tier.Severity -Confidence $tier.Confidence -Status $tier.Status `
+                    -Classification $tier.Classification `
+                    -Evidence @("Path=$($task.TaskPath)", "Reasons=$reasonText", "Action=$actionText") `
                     -Recommendations @('Disable or delete the task if unexpected.', 'Inspect the action executable path and publisher.') `
                     -Actions @(@{ type = 'shell'; target = 'taskschd.msc'; label = 'Task Scheduler' })
             }
@@ -1604,19 +1747,35 @@ function Invoke-MinerBehaviorAudit {
 
     $hits = [System.Collections.Generic.List[string]]::new()
     try {
-        $samples = Get-ProcessCpuPercentMap -SampleMs 400
+        # Two spaced CPU maps: high_cpu+writable_path must sustain across both samples.
+        # miner_cmdline remains a strong one-shot signal.
+        $samplesA = Get-ProcessCpuPercentMap -SampleMs 400
+        Start-Sleep -Milliseconds 1500
+        $samplesB = Get-ProcessCpuPercentMap -SampleMs 400
         foreach ($proc in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
             if ($null -eq $proc) { continue }
             $procId = [int]$proc.ProcessId
             $path = [string]$proc.ExecutablePath
             $cmd = [string]$proc.CommandLine
-            $cpu = 0.0
-            if ($samples -and $samples.ContainsKey($procId)) { $cpu = [double]$samples[$procId] }
-            $risk = Get-ProcessRiskInfo -Name ([string]$proc.Name) -FilePath $path -CommandLine $cmd `
-                -IsSigned $null -CpuPercent $cpu -RamMB 0 -Status 'Running'
-            $flags = @([string]$risk.Flags -split ',' | Where-Object { $_ })
-            if ($flags -contains 'miner_cmdline' -or ($flags -contains 'high_cpu' -and $flags -contains 'writable_path')) {
-                $hits.Add("PID $procId $($proc.Name) cpu=$([math]::Round($cpu,1))% flags=$($risk.Flags) path=$path") | Out-Null
+            $cpuA = 0.0
+            $cpuB = 0.0
+            if ($samplesA -and $samplesA.ContainsKey($procId)) { $cpuA = [double]$samplesA[$procId] }
+            if ($samplesB -and $samplesB.ContainsKey($procId)) { $cpuB = [double]$samplesB[$procId] }
+            $cpu = [math]::Max($cpuA, $cpuB)
+            $riskA = Get-ProcessRiskInfo -Name ([string]$proc.Name) -FilePath $path -CommandLine $cmd `
+                -IsSigned $null -CpuPercent $cpuA -RamMB 0 -Status 'Running'
+            $riskB = Get-ProcessRiskInfo -Name ([string]$proc.Name) -FilePath $path -CommandLine $cmd `
+                -IsSigned $null -CpuPercent $cpuB -RamMB 0 -Status 'Running'
+            $flagsA = @([string]$riskA.Flags -split ',' | Where-Object { $_ })
+            $flagsB = @([string]$riskB.Flags -split ',' | Where-Object { $_ })
+            $cmdlineHit = ($flagsA -contains 'miner_cmdline') -or ($flagsB -contains 'miner_cmdline')
+            $sustainedRiskyCpu = (
+                ($flagsA -contains 'high_cpu' -and $flagsA -contains 'writable_path') -and
+                ($flagsB -contains 'high_cpu' -and $flagsB -contains 'writable_path')
+            )
+            if ($cmdlineHit -or $sustainedRiskyCpu) {
+                $flagText = if ($cmdlineHit) { 'miner_cmdline' } else { 'high_cpu,writable_path (sustained)' }
+                $hits.Add("PID $procId $($proc.Name) cpuA=$([math]::Round($cpuA,1))% cpuB=$([math]::Round($cpuB,1))% flags=$flagText path=$path") | Out-Null
             }
         }
     } catch {
@@ -1627,13 +1786,16 @@ function Invoke-MinerBehaviorAudit {
     $findings = @()
     if ($hits.Count -eq 0) {
         $findings += New-HealthFinding -FindingId 'security.miner.ok' -CheckId 'sec_miner_behavior' `
-            -Finding 'No miner heuristics triggered' -Impact 'No high-CPU risky-path or miner cmdline process found in snapshot.' `
-            -Severity 'Info' -Confidence 70 -Status 'Pass'
+            -Finding 'No miner heuristics triggered' -Impact 'No sustained high-CPU risky-path or miner cmdline process found across samples.' `
+            -Severity 'Info' -Confidence 75 -Status 'Pass'
     } else {
         foreach ($hit in $hits) {
+            $isCmdline = $hit -match 'miner_cmdline'
             $findings += New-HealthFinding -FindingId 'security.miner.suspect' -CheckId 'sec_miner_behavior' `
-                -Finding 'Possible miner behavior' -Impact 'Crypto miners often show high CPU and mining pool cmdline from user-writable paths.' `
-                -Severity 'Medium' -Confidence 65 -Status 'Warn' -Evidence @($hit) `
+                -Finding 'Possible miner behavior' -Impact 'Crypto miners often show sustained high CPU and mining pool cmdline from user-writable paths.' `
+                -Severity 'Medium' -Confidence $(if ($isCmdline) { 75 } else { 70 }) -Status 'Warn' `
+                -Classification $(if ($isCmdline) { 'CorroboratedSuspect' } else { 'SingleSignal' }) `
+                -Evidence @($hit) `
                 -Recommendations @('Inspect the process in Process Analyzer and scan the image path with CST.') `
                 -Actions @(@{ type = 'cde'; target = 'ProcessAnalyzer'; label = 'Process Analyzer' })
         }

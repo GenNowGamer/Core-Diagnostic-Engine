@@ -19,12 +19,14 @@ $CoreModule   = Join-Path $CoreDir 'Toolkit.Core.psm1'
 Import-Module $CoreModule -Force -DisableNameChecking
 . (Join-Path $CoreDir 'HealthFindings.ps1')
 . (Join-Path $CoreDir 'EventFindingClusters.ps1')
+. (Join-Path $CoreDir 'HealthFindingCorroboration.ps1')
 . (Join-Path $CoreDir 'DriverFilterAllowlist.ps1')
 . (Join-Path $CoreDir 'HealthChecks.ps1')
 . (Join-Path $CoreDir 'SystemAuditChecks.ps1')
 . (Join-Path $CoreDir 'SecurityAuditChecks.ps1')
 . (Join-Path $CoreDir 'HijackRepairChecks.ps1')
 . (Join-Path $CoreDir 'HealthCheckOrchestrator.ps1')
+. (Join-Path $CoreDir 'MachineBaseline.ps1')
 
 $catalog = Get-HealthCheckCatalog
 $validIds = Get-HealthCheckCatalogIds -Catalog $catalog
@@ -144,6 +146,28 @@ $workflow = Start-Workflow -WorkflowName 'SystemHealthCheck' -ScriptBlock {
         }
 
         Invoke-HealthCheckRecommendations -WorkflowResult $r -Catalog $catalog -FromStepIndex $before
+    }
+
+    $corroborated = Invoke-HealthFindingCorroboration -WorkflowResult $r
+    if ($corroborated -gt 0) {
+        Write-Log "Corroboration pass adjusted $corroborated finding(s)."
+    }
+
+    $calibrated = Invoke-HealthFindingConfidenceCalibration -WorkflowResult $r
+    if ($calibrated -gt 0) {
+        Write-Log "Confidence calibration adjusted $calibrated finding(s)."
+    }
+
+    try {
+        $deltaCount = Add-HealthBaselineDeltaFindings -WorkflowResult $r
+        if ($deltaCount -gt 0) {
+            Write-Log "Baseline delta attached $deltaCount finding(s)."
+        }
+        $baselinePath = Save-CdeMachineBaselineFromWorkflow -WorkflowResult $r
+        Write-Log "Machine baseline saved: $baselinePath"
+    }
+    catch {
+        Write-Log ("Baseline store skipped: {0}" -f $_.Exception.Message) -Level Warning
     }
 
     $overallHealth = Set-WorkflowOverallHealth -WorkflowResult $r

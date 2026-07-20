@@ -1,0 +1,26 @@
+{
+  "packId": "hyperv_guest",
+  "description": "Suppress common Hyper-V / VM guest storage and corrected-WHEA noise near virtualization providers.",
+  "autoDetect": ["hyperv_guest", "vm_guest"],
+  "clusterSuppressors": {
+    "disk_instability": [
+      {
+        "providerContains": "storvsc",
+        "eventId": 5,
+        "windowMinutes": 30
+      },
+      {
+        "providerContains": "Hyper-V",
+        "eventId": 18500,
+        "windowMinutes": 60
+      }
+    ],
+    "whea_corrected_error": [
+      {
+        "providerContains": "Hyper-V",
+        "eventId": 18500,
+        "windowMinutes": 60
+      }
+    ]
+  }
+}

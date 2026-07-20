@@ -16,11 +16,12 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 ## Session Update (2026-07-20)
 
+- **Fault-vs-noise (P0–P2)** — Finding Classification + Attention filter; event frequency/WHEA split/residual cap; multi-sample CPU/RAM (+ miner); SMART media vs interconnect tiers; post-run corroboration; publisher-aware autorun/task scoring; soft/hard `OverallHealth` (`HealthyWithNotes`); confidence floors/caps; Diag & Repair `Incomplete` + confirm-on-Fail; battery/thermal/reliability Health checks; per-machine baselines (`CDE\Runtime\Data\baselines\`); lab event suppressor packs. Details — `Toolkit\session_handoff.md`, `Docs\OUTPUT_CONTRACT.md`.
 - **Health Check Results** — Finding review text is drag-selectable/copyable (`SelectableTextStyle` read-only TextBoxes).
 - **Driver Signature Audit** — Uses shared CST `allowlistedFilterNames` (incl. Volume class + `applockerfltr`). Harvest/merge scripts under `Scripts\Tools\`; lab helper `D:\Hyper-V\w11-infect-lab\Harvest-DriverFilters.ps1`.
 - **Security Tampering Audit** — Active third-party AV (Security Center enabled) explains Defender-passive Pass; firewall/UAC/SmartScreen and Defender-off-without-AV still Warn.
 - **Work orders** — Opened/Closed/run Completed times show as `Jul 20, 2026 9:48 AM`-style local text; JSON stays ISO.
-- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe`; GUI payload **2026-07-20 10:17:29 AM**.
+- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` (**2026-07-20 10:59 AM**); GUI payload **2026-07-20 11:31 AM** (fault-vs-noise ship); earlier same-day UX/allowlist publish **10:17 AM**.
 
 ## Session Update (2026-07-17)
 
@@ -646,6 +647,7 @@ folder recursively to prevent Explorer windows from opening at sign-in.
 - [x] System Health Check PDF — per-check catalog labels via `CheckId`; multi-page item cards repeat test name (2026-06-15)
 - [x] System Health Check catalog trim — hardware/Diag & Repair, SMART analyzer, Defender, CST scan-only removed from picker; Update Hash IOCs in CST config dialog (2026-06-18)
 - [x] Health Check Results selectable/copyable review text; Driver Signature Audit shared CST filter allowlist + harvest tools; Security Tampering third-party AV coexistence; work-order friendly timestamps (2026-07-20)
+- [x] Fault-vs-noise hardening P0–P2 — Classification/Attention, HealthyWithNotes, event gates/WHEA, multi-sample vitals, SMART tiers, corroboration, publisher-aware autorun/tasks, Incomplete+confirm-on-Fail, battery/thermal/reliability, baselines, lab suppressor packs (2026-07-20)
 - [x] Security capability closure — Defender exclusions, ransomware recovery, driver/minifilter inventory, miner behavior audit; Process Analyzer network/module anomalies; CST suppressed findings expander (2026-07-17)
 - [x] CST false-positive hardening — timeout-only Authenticode no finding; unsigned DLL risky-path Low/0.50 weak signal; stock Windows/Malwarebytes filter allowlist; Defender `0x800106BA` N/A (2026-07-17)
 - [x] File Manager — junction/reparse skip, custom context menus, checkbox multi-select (2026-06-23)

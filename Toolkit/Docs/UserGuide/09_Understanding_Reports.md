@@ -8,6 +8,7 @@ CDE separates **operator deliverables** from **internal app data**:
 |----------|----------|
 | **`Logs\`** | **PDF only** — printable reports for customers and case files |
 | **`CDE\Runtime\Data\workflows\`** | Internal workflow JSON (step details, health summaries, structured findings and actions) |
+| **`CDE\Runtime\Data\baselines\`** | Per-machine Health/SMART baseline snapshots for cross-run deltas |
 | **`CDE\Runtime\Data\scans\`** | Internal JSON for Hijack & Scam Repair and Process Analyzer snapshots |
 | **`CDE\Runtime\Data\cst\`** | Internal CST scan JSON, plus correlation artifacts such as `CST_BehaviorTelemetry_*` and `CST_NetworkSnapshot_*` |
 | **`CDE\Runtime\Data\sessions\`** | PowerShell session `.log` files (not written to `Logs\`) |
@@ -36,11 +37,12 @@ There is no **Save report** or **Open HTML** button in the GUI — operators use
 ## What PDF reports contain
 
 - Workflow name and timestamp
-- Overall health summary (Pass / Warn / Fail counts)
+- Overall health summary (`Healthy` / `HealthyWithNotes` / `Warning` / `Critical` when present; otherwise Pass / Warn / Fail counts)
 - Step-by-step results in plain language
 - System Health PDFs label each check using friendly names from the health catalog
-- System Health findings include Finding, Impact, Severity, deterministic Confidence (0–100 match score), Evidence, and Recommendations when available
+- System Health findings include Finding, Impact, Severity, evidence-quality Classification, deterministic Confidence (0–100 match score), Evidence, and Recommendations when available
 - System Health keeps detailed legacy output (adapter/device/service/event inventories) alongside the scored findings; older text-only reports still use the legacy formatter
+- Actionable findings are those classified as Confirmed fault, Corroborated suspect, or Single signal (Warn/Fail). Inventory, Expected limitation, and Incomplete stay in verified/detail views
 - Hijack & Scam Repair and Process Analyzer PDFs use a findings/process table layout (landscape) suitable for bench notes
 - CST PDFs retain primary findings and review-only suppressed audit rows. In the live CST window, suppressed rows are collapsed under **Suppressed audit Findings** until expanded
 

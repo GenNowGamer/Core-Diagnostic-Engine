@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
@@ -15,4 +15,13 @@
   <ItemGroup>
     <ProjectReference Include="..\ToolkitGUI\ToolkitGUI.csproj" />
   </ItemGroup>
+
+  <!-- WinExe project references often omit ToolkitGUI.dll from the test output; copy it explicitly. -->
+  <Target Name="CopyToolkitGuiAssembly" AfterTargets="Build">
+    <PropertyGroup>
+      <_ToolkitGuiDll>$(MSBuildThisFileDirectory)..\ToolkitGUI\bin\$(Configuration)\net8.0-windows\ToolkitGUI.dll</_ToolkitGuiDll>
+    </PropertyGroup>
+    <Copy SourceFiles="$(_ToolkitGuiDll)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true"
+          Condition="Exists('$(_ToolkitGuiDll)')" />
+  </Target>
 </Project>

@@ -78,6 +78,11 @@ function Test-CdeSmartThresholds {
         $names = ($warns | Select-Object -First 3 | ForEach-Object { $_.Name }) -join ', '
         return ('Warn: {0} warning attribute(s) ({1})' -f $warns.Count, $names)
     }
+    $info = @($d.Attributes | Where-Object { $_.Status -eq 'Info' })
+    if ($info.Count -gt 0) {
+        $names = ($info | Select-Object -First 3 | ForEach-Object { $_.Name }) -join ', '
+        return ('Passed: interconnect/advisory attribute(s) noted ({0}) — not treated as media failure' -f $names)
+    }
     return 'Passed'
 }
 

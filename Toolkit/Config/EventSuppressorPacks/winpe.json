@@ -1,0 +1,14 @@
+{
+  "packId": "winpe",
+  "description": "WinPE session starts are expected; suppress improper-shutdown clusters near Event Log service start.",
+  "autoDetect": ["winpe"],
+  "clusterSuppressors": {
+    "unexpected_shutdown": [
+      {
+        "providerContains": "EventLog",
+        "eventId": 6005,
+        "windowMinutes": 120
+      }
+    ]
+  }
+}

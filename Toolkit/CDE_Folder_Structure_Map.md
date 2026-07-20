@@ -5,6 +5,8 @@
 > Current canonical source/build flow is `App/ToolkitGUI/` -> `App/Publish-ToolkitGUI.ps1` -> published GUI payload under `CDE/ToolkitGUI/bin/Release/net8.0-windows/` (not source).
 > **Operational addendum (2026-07-20):** System Health Driver Signature Audit loads CST `rules.json` filter allowlists via `Scripts/Core/DriverFilterAllowlist.ps1`. Filter harvest/merge tools live under `Scripts/Tools/`. Security Tampering Audit suppresses expected Defender-passive Warns when an enabled third-party AV is present. Work-order UI/PDF timestamps use `WorkOrderTimestampFormatter` (friendly local display; JSON remains ISO).
 
+> **Operational addendum (2026-07-20):** Fault-vs-noise hardening — finding `classification` + Attention filter; soft/hard `OverallHealth` (`HealthyWithNotes`); event cluster v2 (frequency gates, WHEA split, residual cap) + optional `Config/EventSuppressorPacks/`; multi-sample vitals; SMART media vs interconnect tiers; `HealthFindingCorroboration.ps1` / confidence calibration; publisher-aware autorun/task scoring; Diag & Repair `Incomplete` + confirm-on-Fail; Health checks `battery_health` / `thermal_events` / `reliability_monitor`; per-machine baselines in `CDE/Runtime/Data/baselines/` via `MachineBaseline.ps1`. Contract: `Docs/OUTPUT_CONTRACT.md`.
+
 > **Operational addendum (2026-07-17):** System Health uses `Scripts/Core/HealthFindings.ps1` plus `Config/EventFindingClusters.json` / `Scripts/Core/EventFindingClusters.ps1` for persisted structured findings and event correlation. Deep System `gpu_functional_tests` invokes the self-contained `App/CdeGpuDiagCli/` helper published beside ToolkitGUI. GUI/PDF retain detailed legacy output alongside scored findings.
 > **Operational addendum (2026-07-03):** WinPE boot menu options 1–2 hand off to main `MainWindow` in-process (opaque shell; `WinPeStartupLog.cs` → `CDE\Runtime\winpe_startup.log`). GUI-only USB sync after `Publish-ToolkitGUI.ps1`; no `boot.wim` rebuild unless `startnet.cmd` changed.
 > **Operational addendum (2026-07-01):** Operator PDFs only in `Logs\`; internal JSON/session logs under `CDE\Runtime\Data\` (`workflows`, `scans`, `cst`, `sessions`); work order case JSON under `CDE\Runtime\WorkOrders\` (cleared via **Dashboard → Clear Recent**, not Settings). GUI **Open Report** (no Save report / Open HTML). Dashboard **suggested path** from `SymptomFlows.json` keywords on work order generate; **Verify case** removed. Case timeline light-theme cards.
@@ -263,10 +265,12 @@ Scripts/
 │   ├── OfflineRuntime.ps1  # CDE\Runtime paths, offline session validation/cleanup
 │   ├── ShadowCopyBrowse.ps1  # File Manager VSS list/mount (full Windows; all snapshots, newest-first)
 │   ├── HealthCheckOrchestrator.ps1  # System Health Check catalog, phase lines, child workflow merge
-│   ├── HealthChecks.ps1     # Quick vitals / deep system dispatchers (incl. Windows Update + GPU functional tests)
-│   ├── HealthFindings.ps1   # Canonical structured finding schema, markers, status rollup
+│   ├── HealthChecks.ps1     # Quick vitals / deep system dispatchers (CPU/RAM multi-sample, battery/thermal/reliability, Windows Update, GPU functional tests)
+│   ├── HealthFindings.ps1   # Canonical structured finding schema, classification, markers, status rollup, confidence floors/caps
+│   ├── HealthFindingCorroboration.ps1  # Post-run cross-check promote/demote + confidence calibration hook
+│   ├── MachineBaseline.ps1  # Per-machine Health/SMART baseline store and delta findings
 │   ├── DriverFilterAllowlist.ps1  # Shared CST filter allowlist loader for Driver Signature Audit
-│   ├── EventFindingClusters.ps1 # Event-log correlation and confidence scoring
+│   ├── EventFindingClusters.ps1 # Event-log correlation, confidence scoring, lab suppressor pack merge
 │   ├── SystemAuditChecks.ps1  # Shared audit functions (System Health Check audit_* checks)
 │   ├── SecurityAuditChecks.ps1  # Shared security audit functions (System Health Check sec_* checks)
 │   ├── ProcessAnalyzer.Core.ps1  # Process detail, network/module anomaly collection, credential/injection/miner risk flags, CST invoke
@@ -313,8 +317,9 @@ Config/
 │                         # - Tools (AutoDiscoverTools, ValidateTools)
 │                         # - Logging (LogPath, MaxLogAge)
 │
-├── HealthCheckCatalog.json  # System Health catalog/presets/actions; includes separate gpu_info + gpu_functional_tests
-├── EventFindingClusters.json # Event correlation rules, scoring, suppressors, recommendations
+├── HealthCheckCatalog.json  # System Health catalog/presets/actions; includes battery/thermal/reliability + gpu_info/gpu_functional_tests
+├── EventFindingClusters.json # Event correlation rules, scoring, suppressors, recommendations (v2 frequency/WHEA/residual cap)
+├── EventSuppressorPacks/    # Optional lab packs (hyperv_guest, dock_usb, winpe) merged at cluster load
 └── settings.json         # Toolkit settings
                          # - ToolkitRoot, LogsRoot, ToolsRoot paths
                          # - DiagnosticsRoot, WindowsToolsRoot paths
@@ -426,6 +431,7 @@ Logs/
 ```
 CDE/Runtime/Data/
 ├── workflows/     # Workflow JSON (step details, health summaries)
+├── baselines/     # Per-machine Health/SMART baseline snapshots (MachineBaseline.ps1)
 ├── scans/         # Hijack & Scam Repair / Process Analyzer JSON
 ├── cst/           # Process Analyzer CST single-file scan JSON
 └── sessions/      # PowerShell session .log files

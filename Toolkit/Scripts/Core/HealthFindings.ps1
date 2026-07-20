@@ -2,7 +2,88 @@
 <#
 .SYNOPSIS
     Shared structured finding helpers for System Health Check.
+
+.NOTES
+    Evidence-quality Classification follows NIST SP 800-61 triage practice
+    (validate / confirm before treating a signal as an incident) and keeps
+    Incomplete distinct from Fail per common test-result pass/fail/incomplete
+    outcomes (ISO/IEC/IEEE 29119 pass/fail criteria; incomplete when the check
+    cannot complete).
 #>
+
+function Resolve-HealthFindingClassification {
+    param(
+        [string]$Classification = '',
+        [string]$Status = 'Info',
+        [string]$Severity = 'Info',
+        [int]$Confidence = 80
+    )
+
+    $explicit = ([string]$Classification).Trim()
+    if ($explicit -match '^(?i)(ConfirmedFault|CorroboratedSuspect|SingleSignal|Inventory|ExpectedLimitation|Incomplete)$') {
+        switch -Regex ($explicit) {
+            '^(?i)ConfirmedFault$' { return 'ConfirmedFault' }
+            '^(?i)CorroboratedSuspect$' { return 'CorroboratedSuspect' }
+            '^(?i)SingleSignal$' { return 'SingleSignal' }
+            '^(?i)Inventory$' { return 'Inventory' }
+            '^(?i)ExpectedLimitation$' { return 'ExpectedLimitation' }
+            '^(?i)Incomplete$' { return 'Incomplete' }
+        }
+    }
+
+    $statusNorm = ([string]$Status).Trim()
+    $severityNorm = ([string]$Severity).Trim()
+
+    if ($statusNorm -match '^(?i)fail$') { return 'ConfirmedFault' }
+    if ($statusNorm -match '^(?i)n/?a$' -or $statusNorm -match '^(?i)skip$') { return 'Incomplete' }
+    if ($statusNorm -match '^(?i)pass$' -or $statusNorm -match '^(?i)info$') { return 'Inventory' }
+
+    if ($statusNorm -match '^(?i)warn$') {
+        if ($severityNorm -match '^(?i)critical$') { return 'ConfirmedFault' }
+        if ($severityNorm -match '^(?i)high$' -and $Confidence -ge 90) { return 'CorroboratedSuspect' }
+        return 'SingleSignal'
+    }
+
+    return 'SingleSignal'
+}
+
+function Test-HealthFindingRequiresAttention {
+    param(
+        [string]$Classification = '',
+        [string]$Status = 'Info',
+        [string]$Severity = 'Info',
+        [int]$Confidence = 80
+    )
+
+    $resolved = Resolve-HealthFindingClassification `
+        -Classification $Classification `
+        -Status $Status `
+        -Severity $Severity `
+        -Confidence $Confidence
+
+    switch -Regex ($resolved) {
+        '^(?i)ConfirmedFault$' { return $true }
+        '^(?i)CorroboratedSuspect$' { return $true }
+        '^(?i)SingleSignal$' {
+            return ([string]$Status).Trim() -match '^(?i)(fail|warn)$'
+        }
+        default { return $false }
+    }
+}
+
+function Get-HealthFindingClassificationDisplay {
+    param([string]$Classification)
+
+    switch -Regex (([string]$Classification).Trim()) {
+        '^(?i)ConfirmedFault$' { return 'Confirmed fault' }
+        '^(?i)CorroboratedSuspect$' { return 'Corroborated suspect' }
+        '^(?i)SingleSignal$' { return 'Single signal' }
+        '^(?i)Inventory$' { return 'Inventory' }
+        '^(?i)ExpectedLimitation$' { return 'Expected limitation' }
+        '^(?i)Incomplete$' { return 'Incomplete' }
+        default { return ([string]$Classification).Trim() }
+    }
+}
 
 function New-HealthFinding {
     param(
@@ -17,6 +98,8 @@ function New-HealthFinding {
         [int]$Confidence = 80,
         [ValidateSet('Fail', 'Warn', 'Pass', 'Info', 'N/A', 'Skip')]
         [string]$Status = 'Info',
+        [ValidateSet('', 'ConfirmedFault', 'CorroboratedSuspect', 'SingleSignal', 'Inventory', 'ExpectedLimitation', 'Incomplete')]
+        [string]$Classification = '',
         [string[]]$Evidence,
         [string[]]$Recommendations,
         [object[]]$Actions
@@ -45,6 +128,12 @@ function New-HealthFinding {
         if (-not [string]::IsNullOrWhiteSpace([string]$rec)) { [void]$recOut.Add([string]$rec) }
     }
 
+    $resolvedClassification = Resolve-HealthFindingClassification `
+        -Classification $Classification `
+        -Status $Status `
+        -Severity $Severity `
+        -Confidence $Confidence
+
     return [PSCustomObject]@{
         findingId       = [string]$FindingId
         checkId         = [string]$CheckId
@@ -54,6 +143,7 @@ function New-HealthFinding {
         severity        = [string]$Severity
         confidence      = [int]$Confidence
         status          = [string]$Status
+        classification  = [string]$resolvedClassification
         evidence        = @($evidenceOut.ToArray())
         recommendations = @($recOut.ToArray())
         actions         = @($actionList.ToArray())
@@ -102,8 +192,32 @@ function Get-HealthStepStatusFromFindings {
     return $bestStatus
 }
 
+function Get-HealthFindingClassificationRank {
+    param([string]$Classification)
+    switch -Regex (([string]$Classification).Trim()) {
+        '^(?i)ConfirmedFault$' { return 6 }
+        '^(?i)CorroboratedSuspect$' { return 5 }
+        '^(?i)SingleSignal$' { return 4 }
+        '^(?i)Incomplete$' { return 3 }
+        '^(?i)ExpectedLimitation$' { return 2 }
+        '^(?i)Inventory$' { return 1 }
+        default { return 0 }
+    }
+}
+
 function ConvertTo-HealthFindingMarkerLine {
     param([Parameter(Mandatory)]$Finding)
+
+    $classification = if ($Finding.PSObject.Properties.Name -contains 'classification' -and
+        -not [string]::IsNullOrWhiteSpace([string]$Finding.classification)) {
+        [string]$Finding.classification
+    }
+    else {
+        Resolve-HealthFindingClassification `
+            -Status ([string]$Finding.status) `
+            -Severity ([string]$Finding.severity) `
+            -Confidence ([int]$Finding.confidence)
+    }
 
     $payload = @{
         findingId       = [string]$Finding.findingId
@@ -114,6 +228,7 @@ function ConvertTo-HealthFindingMarkerLine {
         severity        = [string]$Finding.severity
         confidence      = [int]$Finding.confidence
         status          = [string]$Finding.status
+        classification  = [string]$classification
         evidence        = @($Finding.evidence)
         recommendations = @($Finding.recommendations)
         actions         = @($Finding.actions)
@@ -132,6 +247,7 @@ function Add-HealthFindingsToStep {
     $ordered = @(
         $Findings |
             Sort-Object `
+                @{ Expression = { - (Get-HealthFindingClassificationRank -Classification $_.classification) } }, `
                 @{ Expression = { - (Get-HealthFindingSeverityRank -Severity $_.severity) } }, `
                 @{ Expression = { - [int]$_.confidence } }, `
                 @{ Expression = { [string]$_.finding } }
@@ -176,6 +292,8 @@ function Convert-IssueListToHealthFindings {
         [string]$Impact = '',
         [string]$Severity = 'Medium',
         [string]$Status = 'Warn',
+        [ValidateSet('', 'ConfirmedFault', 'CorroboratedSuspect', 'SingleSignal', 'Inventory', 'ExpectedLimitation', 'Incomplete')]
+        [string]$Classification = '',
         [string[]]$Issues = @(),
         [string[]]$Recommendations = @(),
         [object[]]$Actions = @(),
@@ -197,6 +315,7 @@ function Convert-IssueListToHealthFindings {
             -Severity 'Info' `
             -Confidence 85 `
             -Status 'Pass' `
+            -Classification 'Inventory' `
             -Evidence $evidence))
         return @($list.ToArray())
     }
@@ -213,6 +332,7 @@ function Convert-IssueListToHealthFindings {
             -Severity $Severity `
             -Confidence 80 `
             -Status $Status `
+            -Classification $Classification `
             -Evidence @([string]$issue) `
             -Recommendations $Recommendations `
             -Actions $Actions))
@@ -241,8 +361,69 @@ function New-InventoryHealthFinding {
         -Severity 'Info' `
         -Confidence $Confidence `
         -Status 'Info' `
+        -Classification 'Inventory' `
         -Evidence $Evidence `
         -Recommendations $Recommendations `
         -Actions $Actions
+}
+
+function Get-CalibratedHealthFindingConfidence {
+    <#
+    .SYNOPSIS
+      Apply floors/caps after classification + corroboration settle.
+
+    .NOTES
+      Formula (documented in OUTPUT_CONTRACT.md):
+        calibrated = clamp(0, 100, base + corroboration_bonus − noise_penalty)
+      Corroboration bonus is applied earlier (Invoke-HealthFindingCorroboration).
+      This pass enforces floors/caps so technicians can compare scores across checks.
+    #>
+    param(
+        [string]$Classification = '',
+        [int]$Confidence = 80,
+        [string]$Status = 'Info'
+    )
+
+    $cls = Resolve-HealthFindingClassification `
+        -Classification $Classification `
+        -Status $Status `
+        -Severity 'Info' `
+        -Confidence $Confidence
+
+    $c = [math]::Min(100, [math]::Max(0, [int]$Confidence))
+    $statusNorm = ([string]$Status).Trim()
+
+    switch -Regex ($cls) {
+        '^(?i)ConfirmedFault$' {
+            return [math]::Max($c, 90)
+        }
+        '^(?i)CorroboratedSuspect$' {
+            # Floor only — bonus already applied during corroboration.
+            return [math]::Max($c, 75)
+        }
+        '^(?i)SingleSignal$' {
+            return $c
+        }
+        '^(?i)Inventory$' {
+            # Noise demotion for residual/inventory Info rows only — Pass "clean" stays as authored.
+            if ($statusNorm -match '^(?i)info$') {
+                return [math]::Min($c, 40)
+            }
+            if ($statusNorm -match '^(?i)warn$') {
+                return [math]::Min($c, 55)
+            }
+            return $c
+        }
+        '^(?i)ExpectedLimitation$' {
+            # High certainty that this is a known limitation (not a drive fault).
+            return [math]::Max([math]::Min($c, 95), 85)
+        }
+        '^(?i)Incomplete$' {
+            return [math]::Max($c, 90)
+        }
+        default {
+            return $c
+        }
+    }
 }
 

@@ -507,22 +507,192 @@ function Get-WorkflowStepCounts {
 
     $list = @($Steps)
     [PSCustomObject]@{
-        Pass = @($list | Where-Object { $_.Status -eq 'Pass' }).Count
-        Warn = @($list | Where-Object { $_.Status -eq 'Warn' }).Count
-        Fail = @($list | Where-Object { $_.Status -eq 'Fail' }).Count
-        Skip = @($list | Where-Object { $_.Status -eq 'Skip' }).Count
+        Pass       = @($list | Where-Object { $_.Status -eq 'Pass' }).Count
+        Warn       = @($list | Where-Object { $_.Status -eq 'Warn' }).Count
+        Fail       = @($list | Where-Object { $_.Status -eq 'Fail' }).Count
+        Skip       = @($list | Where-Object { $_.Status -eq 'Skip' }).Count
+        Incomplete = @($list | Where-Object { $_.Status -eq 'Incomplete' -or $_.Status -eq 'N/A' }).Count
+    }
+}
+
+function Resolve-WorkflowFindingClassificationLocal {
+    <#
+    .SYNOPSIS
+      Lightweight classification resolver for OverallHealth rollup (mirrors HealthFindings.ps1).
+      Prefer explicit classification; otherwise derive from status/severity/confidence.
+    #>
+    param(
+        $Finding
+    )
+
+    if ($null -eq $Finding) { return 'SingleSignal' }
+
+    $explicit = ''
+    if ($Finding -is [hashtable]) {
+        if ($Finding.ContainsKey('classification')) { $explicit = [string]$Finding['classification'] }
+    }
+    elseif ($Finding.PSObject.Properties['classification']) {
+        $explicit = [string]$Finding.classification
+    }
+
+    $explicit = $explicit.Trim()
+    if ($explicit -match '^(?i)(ConfirmedFault|CorroboratedSuspect|SingleSignal|Inventory|ExpectedLimitation|Incomplete)$') {
+        switch -Regex ($explicit) {
+            '^(?i)ConfirmedFault$' { return 'ConfirmedFault' }
+            '^(?i)CorroboratedSuspect$' { return 'CorroboratedSuspect' }
+            '^(?i)SingleSignal$' { return 'SingleSignal' }
+            '^(?i)Inventory$' { return 'Inventory' }
+            '^(?i)ExpectedLimitation$' { return 'ExpectedLimitation' }
+            '^(?i)Incomplete$' { return 'Incomplete' }
+        }
+    }
+
+    $status = ''
+    $severity = ''
+    $confidence = 80
+    if ($Finding -is [hashtable]) {
+        if ($Finding.ContainsKey('status')) { $status = [string]$Finding['status'] }
+        if ($Finding.ContainsKey('severity')) { $severity = [string]$Finding['severity'] }
+        if ($Finding.ContainsKey('confidence')) { $confidence = [int]$Finding['confidence'] }
+    }
+    else {
+        if ($Finding.PSObject.Properties['status']) { $status = [string]$Finding.status }
+        if ($Finding.PSObject.Properties['severity']) { $severity = [string]$Finding.severity }
+        if ($Finding.PSObject.Properties['confidence']) { $confidence = [int]$Finding.confidence }
+    }
+
+    $statusNorm = $status.Trim()
+    $severityNorm = $severity.Trim()
+    if ($statusNorm -match '^(?i)fail$') { return 'ConfirmedFault' }
+    if ($statusNorm -match '^(?i)n/?a$' -or $statusNorm -match '^(?i)skip$' -or $statusNorm -match '^(?i)incomplete$') {
+        return 'Incomplete'
+    }
+    if ($statusNorm -match '^(?i)pass$' -or $statusNorm -match '^(?i)info$') { return 'Inventory' }
+    if ($statusNorm -match '^(?i)warn$') {
+        if ($severityNorm -match '^(?i)critical$') { return 'ConfirmedFault' }
+        if ($severityNorm -match '^(?i)high$' -and $confidence -ge 90) { return 'CorroboratedSuspect' }
+        return 'SingleSignal'
+    }
+    return 'SingleSignal'
+}
+
+function Test-WorkflowFindingRequiresAttentionLocal {
+    param($Finding)
+
+    $cls = Resolve-WorkflowFindingClassificationLocal -Finding $Finding
+    $status = ''
+    if ($Finding -is [hashtable]) {
+        if ($Finding.ContainsKey('status')) { $status = [string]$Finding['status'] }
+    }
+    elseif ($Finding.PSObject.Properties['status']) {
+        $status = [string]$Finding.status
+    }
+
+    switch -Regex ($cls) {
+        '^(?i)ConfirmedFault$' { return $true }
+        '^(?i)CorroboratedSuspect$' { return $true }
+        '^(?i)SingleSignal$' {
+            return $status.Trim() -match '^(?i)(fail|warn)$'
+        }
+        default { return $false }
     }
 }
 
 function Get-WorkflowOverallHealth {
+    <#
+    .SYNOPSIS
+      Soft/hard OverallHealth rollup.
+
+    .DESCRIPTION
+      Critical  — confirmed fault / Fail
+      Warning   — attention-worthy suspects (CorroboratedSuspect / SingleSignal Warn|Fail)
+      HealthyWithNotes — ExpectedLimitation / Incomplete / N/A notes only (no attention)
+      Healthy   — clean Pass/Skip with no soft notes
+
+      Aligns with NIST SP 800-61 triage practice: prioritize confirmed/high-impact
+      signals over soft notes so activation/USB-limitation noise does not equal BSOD.
+    #>
     param(
         [Parameter(Mandatory)]
         $Steps
     )
 
-    $counts = Get-WorkflowStepCounts -Steps $Steps
-    if ($counts.Fail -gt 0) { return 'Critical' }
-    if ($counts.Warn -gt 0) { return 'Warning' }
+    $list = @($Steps)
+    $hasCritical = $false
+    $hasWarning = $false
+    $hasNotes = $false
+    $anyStructured = $false
+
+    foreach ($step in $list) {
+        $findings = @()
+        $hasFindingsProp = $false
+        if ($step -is [hashtable]) {
+            $hasFindingsProp = $step.ContainsKey('StructuredFindings') -and $null -ne $step['StructuredFindings']
+            if ($hasFindingsProp) { $findings = @($step['StructuredFindings']) }
+        }
+        elseif ($step.PSObject.Properties['StructuredFindings'] -and $null -ne $step.StructuredFindings) {
+            $hasFindingsProp = $true
+            $findings = @($step.StructuredFindings)
+        }
+
+        $stepStatus = if ($step -is [hashtable]) { [string]$step['Status'] } else { [string]$step.Status }
+
+        if ($hasFindingsProp -and $findings.Count -gt 0) {
+            $anyStructured = $true
+            foreach ($f in $findings) {
+                $cls = Resolve-WorkflowFindingClassificationLocal -Finding $f
+                $fStatus = ''
+                if ($f -is [hashtable]) {
+                    if ($f.ContainsKey('status')) { $fStatus = [string]$f['status'] }
+                }
+                elseif ($f.PSObject.Properties['status']) {
+                    $fStatus = [string]$f.status
+                }
+
+                if ($cls -eq 'ConfirmedFault' -or ($fStatus.Trim() -match '^(?i)fail$' -and $cls -ne 'Incomplete')) {
+                    $hasCritical = $true
+                    continue
+                }
+
+                if (Test-WorkflowFindingRequiresAttentionLocal -Finding $f) {
+                    $hasWarning = $true
+                    continue
+                }
+
+                if ($cls -match '^(?i)(ExpectedLimitation|Incomplete)$') {
+                    $hasNotes = $true
+                }
+                elseif ($cls -eq 'Inventory' -and $fStatus.Trim() -match '^(?i)(info|warn)$') {
+                    $hasNotes = $true
+                }
+            }
+
+            # Incomplete/N/A step status is a soft note even when findings are Pass inventory.
+            if ($stepStatus -match '^(?i)(incomplete|n/?a)$') {
+                $hasNotes = $true
+            }
+        }
+        else {
+            # Legacy steps without StructuredFindings: Fail/Warn remain hard; Incomplete/N/A are notes.
+            switch -Regex ($stepStatus.Trim()) {
+                '^(?i)fail$' { $hasCritical = $true }
+                '^(?i)warn$' { $hasWarning = $true }
+                '^(?i)(incomplete|n/?a)$' { $hasNotes = $true }
+            }
+        }
+    }
+
+    if ($hasCritical) { return 'Critical' }
+    if ($hasWarning) { return 'Warning' }
+    if ($hasNotes) { return 'HealthyWithNotes' }
+
+    # Preserve prior behavior for legacy Warn/Fail-only rollups when no structured findings exist.
+    if (-not $anyStructured) {
+        $counts = Get-WorkflowStepCounts -Steps $Steps
+        if ($counts.Fail -gt 0) { return 'Critical' }
+        if ($counts.Warn -gt 0) { return 'Warning' }
+    }
+
     return 'Healthy'
 }
 

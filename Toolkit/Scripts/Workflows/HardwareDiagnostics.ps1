@@ -178,7 +178,7 @@ try {
     # Safety net: if any fail-on-skip was recorded but steps somehow lacked Fail,
     # do not leave OverallHealth as Healthy (previous code set Warning then overwrite).
     if ($script:HwStorageSkippedInRun -and $script:HwProfileName -eq 'Extended') {
-        if ($workflow.OverallHealth -eq 'Healthy' -or [string]::IsNullOrWhiteSpace($workflow.OverallHealth)) {
+        if ($workflow.OverallHealth -eq 'Healthy' -or $workflow.OverallHealth -eq 'HealthyWithNotes' -or [string]::IsNullOrWhiteSpace($workflow.OverallHealth)) {
             $workflow.OverallHealth = 'Warning'
         }
     }

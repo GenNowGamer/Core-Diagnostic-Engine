@@ -17,6 +17,90 @@ function Add-HealthCheckStep {
     $WorkflowResult.Steps.Add([PSCustomObject]$Step)
 }
 
+function Get-SustainedCpuLoadSample {
+    <#
+    .SYNOPSIS
+        Multi-sample Win32_Processor.LoadPercentage average (not a single snapshot).
+    .NOTES
+        A single WMI LoadPercentage read is a point-in-time value and is noisy under
+        bench load. Averaging several spaced samples reduces false Warns. WMI
+        performance counters are interval-based and need refresh spacing for
+        meaningful utilization (Microsoft WMI performance monitoring guidance).
+    #>
+    param(
+        [int]$SampleCount = 3,
+        [int]$IntervalMs = 2000
+    )
+
+    if ($SampleCount -lt 2) { $SampleCount = 2 }
+    if ($IntervalMs -lt 500) { $IntervalMs = 500 }
+
+    $samples = New-Object System.Collections.Generic.List[double]
+    $processors = @()
+    for ($i = 0; $i -lt $SampleCount; $i++) {
+        $processors = @(Get-CimInstance Win32_Processor)
+        $avg = ($processors | Measure-Object -Property LoadPercentage -Average).Average
+        if ($null -eq $avg) { $avg = 0 }
+        [void]$samples.Add([double]$avg)
+        if ($i -lt ($SampleCount - 1)) {
+            Start-Sleep -Milliseconds $IntervalMs
+        }
+    }
+
+    $arr = @($samples.ToArray())
+    $average = ($arr | Measure-Object -Average).Average
+    $minimum = ($arr | Measure-Object -Minimum).Minimum
+    $highCount = @($arr | Where-Object { $_ -gt 90 }).Count
+
+    return [PSCustomObject]@{
+        Samples         = $arr
+        Average         = [double]$average
+        Minimum         = [double]$minimum
+        HighSampleCount = [int]$highCount
+        SampleCount     = [int]$SampleCount
+        Processors      = $processors
+        IsSustainedHigh = ($average -gt 90 -and $highCount -ge 2)
+    }
+}
+
+function Get-SustainedRamUsageSample {
+    param(
+        [int]$SampleCount = 3,
+        [int]$IntervalMs = 1500
+    )
+
+    if ($SampleCount -lt 2) { $SampleCount = 2 }
+    if ($IntervalMs -lt 500) { $IntervalMs = 500 }
+
+    $samples = New-Object System.Collections.Generic.List[double]
+    $osObj = $null
+    for ($i = 0; $i -lt $SampleCount; $i++) {
+        $osObj = Get-CimInstance Win32_OperatingSystem
+        $total = [double]$osObj.TotalVisibleMemorySize
+        $free = [double]$osObj.FreePhysicalMemory
+        $usedPct = if ($total -gt 0) { (($total - $free) / $total) * 100.0 } else { 0 }
+        [void]$samples.Add([double]$usedPct)
+        if ($i -lt ($SampleCount - 1)) {
+            Start-Sleep -Milliseconds $IntervalMs
+        }
+    }
+
+    $arr = @($samples.ToArray())
+    $average = ($arr | Measure-Object -Average).Average
+    $minimum = ($arr | Measure-Object -Minimum).Minimum
+    $highCount = @($arr | Where-Object { $_ -gt 90 }).Count
+
+    return [PSCustomObject]@{
+        Samples         = $arr
+        Average         = [double]$average
+        Minimum         = [double]$minimum
+        HighSampleCount = [int]$highCount
+        SampleCount     = [int]$SampleCount
+        Os              = $osObj
+        IsSustainedHigh = ($average -gt 90 -and $highCount -ge 2)
+    }
+}
+
 function Invoke-HealthCheck_os_version {
     param($r)
     try {
@@ -49,23 +133,26 @@ function Invoke-HealthCheck_os_version {
 function Invoke-HealthCheck_cpu_load {
     param($r)
     try {
-        $processors = @(Get-CimInstance Win32_Processor)
-        $cpuLoad = ($processors | Measure-Object -Property LoadPercentage -Average).Average
-        $cpuStatus = if ($cpuLoad -gt 90) { 'Warn' } else { 'Pass' }
+        $sample = Get-SustainedCpuLoadSample -SampleCount 3 -IntervalMs 2000
+        $processors = @($sample.Processors)
+        $cpuLoad = [math]::Round($sample.Average, 1)
+        $sampleText = ($sample.Samples | ForEach-Object { '{0:N1}%' -f $_ }) -join ', '
+        $cpuStatus = if ($sample.IsSustainedHigh) { 'Warn' } else { 'Pass' }
         $output = Format-HealthCheckCpuLoad -Processors $processors
-        $detail = "$([math]::Round($cpuLoad, 1))% average across $($processors.Count) logical processor(s)"
+        $detail = "$cpuLoad% sustained average across $($processors.Count) processor package(s) ($($sample.SampleCount) samples: $sampleText)"
         $findings = @()
-        if ($cpuLoad -gt 90) {
+        if ($sample.IsSustainedHigh) {
             $findings += New-HealthFinding -FindingId 'health.cpu.high_load' -CheckId 'cpu_load' `
                 -Finding 'CPU load is critically high' -Impact 'The system may feel slow or unresponsive under this load.' `
-                -Severity 'High' -Confidence 85 -Status 'Warn' -Evidence @($detail) `
+                -Severity 'High' -Confidence 90 -Status 'Warn' -Classification 'CorroboratedSuspect' `
+                -Evidence @($detail, ("Minimum sample: {0:N1}%" -f $sample.Minimum)) `
                 -Recommendations @('Inspect top CPU consumers in Process Analyzer.', 'Close runaway apps or scan for malware if unexplained.') `
                 -Actions @(@{ type = 'cde'; target = 'ProcessAnalyzer:HighCpu'; label = 'Process Analyzer (high CPU)' })
         }
         else {
             $findings += New-HealthFinding -FindingId 'health.cpu.load_ok' -CheckId 'cpu_load' `
-                -Finding 'CPU load is within normal range' -Impact 'No CPU pressure indicated by this snapshot.' `
-                -Severity 'Info' -Confidence 80 -Status 'Pass' -Evidence @($detail)
+                -Finding 'CPU load is within normal range' -Impact 'No sustained CPU pressure indicated across timed samples.' `
+                -Severity 'Info' -Confidence 85 -Status 'Pass' -Evidence @($detail)
         }
         $step = @{
             Name    = 'CPULoad'
@@ -92,26 +179,29 @@ function Invoke-HealthCheck_cpu_load {
 function Invoke-HealthCheck_ram {
     param($r)
     try {
-        $osObj   = Get-CimInstance Win32_OperatingSystem
+        $sample = Get-SustainedRamUsageSample -SampleCount 3 -IntervalMs 1500
+        $osObj = $sample.Os
         $memMods = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue)
         $totalGB = [math]::Round($osObj.TotalVisibleMemorySize / 1MB, 1)
         $freeGB  = [math]::Round($osObj.FreePhysicalMemory / 1MB, 1)
-        $usedPct = [math]::Round((($osObj.TotalVisibleMemorySize - $osObj.FreePhysicalMemory) / $osObj.TotalVisibleMemorySize) * 100, 1)
-        $ramStatus = if ($usedPct -gt 90) { 'Warn' } else { 'Pass' }
+        $usedPct = [math]::Round($sample.Average, 1)
+        $sampleText = ($sample.Samples | ForEach-Object { '{0:N1}%' -f $_ }) -join ', '
+        $ramStatus = if ($sample.IsSustainedHigh) { 'Warn' } else { 'Pass' }
         $output = Format-HealthCheckRam -Os $osObj -PhysicalMemory $memMods
-        $detail = "Used $usedPct% | Free ${freeGB}GB of ${totalGB}GB"
+        $detail = "Used $usedPct% sustained | Free ${freeGB}GB of ${totalGB}GB ($($sample.SampleCount) samples: $sampleText)"
         $findings = @()
-        if ($usedPct -gt 90) {
+        if ($sample.IsSustainedHigh) {
             $findings += New-HealthFinding -FindingId 'health.memory.high_usage' -CheckId 'ram' `
                 -Finding 'Memory usage is critically high' -Impact 'Applications may thrash to disk and feel unresponsive.' `
-                -Severity 'High' -Confidence 85 -Status 'Warn' -Evidence @($detail) `
+                -Severity 'High' -Confidence 90 -Status 'Warn' -Classification 'CorroboratedSuspect' `
+                -Evidence @($detail, ("Minimum sample: {0:N1}%" -f $sample.Minimum)) `
                 -Recommendations @('Inspect top memory consumers in Process Analyzer.', 'Consider closing browsers/apps or adding RAM if chronic.') `
                 -Actions @(@{ type = 'cde'; target = 'ProcessAnalyzer:HighRam'; label = 'Process Analyzer (high RAM)' })
         }
         else {
             $findings += New-HealthFinding -FindingId 'health.memory.usage_ok' -CheckId 'ram' `
-                -Finding 'Memory usage is within normal range' -Impact 'No memory pressure indicated by this snapshot.' `
-                -Severity 'Info' -Confidence 80 -Status 'Pass' -Evidence @($detail)
+                -Finding 'Memory usage is within normal range' -Impact 'No sustained memory pressure indicated across timed samples.' `
+                -Severity 'Info' -Confidence 85 -Status 'Pass' -Evidence @($detail)
         }
         $step = @{
             Name    = 'RAM'
@@ -818,6 +908,336 @@ function Invoke-HealthCheck_critical_events_7d {
     }
 }
 
+function Get-BatteryHealthSnapshot {
+    <#
+    .SYNOPSIS
+      Design vs full-charge capacity from ROOT\WMI (powercfg-equivalent sources).
+      Win32_Battery DesignCapacity/FullChargeCapacity are often empty on modern PCs.
+    #>
+    $designed = 0
+    $full = 0
+    $cycles = $null
+    $name = ''
+
+    try {
+        $static = @(Get-CimInstance -Namespace 'root\wmi' -ClassName BatteryStaticData -ErrorAction SilentlyContinue)
+        if ($static.Count -gt 0) {
+            $designed = [int64]($static | Measure-Object -Property DesignedCapacity -Sum).Sum
+            $name = [string]($static[0].DeviceName)
+            if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$static[0].ManufactureName }
+        }
+    } catch { }
+
+    try {
+        $fullRows = @(Get-CimInstance -Namespace 'root\wmi' -ClassName BatteryFullChargedCapacity -ErrorAction SilentlyContinue)
+        if ($fullRows.Count -gt 0) {
+            $full = [int64]($fullRows | Measure-Object -Property FullChargedCapacity -Sum).Sum
+        }
+    } catch { }
+
+    try {
+        $cycleRows = @(Get-CimInstance -Namespace 'root\wmi' -ClassName BatteryCycleCount -ErrorAction SilentlyContinue)
+        if ($cycleRows.Count -gt 0) {
+            $cycles = [int]($cycleRows | Measure-Object -Property CycleCount -Sum).Sum
+        }
+    } catch { }
+
+    $hasBattery = ($designed -gt 0 -and $full -gt 0)
+    $healthPct = if ($hasBattery) { [math]::Round(100.0 * $full / $designed, 1) } else { $null }
+    $wearPct = if ($null -ne $healthPct) { [math]::Round(100.0 - $healthPct, 1) } else { $null }
+
+    return [PSCustomObject]@{
+        HasBattery       = $hasBattery
+        DesignedCapacity = $designed
+        FullCapacity     = $full
+        HealthPercent    = $healthPct
+        WearPercent      = $wearPct
+        CycleCount       = $cycles
+        Name             = $name
+    }
+}
+
+function Invoke-HealthCheck_battery_health {
+    param($r)
+    if ((Get-EnvironmentMode) -ne 'Windows') { return }
+
+    try {
+        $snap = Get-BatteryHealthSnapshot
+        $output = ''
+        $findings = @()
+        $status = 'Pass'
+        $detail = ''
+
+        if (-not $snap.HasBattery) {
+            $detail = 'No battery capacity data (desktop or battery WMI unavailable)'
+            $output = @"
+Battery
+--------
+Present: No / unavailable
+"@
+            $findings += New-HealthFinding -FindingId 'health.battery.none' -CheckId 'battery_health' `
+                -Finding 'No battery health data' -Impact 'Expected on desktops or when ROOT\WMI battery classes are empty.' `
+                -Severity 'Info' -Confidence 90 -Status 'Pass' -Classification 'Inventory' `
+                -Evidence @($detail)
+        }
+        else {
+            $cycleText = if ($null -ne $snap.CycleCount) { [string]$snap.CycleCount } else { 'n/a' }
+            $detail = ("Health {0}% of design (wear {1}%) | cycles {2}" -f $snap.HealthPercent, $snap.WearPercent, $cycleText)
+            $output = @"
+Battery Health
+--------------
+Name: $(if ($snap.Name) { $snap.Name } else { 'Battery' })
+Designed (mWh): $($snap.DesignedCapacity)
+Full charge (mWh): $($snap.FullCapacity)
+Health %: $($snap.HealthPercent)
+Wear %: $($snap.WearPercent)
+Cycle count: $cycleText
+"@
+
+            if ($snap.HealthPercent -lt 60) {
+                $status = 'Warn'
+                $findings += New-HealthFinding -FindingId 'health.battery.worn' -CheckId 'battery_health' `
+                    -Finding 'Battery capacity severely degraded' `
+                    -Impact 'Runtime will be short; unexpected shutdowns under load are more likely.' `
+                    -Severity 'High' -Confidence 88 -Status 'Warn' -Classification 'CorroboratedSuspect' `
+                    -Evidence @($detail) `
+                    -Recommendations @('Replace the battery if the device must run on AC-off power.', 'Confirm with powercfg /batteryreport if needed.')
+            }
+            elseif ($snap.HealthPercent -lt 80) {
+                $status = 'Warn'
+                $findings += New-HealthFinding -FindingId 'health.battery.wear' -CheckId 'battery_health' `
+                    -Finding 'Battery capacity below 80% of design' `
+                    -Impact 'Reduced unplugged runtime; plan replacement if the user relies on battery.' `
+                    -Severity 'Medium' -Confidence 82 -Status 'Warn' -Classification 'SingleSignal' `
+                    -Evidence @($detail) `
+                    -Recommendations @('Advise the user of reduced runtime.', 'Re-check after a full charge cycle if the reading looks stale.')
+            }
+            else {
+                $findings += New-HealthFinding -FindingId 'health.battery.ok' -CheckId 'battery_health' `
+                    -Finding 'Battery capacity within acceptable range' `
+                    -Impact 'No significant wear indicated by design vs full-charge capacity.' `
+                    -Severity 'Info' -Confidence 85 -Status 'Pass' -Evidence @($detail)
+            }
+        }
+
+        $step = @{
+            Name    = 'BatteryHealth'
+            Status  = $status
+            Detail  = $detail
+            Output  = $output
+            CheckId = 'battery_health'
+        }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $detail
+        Add-HealthCheckStep $r $step
+    }
+    catch {
+        Add-HealthCheckStep $r @{
+            Name    = 'BatteryHealth'
+            Status  = 'Skip'
+            Detail  = 'Unable to read battery WMI'
+            Output  = $_.Exception.Message
+            CheckId = 'battery_health'
+        }
+    }
+    Write-Log "Battery: $($r.Steps[-1].Detail)"
+}
+
+function Get-ThermalEventCount7d {
+    param([datetime]$Since = (Get-Date).AddDays(-7))
+
+    # Kernel-Power / ACPI thermal-related IDs commonly used for trip and thermal zone noise.
+    $ids = @(86, 89, 90, 91, 96, 112, 115, 125, 161, 178, 179, 185)
+    $events = @()
+    try {
+        $events = @(Get-WinEvent -FilterHashtable @{
+            LogName      = 'System'
+            ProviderName = 'Microsoft-Windows-Kernel-Power'
+            Id           = $ids
+            StartTime    = $Since
+        } -ErrorAction SilentlyContinue)
+    } catch {
+        try {
+            $events = @(Get-WinEvent -FilterHashtable @{
+                LogName   = 'System'
+                Id        = $ids
+                StartTime = $Since
+            } -ErrorAction SilentlyContinue | Where-Object {
+                $_.ProviderName -match '(?i)Kernel-Power|ACPI'
+            })
+        } catch { }
+    }
+    return @($events)
+}
+
+function Invoke-HealthCheck_thermal_events {
+    param($r)
+    if ((Get-EnvironmentMode) -ne 'Windows') { return }
+
+    try {
+        $events = @(Get-ThermalEventCount7d)
+        $count = $events.Count
+        $criticalish = @($events | Where-Object {
+            [string]$_.Message -match '(?i)critical|emergency|shutdown|thermal trip|_CRT'
+        }).Count
+
+        $sample = @($events | Select-Object -First 5 | ForEach-Object {
+            $msg = ([string]$_.Message -replace '\s+', ' ').Trim()
+            if ($msg.Length -gt 80) { $msg = $msg.Substring(0, 80) + '...' }
+            '{0:u} Id {1}: {2}' -f $_.TimeCreated, $_.Id, $msg
+        })
+
+        $output = @"
+Thermal Events (7 days)
+-----------------------
+Kernel-Power/ACPI thermal events: $count
+Critical-trip-like messages: $criticalish
+"@
+        if ($sample.Count -gt 0) {
+            $output += "`nRecent:`n" + (($sample | ForEach-Object { "  - $_" }) -join "`n")
+        }
+
+        $findings = @()
+        $status = 'Pass'
+        $detail = "$count thermal-related System events in 7 days ($criticalish critical-like)"
+
+        if ($criticalish -ge 1 -or $count -ge 5) {
+            $status = 'Warn'
+            $sev = if ($criticalish -ge 1) { 'High' } else { 'Medium' }
+            $cls = if ($criticalish -ge 1) { 'CorroboratedSuspect' } else { 'SingleSignal' }
+            $findings += New-HealthFinding -FindingId 'health.thermal.events' -CheckId 'thermal_events' `
+                -Finding 'Thermal warning events detected' `
+                -Impact 'Overheating can cause throttling, unexpected shutdowns, or hardware stress.' `
+                -Severity $sev -Confidence 80 -Status 'Warn' -Classification $cls `
+                -Evidence (@($detail) + $sample) `
+                -Recommendations @('Check vents/dust and ambient temperature.', 'Run Diag & Repair CPU stress and CHU if shutdowns continue.') `
+                -Actions @(@{ type = 'cde'; target = 'HardwareDiagnostics'; label = 'Diag & Repair' })
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'health.thermal.ok' -CheckId 'thermal_events' `
+                -Finding 'No significant thermal event volume' `
+                -Impact 'No Kernel-Power/ACPI thermal cluster in the last 7 days.' `
+                -Severity 'Info' -Confidence 75 -Status 'Pass' -Evidence @($detail)
+        }
+
+        $step = @{
+            Name    = 'ThermalEvents'
+            Status  = $status
+            Detail  = $detail
+            Output  = $output
+            CheckId = 'thermal_events'
+        }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $detail
+        Add-HealthCheckStep $r $step
+    }
+    catch {
+        Add-HealthCheckStep $r @{
+            Name    = 'ThermalEvents'
+            Status  = 'Skip'
+            Detail  = 'Unable to read thermal events'
+            Output  = $_.Exception.Message
+            CheckId = 'thermal_events'
+        }
+    }
+    Write-Log "Thermal: $($r.Steps[-1].Detail)"
+}
+
+function Invoke-HealthCheck_reliability_monitor {
+    param($r)
+    if ((Get-EnvironmentMode) -ne 'Windows') { return }
+
+    try {
+        $since = (Get-Date).AddDays(-7)
+        $index = $null
+        try {
+            $metrics = @(Get-CimInstance -ClassName Win32_ReliabilityStabilityMetrics -ErrorAction SilentlyContinue |
+                Sort-Object TimeGenerated -Descending | Select-Object -First 1)
+            if ($metrics.Count -gt 0 -and $null -ne $metrics[0].SystemStabilityIndex) {
+                $index = [math]::Round([double]$metrics[0].SystemStabilityIndex, 2)
+            }
+        } catch { }
+
+        $records = @()
+        try {
+            $records = @(Get-CimInstance -ClassName Win32_ReliabilityRecords -ErrorAction SilentlyContinue |
+                Where-Object {
+                    $tg = $_.TimeGenerated
+                    if ($tg -is [string]) {
+                        try { $tg = [System.Management.ManagementDateTimeConverter]::ToDateTime($tg) } catch { $tg = $null }
+                    }
+                    $tg -and $tg -ge $since -and (
+                        [string]$_.SourceName -match '(?i)(BugCheck|Windows Error Reporting|Application Error|WER)' -or
+                        [int]$_.EventIdentifier -in @(1001, 1000, 41)
+                    )
+                })
+        } catch { }
+
+        $recCount = $records.Count
+        $detailParts = @()
+        if ($null -ne $index) { $detailParts += "Stability index $index" }
+        $detailParts += "$recCount critical-ish reliability records (7d)"
+        $detail = $detailParts -join ' | '
+
+        $output = @"
+Reliability Monitor
+-------------------
+Stability index: $(if ($null -ne $index) { $index } else { 'n/a' })
+Critical-ish records (7d): $recCount
+"@
+
+        $findings = @()
+        $status = 'Pass'
+
+        if ($null -eq $index -and $recCount -eq 0) {
+            $status = 'Incomplete'
+            $findings += New-HealthFinding -FindingId 'health.reliability.unavailable' -CheckId 'reliability_monitor' `
+                -Finding 'Reliability WMI data unavailable' `
+                -Impact 'Cannot assess RAC metrics (policy disabled on some Server SKUs).' `
+                -Severity 'Info' -Confidence 90 -Status 'N/A' -Classification 'Incomplete' `
+                -Evidence @('Win32_ReliabilityStabilityMetrics / Records returned no usable data')
+        }
+        elseif (($null -ne $index -and $index -lt 5.0) -or $recCount -ge 5) {
+            $status = 'Warn'
+            $sev = if (($null -ne $index -and $index -lt 3.0) -or $recCount -ge 10) { 'High' } else { 'Medium' }
+            $findings += New-HealthFinding -FindingId 'health.reliability.low' -CheckId 'reliability_monitor' `
+                -Finding 'Reliability Monitor indicates instability' `
+                -Impact 'Frequent failures reduce Stability Index; investigate crashes and application faults.' `
+                -Severity $sev -Confidence 78 -Status 'Warn' -Classification 'SingleSignal' `
+                -Evidence @($detail) `
+                -Recommendations @('Open Reliability Monitor (perfmon /rel) for the failure timeline.', 'Cross-check Critical Events (7 days).') `
+                -Actions @(
+                    @{ type = 'shell'; target = 'perfmon /rel'; label = 'Reliability Monitor' },
+                    @{ type = 'cde'; target = 'SystemHealth'; label = 'System Health Check' }
+                )
+        }
+        else {
+            $findings += New-HealthFinding -FindingId 'health.reliability.ok' -CheckId 'reliability_monitor' `
+                -Finding 'Reliability metrics look stable' `
+                -Impact 'No strong instability signal from RAC metrics in the last 7 days.' `
+                -Severity 'Info' -Confidence 75 -Status 'Pass' -Evidence @($detail)
+        }
+
+        $step = @{
+            Name    = 'ReliabilityMonitor'
+            Status  = $status
+            Detail  = $detail
+            Output  = $output
+            CheckId = 'reliability_monitor'
+        }
+        Add-HealthFindingsToStep -Step $step -Findings $findings -SummaryText $detail
+        Add-HealthCheckStep $r $step
+    }
+    catch {
+        Add-HealthCheckStep $r @{
+            Name    = 'ReliabilityMonitor'
+            Status  = 'Skip'
+            Detail  = 'Unable to read reliability WMI'
+            Output  = $_.Exception.Message
+            CheckId = 'reliability_monitor'
+        }
+    }
+    Write-Log "Reliability: $($r.Steps[-1].Detail)"
+}
+
 function Get-HealthCheckStepDispatchMap {
     return @{
         os_version               = { param($r, $ctx) Invoke-HealthCheck_os_version $r }
@@ -825,6 +1245,7 @@ function Get-HealthCheckStepDispatchMap {
         ram                      = { param($r, $ctx) Invoke-HealthCheck_ram $r }
         disk_space               = { param($r, $ctx) Invoke-HealthCheck_disk_space $r }
         activation               = { param($r, $ctx) Invoke-HealthCheck_activation $r }
+        battery_health           = { param($r, $ctx) Invoke-HealthCheck_battery_health $r }
         event_errors_24h         = { param($r, $ctx) Invoke-HealthCheck_event_errors_24h $r }
         system_info              = { param($r, $ctx) Invoke-HealthCheck_system_info $r }
         driver_signature_audit   = { param($r, $ctx) Invoke-HealthCheck_driver_signature_audit $r }
@@ -832,6 +1253,8 @@ function Get-HealthCheckStepDispatchMap {
         network_adapters         = { param($r, $ctx) Invoke-HealthCheck_network_adapters $r }
         gpu_info                 = { param($r, $ctx) Invoke-HealthCheck_gpu_info $r }
         gpu_functional_tests     = { param($r, $ctx) Invoke-HealthCheck_gpu_functional_tests $r }
+        thermal_events           = { param($r, $ctx) Invoke-HealthCheck_thermal_events $r }
+        reliability_monitor      = { param($r, $ctx) Invoke-HealthCheck_reliability_monitor $r }
         critical_events_7d       = { param($r, $ctx) Invoke-HealthCheck_critical_events_7d -r $r -EventsExportScriptDir $ctx.WorkflowsDir }
     }
 }

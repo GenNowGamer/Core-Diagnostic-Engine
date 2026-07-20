@@ -36,6 +36,7 @@ if ($Mode -eq 'Query') {
 # --- Report mode: full workflow with JSON + HTML report ---
 $CoreModule = Join-Path $ScriptDir '..\Core\Toolkit.Core.psm1'
 Import-Module $CoreModule -Force -DisableNameChecking
+. (Join-Path $CoreDir 'MachineBaseline.ps1')
 
 $workflow = Start-Workflow -WorkflowName 'SmartAnalyzer' -ScriptBlock {
     param($r)
@@ -84,6 +85,14 @@ try {
     }
 
     $null = Set-WorkflowOverallHealth -WorkflowResult $workflow
+
+    try {
+        $baselinePath = Save-CdeMachineBaselineFromWorkflow -WorkflowResult $workflow
+        Write-Log "SMART machine baseline saved: $baselinePath"
+    }
+    catch {
+        Write-Log ("SMART baseline store skipped: {0}" -f $_.Exception.Message) -Level Warning
+    }
 
     # Emit markers on the success stream so the GUI (RedirectStandardOutput) can
     # locate the JSON deliverable. Write-Host / Write-Log alone are not reliably captured.

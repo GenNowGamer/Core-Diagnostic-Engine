@@ -48,6 +48,10 @@ function Invoke-CpuTests {
                     if ($result -is [string] -and ($result.StartsWith('Failed') -or $result.StartsWith('Warn:'))) {
                         $script:HwCpuStressIncomplete = $true
                     }
+                    # Soft stress shortfalls are Incomplete (coverage), not media/CPU Fail.
+                    if ($result -is [string] -and $result.StartsWith('Warn:')) {
+                        return ('Incomplete: {0}' -f $result.Substring(5).Trim())
+                    }
                     return $result
                 }
                 default                  { return $false }

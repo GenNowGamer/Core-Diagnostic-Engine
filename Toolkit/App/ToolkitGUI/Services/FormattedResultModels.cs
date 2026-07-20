@@ -26,6 +26,7 @@ namespace ToolkitGUI.Services
 
         public string? Impact { get; init; }
         public string? SeverityLabel { get; init; }
+        public string? EvidenceClassification { get; init; }
         public int? Confidence { get; init; }
         public IReadOnlyList<string> Evidence { get; init; } = new List<string>();
         public IReadOnlyList<string> Recommendations { get; init; } = new List<string>();

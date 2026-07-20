@@ -3,6 +3,15 @@
 **Last updated:** 2026-07-20
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
 
+## 2026-07-20 update — Fault-vs-noise hardening (P0–P2)
+
+- **Classification + Attention** — Findings carry evidence-quality Classification; actionable list excludes Inventory / Expected limitation / Incomplete.
+- **Smarter rollup** — `OverallHealth` can be `HealthyWithNotes` (soft notes only), not only Healthy/Warning/Critical.
+- **Less event/vital noise** — Event frequency gates, WHEA corrected vs uncorrected, residual cap; multi-sample CPU/RAM; SMART media vs interconnect tiers; post-run corroboration; publisher-aware autorun/task scoring.
+- **Diag & Repair** — First-class `Incomplete` status; confirm-on-Fail (one retry).
+- **New Health checks** — Battery health, thermal events (7d), Reliability Monitor; per-machine baselines under `CDE\Runtime\Data\baselines\`; lab event suppressor packs (Hyper-V / USB dock / WinPE).
+- **Publish** — `Toolkit\CDE.exe` **2026-07-20 10:59 AM**; GUI payload **2026-07-20 11:31 AM**; user guide PDF refreshed after docs polish. Full notes: `Toolkit\session_handoff.md`.
+
 ## 2026-07-20 update — Health Check UX, filter allowlist share, Defender coexistence, work-order times
 
 - **Health Check Results** — Review-pane text (findings, evidence, overview, property values) uses selectable read-only Text so operators can drag-select/copy.

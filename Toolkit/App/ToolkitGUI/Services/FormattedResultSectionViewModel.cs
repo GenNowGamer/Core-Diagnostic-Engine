@@ -120,6 +120,7 @@ namespace ToolkitGUI.Services
                 Compact = true,
                 Impact = item.Impact,
                 SeverityLabel = item.SeverityLabel,
+                EvidenceClassification = item.EvidenceClassification,
                 Confidence = item.Confidence,
                 Evidence = item.Evidence,
                 Recommendations = item.Recommendations,

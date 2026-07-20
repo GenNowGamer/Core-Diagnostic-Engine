@@ -2439,6 +2439,7 @@ namespace ToolkitGUI.ViewModels
     internal static class SmartHealthBrush
     {
         private static readonly Brush Green = Freeze(Color.FromRgb(0x3F, 0xB9, 0x50));
+        private static readonly Brush GreenNotes = Freeze(Color.FromRgb(0x56, 0xA0, 0x6E));
         private static readonly Brush Yellow = Freeze(Color.FromRgb(0xD2, 0x99, 0x22));
         private static readonly Brush Red = Freeze(Color.FromRgb(0xF8, 0x51, 0x49));
         private static readonly Brush Gray = Freeze(Color.FromRgb(0x8B, 0x94, 0x9E));
@@ -2452,18 +2453,23 @@ namespace ToolkitGUI.ViewModels
 
         public static Brush For(string status)
         {
-            switch ((status ?? string.Empty).Trim().ToLowerInvariant())
+            switch ((status ?? string.Empty).Trim().ToLowerInvariant().Replace(" ", ""))
             {
                 case "ok":
                 case "pass":
                 case "healthy":
                     return Green;
+                case "healthywithnotes":
+                    return GreenNotes;
                 case "warn":
                 case "warning":
                     return Yellow;
                 case "fail":
                 case "critical":
                     return Red;
+                case "incomplete":
+                case "n/a":
+                    return Gray;
                 default:
                     return Gray;
             }
@@ -2831,6 +2837,7 @@ namespace ToolkitGUI.ViewModels
             "RUNNING" => "Running",
             "QUEUED" => "Queued",
             "WARN" => "Warn",
+            "INCOMPLETE" => "Incomplete",
             "SKIPPED" => "N/A",
             "CANCELLED" => "Cancelled",
             _ => string.Empty
@@ -2875,6 +2882,7 @@ namespace ToolkitGUI.ViewModels
             "RUNNING" => new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD4)),
             "QUEUED" => new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
             "WARN" => new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00)),
+            "INCOMPLETE" => new SolidColorBrush(Color.FromRgb(0x5A, 0x6B, 0x80)),
             "SKIPPED" => new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00)),
             "CANCELLED" => new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00)),
             _ => Brushes.Transparent
@@ -3501,7 +3509,7 @@ namespace ToolkitGUI.ViewModels
         private void RefreshTestsProgressDisplay()
         {
             var inScope = TestTree.Where(t => t.IsTest && _activeTestNames.Contains(t.LookupKey));
-            var completed = inScope.Count(t => t.Status is "Passed" or "Failed" or "Skipped" or "Warn" or "Cancelled");
+            var completed = inScope.Count(t => t.Status is "Passed" or "Failed" or "Skipped" or "Warn" or "Incomplete" or "Cancelled");
             _testsCompleted = completed;
             TestsProgressDisplay = $"{completed} / {_activeScheduledCount}";
         }
@@ -3628,7 +3636,8 @@ namespace ToolkitGUI.ViewModels
                             if (string.Equals(evt.Status, "Passed", StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(evt.Status, "Failed", StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(evt.Status, "Skipped", StringComparison.OrdinalIgnoreCase)
-                                || string.Equals(evt.Status, "Warn", StringComparison.OrdinalIgnoreCase))
+                                || string.Equals(evt.Status, "Warn", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(evt.Status, "Incomplete", StringComparison.OrdinalIgnoreCase))
                             {
                                 RefreshTestsProgressDisplay();
                             }

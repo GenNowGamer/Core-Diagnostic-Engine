@@ -51,14 +51,7 @@ namespace ToolkitGUI.Services
             if (formattedItems != null && formattedItems.Count > 0)
             {
                 var actionable = formattedItems
-                    .Where(i => i.IsStructuredHealthFinding
-                        && (string.Equals(i.Severity, "Critical", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(i.Severity, "High", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(i.Severity, "Medium", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(i.Severity, "Fail", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(i.Severity, "Warning", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(i.StatusLabelText, "Fail", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(i.StatusLabelText, "Warn", StringComparison.OrdinalIgnoreCase)))
+                    .Where(i => i.IsStructuredHealthFinding && IsAttentionWorthyStructuredItem(i))
                     .ToList();
                 if (actionable.Count > 0)
                 {
@@ -71,19 +64,8 @@ namespace ToolkitGUI.Services
 
             if (IsUsbSmartLimitation(detail))
             {
-                return new[]
-                {
-                    new StructuredResultItemViewModel
-                    {
-                        Name = "SMART data not available through this USB enclosure",
-                        Severity = "Info",
-                        Classification = "Expected limitation — not a drive failure",
-                        SeverityBrush = new System.Windows.Media.SolidColorBrush(
-                            System.Windows.Media.Color.FromRgb(0x5A, 0x6B, 0x80)),
-                        ClassificationBrush = new System.Windows.Media.SolidColorBrush(
-                            System.Windows.Media.Color.FromRgb(0x37, 0x47, 0x5F))
-                    }
-                };
+                // ExpectedLimitation is informational — not an item to remediate.
+                return Array.Empty<StructuredResultItemViewModel>();
             }
 
             var parserStepName = ResolveParserStepName(stepName, checkId);
@@ -291,6 +273,73 @@ namespace ToolkitGUI.Services
         {
             return !string.IsNullOrWhiteSpace(detail)
                 && detail.IndexOf("USB bridge does not pass ATA commands", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsAttentionWorthyStructuredItem(StructuredResultItemViewModel item)
+        {
+            // Prefer explicit evidence-quality labels when present; fall back to status/severity
+            // for older payloads that predate Classification.
+            var classificationToken = TryMapDisplayLabelToToken(item.Classification);
+            if (!string.IsNullOrWhiteSpace(classificationToken))
+            {
+                return HealthFindingClassification.RequiresAttention(
+                    classificationToken,
+                    item.StatusLabelText,
+                    item.Severity,
+                    0);
+            }
+
+            return HealthFindingClassification.RequiresAttention(
+                null,
+                item.StatusLabelText,
+                item.Severity,
+                0);
+        }
+
+        private static string? TryMapDisplayLabelToToken(string? displayOrToken)
+        {
+            if (string.IsNullOrWhiteSpace(displayOrToken))
+                return null;
+
+            var value = displayOrToken.Trim();
+            if (value.Equals(HealthFindingClassification.ConfirmedFault, StringComparison.OrdinalIgnoreCase)
+                || value.Equals("Confirmed fault", StringComparison.OrdinalIgnoreCase))
+            {
+                return HealthFindingClassification.ConfirmedFault;
+            }
+
+            if (value.Equals(HealthFindingClassification.CorroboratedSuspect, StringComparison.OrdinalIgnoreCase)
+                || value.Equals("Corroborated suspect", StringComparison.OrdinalIgnoreCase))
+            {
+                return HealthFindingClassification.CorroboratedSuspect;
+            }
+
+            if (value.Equals(HealthFindingClassification.SingleSignal, StringComparison.OrdinalIgnoreCase)
+                || value.Equals("Single signal", StringComparison.OrdinalIgnoreCase))
+            {
+                return HealthFindingClassification.SingleSignal;
+            }
+
+            if (value.Equals(HealthFindingClassification.Inventory, StringComparison.OrdinalIgnoreCase)
+                || value.Equals("Inventory", StringComparison.OrdinalIgnoreCase))
+            {
+                return HealthFindingClassification.Inventory;
+            }
+
+            if (value.Equals(HealthFindingClassification.ExpectedLimitation, StringComparison.OrdinalIgnoreCase)
+                || value.Equals("Expected limitation", StringComparison.OrdinalIgnoreCase)
+                || value.StartsWith("Expected limitation", StringComparison.OrdinalIgnoreCase))
+            {
+                return HealthFindingClassification.ExpectedLimitation;
+            }
+
+            if (value.Equals(HealthFindingClassification.Incomplete, StringComparison.OrdinalIgnoreCase)
+                || value.Equals("Incomplete", StringComparison.OrdinalIgnoreCase))
+            {
+                return HealthFindingClassification.Incomplete;
+            }
+
+            return null;
         }
 
         private static bool IsIssueStatus(string? status)

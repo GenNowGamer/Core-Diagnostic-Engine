@@ -1,0 +1,19 @@
+{
+  "packId": "dock_usb",
+  "description": "When USB storage activity is present, demote isolated disk instability clusters (dock/cable noise).",
+  "autoDetect": ["usb_storage"],
+  "clusterSuppressors": {
+    "disk_instability": [
+      {
+        "providerContains": "USBSTOR",
+        "eventId": 200,
+        "windowMinutes": 45
+      },
+      {
+        "providerContains": "Kernel-PnP",
+        "eventId": 400,
+        "windowMinutes": 45
+      }
+    ]
+  }
+}
