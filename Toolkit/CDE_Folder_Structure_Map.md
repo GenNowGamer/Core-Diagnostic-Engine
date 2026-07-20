@@ -2,6 +2,7 @@
 
 > Historical snapshot note (2026-05-22): this map captures a prior restructuring phase plan.
 > For current operational behavior, follow `README.md` and `session_handoff.md` at the Toolkit root.
+> **AAA upgrade tracker:** `AAA_Quality_Checklist.md` at the Toolkit root (mark items complete there; resume from §1).
 > Current canonical source/build flow is `App/ToolkitGUI/` -> `App/Publish-ToolkitGUI.ps1` -> published GUI payload under `CDE/ToolkitGUI/bin/Release/net8.0-windows/` (not source).
 > **Operational addendum (2026-07-20):** System Health Driver Signature Audit loads CST `rules.json` filter allowlists via `Scripts/Core/DriverFilterAllowlist.ps1`. Filter harvest/merge tools live under `Scripts/Tools/`. Security Tampering Audit suppresses expected Defender-passive Warns when an enabled third-party AV is present. Work-order UI/PDF timestamps use `WorkOrderTimestampFormatter` (friendly local display; JSON remains ISO).
 

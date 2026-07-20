@@ -3,6 +3,11 @@
 **Last updated:** 2026-07-20
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
 
+## 2026-07-20 update — AAA quality checklist
+
+- **Tracker:** `Toolkit\AAA_Quality_Checklist.md` — ongoing AAA upgrade checklist (P1–P10 priority backlog + sectioned work items). Mark items complete in that file; resume chats from §1.
+- **Scope this session:** Checklist created from CDE/CST/CHU audit. No code/signing/CHU Secure Boot/drive-matrix work shipped. Full notes: `Toolkit\session_handoff.md`.
+
 ## 2026-07-20 update — Fault-vs-noise hardening (P0–P2)
 
 - **Classification + Attention** — Findings carry evidence-quality Classification; actionable list excludes Inventory / Expected limitation / Incomplete.

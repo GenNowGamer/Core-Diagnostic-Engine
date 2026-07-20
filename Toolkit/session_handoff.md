@@ -2,6 +2,16 @@
 
 **Last updated:** 2026-07-20
 
+## 2026-07-20 — AAA quality checklist (tracker)
+
+Canonical ongoing upgrade checklist toward AAA / trusted professional diag & repair quality:
+
+- **Path:** `Toolkit\AAA_Quality_Checklist.md`
+- **Contents:** Priority backlog (P1–P10), trust/signing, Pass 3 packaging, GUI modules, workflows, CST, CHU, WinPE/USB, testing/CI, docs; completion log + session handoff snippet
+- **How to use:** Mark `- [ ]` → `- [x]` with date; resume any chat from §1 first unchecked item; do not invent a parallel tracker
+- **This session:** Checklist created from full CDE/CST/CHU audit. Guidance only for P1 Authenticode, P4 CHU Secure Boot (sign EFI vs document Secure Boot–off), and SMART drive-matrix expansion — **none of those items implemented or marked complete**
+- **Publish:** Not required (docs/tracker only)
+
 ## 2026-07-20 — Fault-vs-noise hardening (P0–P2)
 
 Audit-driven System Health / Diag & Repair intelligence: classify evidence, demote noise, corroborate signals, expand vitals coverage.
