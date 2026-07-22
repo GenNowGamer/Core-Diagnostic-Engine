@@ -133,6 +133,7 @@
 ### 5.13 File Manager
 - [ ] Keep DestructiveActionDialog on delete/move/mirror
 - [ ] VSS browse regression on full Windows
+- [x] No Offline OS / Users / Toolkit aliases; drive-root / WinPE size-skip (crash fix) — **2026-07-22**
 
 ### 5.14 Startup Manager
 - [ ] Coverage tests green after every autorun change
@@ -200,9 +201,9 @@
 
 - [ ] Complete Week-4 / known-good hardware matrix (§9 in CHU improvement plan) — code depth shipped 2026-07-21; field matrix still open
 - [ ] Secure Boot signing **or** permanent limitation docs + UI warning
-- [x] UEFI fault-detection depth (CPU verify, SMART D1h/DST, storage de-alias, Extended memory extras) — **2026-07-21** (`CoreDiag.efi` `CFF7F6B5…`)
-- [ ] Catalog sync: `cpu_stress` and all JSON deltas in UEFI + CDE catalogs
-- [ ] Run `BUILD_CHU_UEFI.ps1` + stage to `Toolkit\EFI\CDE\` on every CHU change
+- [x] UEFI fault-detection depth (CPU verify, SMART D1h/DST, storage de-alias, Extended memory extras) — **2026-07-21** (`CoreDiag.efi` `CFF7F6B5…`; superseded by 2026-07-22 build)
+- [x] Catalog sync: `cpu_stress` UEFI runner wired + FPU soft-float hardened — **2026-07-22** (`CoreDiag.efi` `FDB5C713…`, 295 936 B)
+- [x] Run `BUILD_CHU_UEFI.ps1` + stage to `Toolkit\EFI\CDE\` on every CHU change — done this session (2026-07-22)
 - [ ] Empty boot-log / Samsung early-logging retest
 - [ ] Decide BootNext overnight burn-in (implement or defer explicitly)
 - [ ] Add CHU smoke validation artifact (QEMU/EDK2 and/or checklist CI upload)
@@ -266,6 +267,7 @@ Mark a regression here if something below breaks; otherwise leave unchecked as �
 | Date | Item(s) | Notes / publish |
 |------|---------|-----------------|
 | 2026-07-21 | CHU UEFI fault-detection depth | Staged `CoreDiag.efi` `CFF7F6B5…` (291 840 B); matrix/P3 still open |
+| 2026-07-22 | File Manager PE crash + CHU FPU/stress | Removed Offline OS/Users/Toolkit aliases; size-skip at drive roots/`X:\`; `cpu_stress` wired; `CoreDiag.efi` `FDB5C713…` (295 936 B); `CDE.exe` published |
 | 2026-07-20 | Checklist created | Initial AAA audit tracker |
 |  |  |  |
 

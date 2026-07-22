@@ -124,7 +124,7 @@ If `Userinit` or `Shell` values were changed by malware, they appear highlighted
 
 The directories pane starts empty until you select a location.
 
-> **Note:** Junction/reparse-point folders (e.g. `C:\ProgramData\Application Data`) are hidden to prevent infinite navigation loops. Folder size calculations skip the same paths.
+> **Note:** Junction/reparse-point folders (e.g. `C:\ProgramData\Application Data`) are hidden to prevent infinite navigation loops. Folder size calculations skip the same paths. At **drive roots** (and under WinPE `X:\`), folder sizes stay as `...` so the GUI does not recurse huge trees — open a subfolder to size its children. Offline OS / Users / Toolkit shortcuts are not shown; use the lettered drive entries instead.
 
 ---
 

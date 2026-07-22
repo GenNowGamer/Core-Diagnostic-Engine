@@ -250,6 +250,9 @@ namespace ToolkitGUI.Views
         {
             var computer = new FolderTreeNode("Computer", null);
 
+            // Letter drives only — Offline OS / Users / Toolkit aliases duplicated
+            // OFFLINE_WINDOWS_ROOT and TOOLKIT_ROOT (already reachable as F:, X:, etc.)
+            // and triggered unbounded folder-size walks that could crash WinPE.
             foreach (var drive in DriveInfo.GetDrives())
             {
                 if (!drive.IsReady)
@@ -257,44 +260,10 @@ namespace ToolkitGUI.Views
                 computer.Children.Add(FolderTreeNode.FromDrive(drive));
             }
 
-            var offline = Environment.GetEnvironmentVariable("OFFLINE_WINDOWS_ROOT");
-            if (!string.IsNullOrWhiteSpace(offline))
-            {
-                var path = offline.TrimEnd('\\');
-                if (Directory.Exists(path))
-                    computer.Children.Add(new FolderTreeNode("Offline OS", path) { OpensPaneOnSelect = true });
-            }
-
-            var users = ResolveUsersPath();
-            if (!string.IsNullOrEmpty(users))
-                computer.Children.Add(new FolderTreeNode("Users", users) { OpensPaneOnSelect = true });
-
-            var toolkit = Environment.GetEnvironmentVariable("TOOLKIT_ROOT");
-            if (!string.IsNullOrWhiteSpace(toolkit))
-            {
-                var path = toolkit.TrimEnd('\\');
-                if (Directory.Exists(path))
-                    computer.Children.Add(new FolderTreeNode("Toolkit", path) { OpensPaneOnSelect = true });
-            }
-
             if (ShadowCopyBrowseService.IsAvailable())
                 computer.Children.Add(FolderTreeNode.CreateShadowCopiesRoot());
 
             return computer;
-        }
-
-        private static string? ResolveUsersPath()
-        {
-            var offline = Environment.GetEnvironmentVariable("OFFLINE_WINDOWS_ROOT");
-            if (!string.IsNullOrWhiteSpace(offline))
-            {
-                var users = Path.Combine(offline.TrimEnd('\\'), "Users");
-                if (Directory.Exists(users))
-                    return users;
-            }
-
-            const string fallback = @"C:\Users";
-            return Directory.Exists(fallback) ? fallback : null;
         }
 
         private void SplitView_Click(object sender, RoutedEventArgs e)
@@ -1643,6 +1612,11 @@ namespace ToolkitGUI.Views
             if (directories.Count == 0)
                 return;
 
+            // Drive roots and the WinPE ramdisk (X:\) can OOM/hang if we recurse every child.
+            var panePath = GetPanePath(pane);
+            if (ShouldSkipFolderSizeEnumeration(panePath))
+                return;
+
             var cts = new CancellationTokenSource();
             if (pane == Pane.Top)
                 _topFolderSizeCts = cts;
@@ -1655,6 +1629,42 @@ namespace ToolkitGUI.Views
             {
                 _ = EnumerateFolderSizeAsync(item, token);
             }
+        }
+
+        private static bool ShouldSkipFolderSizeEnumeration(string? panePath)
+        {
+            if (string.IsNullOrWhiteSpace(panePath))
+                return true;
+
+            if (IsDriveRoot(panePath))
+                return true;
+
+            try
+            {
+                var full = Path.GetFullPath(panePath);
+                if (full.StartsWith(@"X:\", StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                // Offline Windows trees are huge even one level below the volume root.
+                if (IsWinPeMode())
+                {
+                    var name = new DirectoryInfo(full).Name;
+                    if (name.Equals("Windows", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("Program Files", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("Program Files (x86)", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("ProgramData", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("Toolkit", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private async Task EnumerateFolderSizeAsync(FileItem item, CancellationToken token)
@@ -2035,10 +2045,11 @@ namespace ToolkitGUI.Views
             IsShadowCopiesRoot = isShadowCopiesRoot;
             ShadowCopy = shadowCopy;
             if (ShouldShowExpandPlaceholder())
-                Children.Add(PlaceholderNode);
+                Children.Add(CreatePlaceholderNode());
         }
 
-        private static FolderTreeNode PlaceholderNode { get; } = new("\u200B", null);
+        /* Per-node placeholder — a shared instance under many parents breaks WPF TreeView. */
+        private static FolderTreeNode CreatePlaceholderNode() => new("\u200B", null);
 
         private bool ShouldShowExpandPlaceholder()
             => IsShadowCopiesRoot || (ShadowCopy == null && !string.IsNullOrWhiteSpace(Path));
@@ -2048,7 +2059,7 @@ namespace ToolkitGUI.Views
             ChildrenLoaded = false;
             Children.Clear();
             if (ShouldShowExpandPlaceholder())
-                Children.Add(PlaceholderNode);
+                Children.Add(CreatePlaceholderNode());
         }
 
         public static FolderTreeNode CreateShadowCopiesRoot() => new("Shadow Copies", null, isShadowCopiesRoot: true);
@@ -2073,7 +2084,7 @@ namespace ToolkitGUI.Views
             ChildrenLoaded = false;
             Children.Clear();
             if (!string.IsNullOrWhiteSpace(path))
-                Children.Add(PlaceholderNode);
+                Children.Add(CreatePlaceholderNode());
         }
 
         public void LoadChildFolders()

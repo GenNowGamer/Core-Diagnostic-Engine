@@ -1,12 +1,18 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-22
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-22 update — File Manager PE crash + CHU FPU/stress
+
+- **File Manager** — Removed Offline OS / Users / Toolkit tree aliases; skip folder-size at drive roots / WinPE `X:\` (sizes stay `...`); soft size caps; unique tree placeholders. Canonical publish `Toolkit\CDE.exe` **2026-07-22 8:31:44 AM**.
+- **CHU** — Soft-float FPU false-positive fix; `cpu_stress` catalog wired. Staged `CoreDiag.efi` SHA256 `FDB5C713…`, 295 936 bytes.
+- **Deploy** — `SyncUSB.bat` for GUI + EFI. Details: `Toolkit\session_handoff.md`; `Core Hardware Utility\session_handoff.md`.
 
 ## 2026-07-21 update — CHU fault-detection EFI (staged)
 
-- **CHU UEFI** — Fault-detection upgrades 1–7 staged into `Toolkit\EFI\CDE\CoreDiag.efi` (SHA256 `CFF7F6B5…`, 291 840 bytes) + Tools Boot path + `tools_manifest.json`.
-- **CDE GUI** — Unchanged this session; Diag & Repair Windows path unchanged.
+- **CHU UEFI** — Fault-detection upgrades 1–7 staged into `Toolkit\EFI\CDE\CoreDiag.efi` (SHA256 `CFF7F6B5…`, 291 840 bytes) + Tools Boot path + `tools_manifest.json` — **superseded 2026-07-22**.
+- **CDE GUI** — Unchanged that session; Diag & Repair Windows path unchanged.
 - **Next** — USB sync; known-good Quick/Extended CHU validation. Details: `Toolkit\session_handoff.md`; `Core Hardware Utility\session_handoff.md`.
 
 ## 2026-07-20 update — AAA quality checklist

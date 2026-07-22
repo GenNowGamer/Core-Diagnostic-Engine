@@ -8,15 +8,21 @@
 
 ## Overview
 
-CDE is a bootable USB diagnostic suite built on Windows PE. It boots via UEFI from a FAT32 USB drive into a **rEFInd** graphical menu (see `EFI\boot\refind.conf` — currently **CDE WinPE** and **CHU**; Microsoft `memtest.efi` is a separate boot payload via `Ensure-BootArtifacts.ps1`, WinPE `Invoke-PreBootTool.ps1`, or `CDEBoot.efi`). Once WinPE loads, `startnet.cmd` auto-launches `ToolkitGUI.exe` (Windows portable entry: `CDE.exe`), which presents a full-screen branded WPF boot menu — replacing the legacy text-based CMD menu. After entering the toolkit, use sidebar **System Health Check** for catalog-driven vitals, deep system, system audit, and security audit checks (not hardware line tests, SMART analyzer, Defender, or CST — those live under **Diag & Repair** and **Malware Cleanup**), **Diag & Repair** for PC-Doctor-style CPU/Memory/Storage line tests plus CST security scan (Quick/Extended), and per-tool workflows from **Malware Cleanup**, **Post-Op Cleanup**, and other sidebar views. **CHU** pre-boot hardware runs via rEFInd → **`CHUPrep.efi`** → **`CoreDiag.efi`** (PC-Check text or GOP UI depending on firmware) — see `Core Hardware Utility\UEFI\DIAGNOSTICS_IMPROVEMENT_PLAN.md` and `session_handoff.md` (2026-07-21 fault-detection; 2026-07-06 display/boot).
+CDE is a bootable USB diagnostic suite built on Windows PE. It boots via UEFI from a FAT32 USB drive into a **rEFInd** graphical menu (see `EFI\boot\refind.conf` — currently **CDE WinPE** and **CHU**; Microsoft `memtest.efi` is a separate boot payload via `Ensure-BootArtifacts.ps1`, WinPE `Invoke-PreBootTool.ps1`, or `CDEBoot.efi`). Once WinPE loads, `startnet.cmd` auto-launches `ToolkitGUI.exe` (Windows portable entry: `CDE.exe`), which presents a full-screen branded WPF boot menu — replacing the legacy text-based CMD menu. After entering the toolkit, use sidebar **System Health Check** for catalog-driven vitals, deep system, system audit, and security audit checks (not hardware line tests, SMART analyzer, Defender, or CST — those live under **Diag & Repair** and **Malware Cleanup**), **Diag & Repair** for PC-Doctor-style CPU/Memory/Storage line tests plus CST security scan (Quick/Extended), and per-tool workflows from **Malware Cleanup**, **Post-Op Cleanup**, and other sidebar views. **CHU** pre-boot hardware runs via rEFInd → **`CHUPrep.efi`** → **`CoreDiag.efi`** (PC-Check text or GOP UI depending on firmware) — see `Core Hardware Utility\UEFI\DIAGNOSTICS_IMPROVEMENT_PLAN.md` and `session_handoff.md` (2026-07-22 FPU/stress; 2026-07-21 fault-detection; 2026-07-06 display/boot).
 
 The project mirrors the architecture of the proven MRI diagnostic platform while integrating CDE-specific tooling including the Core Hardware Utility (CHU) UEFI application and the Core Security Tool (CST) PowerShell module.
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-07-22)
+
+- **File Manager** — Removed Offline OS / Users / Toolkit tree aliases (letter drives only). Drive-root and WinPE `X:\` folder-size enumeration skipped (sizes stay `...`); soft size caps; unique tree placeholders. Fixes WinPE GUI crash on those aliases. `SyncUSB.bat` after publish.
+- **CHU** — Soft-float FPU false-positive fixed; `cpu_stress` wired (Quick 20s / Extended 120s). `CoreDiag.efi` SHA256 `FDB5C7135245BBC12FA120D49016055608E7E1C5D1B321AC2E7A0AA720072562`, 295 936 bytes.
+- **Publish** — `App/Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` **2026-07-22 8:31:44 AM**. Details — `Toolkit\session_handoff.md`; `Core Hardware Utility\session_handoff.md`.
+
 ## Session Update (2026-07-21)
 
-- **CHU fault-detection** — Staged deeper UEFI tests (CPU verify, SMART D1h/DST, distinct storage reads, Extended memory extras). `CoreDiag.efi` SHA256 `CFF7F6B52FD371CE865ECE538D80E3F15BA96850025BE4654C200C2808AD20AF`, 291 840 bytes. Sync USB; no GUI publish required. Details — `Toolkit\session_handoff.md`; `Core Hardware Utility\session_handoff.md`.
+- **CHU fault-detection** — Staged deeper UEFI tests (CPU verify, SMART D1h/DST, distinct storage reads, Extended memory extras). Prior `CoreDiag.efi` SHA256 `CFF7F6B52FD371CE865ECE538D80E3F15BA96850025BE4654C200C2808AD20AF`, 291 840 bytes — superseded 2026-07-22. Details — `Toolkit\session_handoff.md`; `Core Hardware Utility\session_handoff.md`.
 
 ## Session Update (2026-07-20)
 
@@ -193,7 +199,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Toolkit\Scripts\Tests\Invoke
 powershell -NoProfile -ExecutionPolicy Bypass -File Toolkit\Scripts\Tests\Invoke-CdeRegressionSuite.ps1 -IncludeWorkflowSmoke
 ```
 
-- **File Manager** — **Directories** pane starts empty on open; **Computer** tree auto-expands. Right pane populates only when a technician selects a **drive** or **shadow copy** (not Users / Toolkit / Offline OS shortcuts). Split-view bottom pane also starts empty.
+- **File Manager** — **Directories** pane starts empty on open; **Computer** tree auto-expands. Right pane populates when a technician selects a **drive** or **shadow copy** (letter drives only — Offline OS / Users / Toolkit aliases removed 2026-07-22). Split-view bottom pane also starts empty.
 - **Startup Entry Audit** — runs from **System Health Check** (`audit_startup`); `[POSTOP:STARTUP]` structured results. **Post-Op Cleanup** is eight remediation tools (browser cache, services, associations, DNS/proxy reset, shell caches, optional hosts restore, restart Explorer) — see Session Update 2026-06-26.
 - **System Audit** — `Invoke-StartupAudit` uses `$r.Steps.Add` (not `Add-ToolkitWorkflowStep` from elevation module). `ValidateTools.ps1` includes `StartupAudit`.
 - **Shadow Copies** — `ShadowCopyBrowse.ps1` lists every snapshot per VSS set (not only the first drive); sort newest-first by real datetime.

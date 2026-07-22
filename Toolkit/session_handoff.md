@@ -1,15 +1,37 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-22
+
+## 2026-07-22 — File Manager PE crash fix + CHU FPU/stress EFI
+
+### File Manager (ToolkitGUI)
+
+WinPE File Manager crashed (GUI closed → PE boot menu) when selecting **Offline OS** / **Toolkit** tree aliases — duplicates of lettered drives that triggered unbounded folder-size recursion on OS root / `X:\Toolkit`.
+
+| Change | Detail |
+|--------|--------|
+| Tree | Removed **Offline OS**, **Users**, **Toolkit** aliases — letter drives (+ Shadow Copies) only |
+| Size enum | Skip on drive roots, all of `X:\`, and WinPE heavy names (`Windows`, `Program Files`, `Toolkit`, …); folders stay `...` at those paths |
+| Caps | `FolderSizeCalculator` soft caps (8k dirs / 8 GB) |
+| Tree UX | Per-node expand placeholders (no shared WPF instance) |
+
+**Files:** `App\ToolkitGUI\Views\FileManagerView.xaml.cs`, `FolderSizeCalculator.cs`  
+**Publish:** `App\Publish-ToolkitGUI.ps1` → `Toolkit\CDE.exe` **2026-07-22 8:31:44 AM**; GUI payload **8:31:19 AM**. Sync USB for PE.
+
+### CHU (cross-repo, staged EFI)
+
+- Soft-float FPU false-positive fix + HW double/SSE2 identities; `cpu_stress` wired (Quick 20s / Extended 120s).
+- **SHA256** — `FDB5C7135245BBC12FA120D49016055608E7E1C5D1B321AC2E7A0AA720072562` (295 936 bytes).
+- Staged `Toolkit\EFI\CDE\CoreDiag.efi` + Tools Boot + manifest. Full notes — `Core Hardware Utility\session_handoff.md` (2026-07-22).
 
 ## 2026-07-21 — CHU fault-detection upgrades (staged EFI)
 
-Cross-repo **Core Hardware Utility** UEFI logic only (no ToolkitGUI / Diag & Repair code changes this session).
+Cross-repo **Core Hardware Utility** UEFI logic only (no ToolkitGUI / Diag & Repair code changes that session).
 
 - **What shipped** — Real CPU verify (`CpuVerify.c`); register+FPU stress (not LCG); distinct storage linear/end/targeted reads; ATA SMART D1h thresholds + short self-test; NVMe DST; Extended memory 55/AA + 60s retention-lite; compile-time `CHU_FAULT_INJECT` (production default 0).
 - **Staged** — `Toolkit\EFI\CDE\CoreDiag.efi` and `Toolkit\Tools\Boot\CoreHardwareUtility\CoreDiag.efi`; `tools_manifest.json` updated.
-- **SHA256** — `CFF7F6B52FD371CE865ECE538D80E3F15BA96850025BE4654C200C2808AD20AF` (291 840 bytes).
-- **Deploy** — `SyncUSB.bat` / lab push as needed. **No** `Publish-ToolkitGUI.ps1` required for this CHU-only change.
+- **SHA256** — `CFF7F6B52FD371CE865ECE538D80E3F15BA96850025BE4654C200C2808AD20AF` (291 840 bytes) — **superseded 2026-07-22**.
+- **Deploy** — `SyncUSB.bat` / lab push as needed. **No** `Publish-ToolkitGUI.ps1` required for that CHU-only change.
 - **Validate** — Known-good Quick + Extended on ≥2 machines; see `Core Hardware Utility\UEFI\DIAGNOSTICS_IMPROVEMENT_PLAN.md` §9 and `Core Hardware Utility\session_handoff.md`.
 - **Full notes** — `Core Hardware Utility\session_handoff.md` (2026-07-21).
 
@@ -1188,7 +1210,7 @@ powershell -File Scripts\Workflows\SystemAudit.ps1 -ToolName StartupAudit
 
 ### File Manager — empty Directories + tree-driven browse
 
-- **`FileManagerView.xaml.cs`** — Directories pane starts empty (`ClearPane`); no auto-load of `TOOLKIT_ROOT` / USB path on open. **Computer** auto-expands on load. Right pane fills only for **drive** and **shadow copy** tree nodes (`OpensPaneOnSelect`); Users / Toolkit / Offline OS are expand-only shortcuts. Clicking **Computer** clears the pane. Split-view bottom pane starts empty.
+- **`FileManagerView.xaml.cs`** — Directories pane starts empty (`ClearPane`); no auto-load of `TOOLKIT_ROOT` / USB path on open. **Computer** auto-expands on load. Right pane fills only for **drive** and **shadow copy** tree nodes (`OpensPaneOnSelect`). *(Historical: Users / Toolkit / Offline OS were expand-only shortcuts here; removed 2026-07-22 — letter drives only.)* Clicking **Computer** clears the pane. Split-view bottom pane starts empty.
 
 ### Startup Entry Audit → System Audit
 

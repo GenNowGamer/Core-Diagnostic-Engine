@@ -18,8 +18,8 @@
                         "approvalSource":  "OwnerApprovedAllowlist",
                         "approvedOn":  "2026-05-05",
                         "status":  "acquired",
-                        "sha256":  "CFF7F6B52FD371CE865ECE538D80E3F15BA96850025BE4654C200C2808AD20AF",
-                        "sizeBytes":  291840
+                        "sha256":  "FDB5C7135245BBC12FA120D49016055608E7E1C5D1B321AC2E7A0AA720072562",
+                        "sizeBytes":  295936
                     },
                     {
                         "name":  "Windows Memory Diagnostic (Microsoft memtest.efi)",

@@ -10,6 +10,9 @@ namespace ToolkitGUI
     {
         private const int ProgressByteThreshold = 256 * 1024;
         private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(120);
+        /* Soft caps — prevent WinPE OOM if a large folder is opened without a skip guard. */
+        private const int MaxDirectoriesVisited = 8000;
+        private const long MaxBytesToTally = 8L * 1024 * 1024 * 1024;
 
         public static Task<long> CalculateAsync(
             string rootPath,
@@ -34,6 +37,9 @@ namespace ToolkitGUI
             while (stack.Count > 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (visited.Count >= MaxDirectoriesVisited || total >= MaxBytesToTally)
+                    break;
+
                 var current = stack.Pop();
 
                 string normalized;
@@ -58,6 +64,8 @@ namespace ToolkitGUI
                         {
                             total += new FileInfo(filePath).Length;
                             lastReported = ReportIfNeeded(progress, total, lastReported, ref lastReportTime);
+                            if (total >= MaxBytesToTally)
+                                break;
                         }
                         catch
                         {
@@ -69,6 +77,9 @@ namespace ToolkitGUI
                 {
                     // Skip unreadable directories.
                 }
+
+                if (total >= MaxBytesToTally || visited.Count >= MaxDirectoriesVisited)
+                    break;
 
                 try
                 {
