@@ -10,7 +10,7 @@
 - `[x]` Done (include `YYYY-MM-DD` note)
 - `(blocked)` Waiting on decision, cert, hardware, or external dependency
 
-**Last reviewed:** 2026-07-20  
+**Last reviewed:** 2026-07-21  
 **Product channel today:** beta (`Toolkit\VERSION.json`)
 
 ---
@@ -28,7 +28,7 @@
 
 - [ ] **P1 — Code signing:** Authenticode-sign `CDE.exe`, ToolkitGUI payload, CLIs (`CdeCpuSimdCli`, `CdeGpuDiagCli`, etc.)
 - [ ] **P2 — Pass 3 packaging fixes:** Implement deferred PL/LA tickets (esp. WinPE `TOOLKIT_ROOT` normalization, CST partial-sync fail-closed)
-- [ ] **P3 — CHU Week-4 hardware matrix:** Finish multi-OEM validation (clean + known-bad RAM/HDD/NVMe)
+- [ ] **P3 — CHU Week-4 hardware matrix:** Finish multi-OEM validation (clean + known-bad RAM/HDD/NVMe). Note: UEFI fault-detection code depth shipped 2026-07-21; this item is field validation.
 - [ ] **P4 — CHU Secure Boot plan:** Sign EFI apps **or** document Secure Boot–off as permanent product limit
 - [ ] **P5 — CST USB baselines:** Ship curated known-good set that fits FAT32 USB; keep release gates green after every rules bump
 - [ ] **P6 — CI + BenchLab gates:** Hosted CI (build + PS regression + CST gates); automate BenchLab on Hyper-V infect lab
@@ -198,8 +198,9 @@
 
 ## 8. Core Hardware Utility (CHU)
 
-- [ ] Complete Week-4 hardware matrix (§9 in CHU improvement plan)
+- [ ] Complete Week-4 / known-good hardware matrix (§9 in CHU improvement plan) — code depth shipped 2026-07-21; field matrix still open
 - [ ] Secure Boot signing **or** permanent limitation docs + UI warning
+- [x] UEFI fault-detection depth (CPU verify, SMART D1h/DST, storage de-alias, Extended memory extras) — **2026-07-21** (`CoreDiag.efi` `CFF7F6B5…`)
 - [ ] Catalog sync: `cpu_stress` and all JSON deltas in UEFI + CDE catalogs
 - [ ] Run `BUILD_CHU_UEFI.ps1` + stage to `Toolkit\EFI\CDE\` on every CHU change
 - [ ] Empty boot-log / Samsung early-logging retest
@@ -264,6 +265,7 @@ Mark a regression here if something below breaks; otherwise leave unchecked as �
 
 | Date | Item(s) | Notes / publish |
 |------|---------|-----------------|
+| 2026-07-21 | CHU UEFI fault-detection depth | Staged `CoreDiag.efi` `CFF7F6B5…` (291 840 B); matrix/P3 still open |
 | 2026-07-20 | Checklist created | Initial AAA audit tracker |
 |  |  |  |
 

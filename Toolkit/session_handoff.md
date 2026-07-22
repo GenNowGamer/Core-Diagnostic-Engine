@@ -1,6 +1,17 @@
 ﻿# CDE Toolkit — Session Handoff
 
-**Last updated:** 2026-07-20
+**Last updated:** 2026-07-21
+
+## 2026-07-21 — CHU fault-detection upgrades (staged EFI)
+
+Cross-repo **Core Hardware Utility** UEFI logic only (no ToolkitGUI / Diag & Repair code changes this session).
+
+- **What shipped** — Real CPU verify (`CpuVerify.c`); register+FPU stress (not LCG); distinct storage linear/end/targeted reads; ATA SMART D1h thresholds + short self-test; NVMe DST; Extended memory 55/AA + 60s retention-lite; compile-time `CHU_FAULT_INJECT` (production default 0).
+- **Staged** — `Toolkit\EFI\CDE\CoreDiag.efi` and `Toolkit\Tools\Boot\CoreHardwareUtility\CoreDiag.efi`; `tools_manifest.json` updated.
+- **SHA256** — `CFF7F6B52FD371CE865ECE538D80E3F15BA96850025BE4654C200C2808AD20AF` (291 840 bytes).
+- **Deploy** — `SyncUSB.bat` / lab push as needed. **No** `Publish-ToolkitGUI.ps1` required for this CHU-only change.
+- **Validate** — Known-good Quick + Extended on ≥2 machines; see `Core Hardware Utility\UEFI\DIAGNOSTICS_IMPROVEMENT_PLAN.md` §9 and `Core Hardware Utility\session_handoff.md`.
+- **Full notes** — `Core Hardware Utility\session_handoff.md` (2026-07-21).
 
 ## 2026-07-20 — AAA quality checklist (tracker)
 

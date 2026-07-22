@@ -8,11 +8,15 @@
 
 ## Overview
 
-CDE is a bootable USB diagnostic suite built on Windows PE. It boots via UEFI from a FAT32 USB drive into a **rEFInd** graphical menu (see `EFI\boot\refind.conf` — currently **CDE WinPE** and **CHU**; Microsoft `memtest.efi` is a separate boot payload via `Ensure-BootArtifacts.ps1`, WinPE `Invoke-PreBootTool.ps1`, or `CDEBoot.efi`). Once WinPE loads, `startnet.cmd` auto-launches `ToolkitGUI.exe` (Windows portable entry: `CDE.exe`), which presents a full-screen branded WPF boot menu — replacing the legacy text-based CMD menu. After entering the toolkit, use sidebar **System Health Check** for catalog-driven vitals, deep system, system audit, and security audit checks (not hardware line tests, SMART analyzer, Defender, or CST — those live under **Diag & Repair** and **Malware Cleanup**), **Diag & Repair** for PC-Doctor-style CPU/Memory/Storage line tests plus CST security scan (Quick/Extended), and per-tool workflows from **Malware Cleanup**, **Post-Op Cleanup**, and other sidebar views. **CHU** pre-boot hardware runs via rEFInd → **`CHUPrep.efi`** → **`CoreDiag.efi`** (PC-Check text or GOP UI depending on firmware) — see `Core Hardware Utility\UEFI\DIAGNOSTICS_IMPROVEMENT_PLAN.md` and `session_handoff.md` (2026-07-06).
+CDE is a bootable USB diagnostic suite built on Windows PE. It boots via UEFI from a FAT32 USB drive into a **rEFInd** graphical menu (see `EFI\boot\refind.conf` — currently **CDE WinPE** and **CHU**; Microsoft `memtest.efi` is a separate boot payload via `Ensure-BootArtifacts.ps1`, WinPE `Invoke-PreBootTool.ps1`, or `CDEBoot.efi`). Once WinPE loads, `startnet.cmd` auto-launches `ToolkitGUI.exe` (Windows portable entry: `CDE.exe`), which presents a full-screen branded WPF boot menu — replacing the legacy text-based CMD menu. After entering the toolkit, use sidebar **System Health Check** for catalog-driven vitals, deep system, system audit, and security audit checks (not hardware line tests, SMART analyzer, Defender, or CST — those live under **Diag & Repair** and **Malware Cleanup**), **Diag & Repair** for PC-Doctor-style CPU/Memory/Storage line tests plus CST security scan (Quick/Extended), and per-tool workflows from **Malware Cleanup**, **Post-Op Cleanup**, and other sidebar views. **CHU** pre-boot hardware runs via rEFInd → **`CHUPrep.efi`** → **`CoreDiag.efi`** (PC-Check text or GOP UI depending on firmware) — see `Core Hardware Utility\UEFI\DIAGNOSTICS_IMPROVEMENT_PLAN.md` and `session_handoff.md` (2026-07-21 fault-detection; 2026-07-06 display/boot).
 
 The project mirrors the architecture of the proven MRI diagnostic platform while integrating CDE-specific tooling including the Core Hardware Utility (CHU) UEFI application and the Core Security Tool (CST) PowerShell module.
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
+
+## Session Update (2026-07-21)
+
+- **CHU fault-detection** — Staged deeper UEFI tests (CPU verify, SMART D1h/DST, distinct storage reads, Extended memory extras). `CoreDiag.efi` SHA256 `CFF7F6B52FD371CE865ECE538D80E3F15BA96850025BE4654C200C2808AD20AF`, 291 840 bytes. Sync USB; no GUI publish required. Details — `Toolkit\session_handoff.md`; `Core Hardware Utility\session_handoff.md`.
 
 ## Session Update (2026-07-20)
 
@@ -75,7 +79,7 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 - **CHU display** — PC-Check text default (HP desktop verified); GOP fallback on portable hardware when ConOut text is not visible (Samsung laptop verified).
 - **CHU results scroll** — Post-test review uses real viewport height; Run All scroll reaches last HDD row on HP (field-verified).
 - **CHU logging** — Early `LogOpen` + per-line flush before UI init.
-- **Deploy** — CHU rebuild → `SyncUSB.bat` (no GUI publish unless CDE app changed). `CoreDiag.efi` SHA256 `EBC5D75F8687C3A1F9822B02B7B3877A992054DE5F6DD21250A70E32D732E35A`.
+- **Deploy** — CHU rebuild → `SyncUSB.bat` (no GUI publish unless CDE app changed). `CoreDiag.efi` (2026-07-06 display build) SHA256 `EBC5D75F8687C3A1F9822B02B7B3877A992054DE5F6DD21250A70E32D732E35A`. **Superseded for logic depth by 2026-07-21** (`CFF7F6B5…`, 291 840 bytes — see Session Update above).
 - **User guide** — `Docs/UserGuide/04_Diagnostics.md`, `08_Tools_Library_Settings.md`, `10_Reference.md`.
 
 ## Session Update (2026-07-03)

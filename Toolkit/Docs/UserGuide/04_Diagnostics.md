@@ -138,10 +138,12 @@ The status bar shows a **rollup** (pass / warn / fail counts). When a test maps 
 
 | Tool | When it runs | Best for |
 |------|--------------|----------|
-| **CHU (UEFI)** | Before Windows starts | Raw hardware validation, no OS interference |
+| **CHU (UEFI)** | Before Windows starts | Raw hardware validation (CPU verify, physical RAM patterns, SMART/DST, denser storage reads) — no OS interference |
 | **Diag & Repair (WinPE/Windows)** | Inside CDE GUI | Technician workflow, combined with CST, live progress in CDE |
 
 Use both when a machine has intermittent hardware faults — CHU for pre-boot proof, Diag & Repair for documented in-session runs with PDF workflow output.
+
+> **CHU depth (2026-07-21):** UEFI catalog tests now use real CPU verify loops (not CPUID-only), distinct storage read modes, ATA/NVMe short self-test when the firmware supports it, and SMART threshold comparison (`D1h`) with conservative WARN/FAIL rules. Extended memory adds extra moving-inversion patterns and a short retention-lite pass. See `Core Hardware Utility\session_handoff.md`.
 
 When Diag & Repair reports **Incomplete** (partial memory coverage, soft CPU stress shortfalls) or **storage elevation warnings**, the view shows a CHU guidance banner with a link to **CHU Pre-Boot Results**. Incomplete is not a Fail — Windows-side coverage could not clear intermittent hardware risk; run CHU from the USB pre-boot menu for physical validation. Hard Fail rows are re-tried once (confirm-on-Fail); a Pass on retry becomes Warn with a confirmation note.
 

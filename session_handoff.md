@@ -1,7 +1,13 @@
 ﻿# Session handoff — Core Diagnostic Engine
 
-**Last updated:** 2026-07-20
+**Last updated:** 2026-07-21
 **Context:** Boot validation uses the CDE USB toolkit workflow (rEFInd pre-boot menu, WinPE, CHU, memtest) on real hardware.
+
+## 2026-07-21 update — CHU fault-detection EFI (staged)
+
+- **CHU UEFI** — Fault-detection upgrades 1–7 staged into `Toolkit\EFI\CDE\CoreDiag.efi` (SHA256 `CFF7F6B5…`, 291 840 bytes) + Tools Boot path + `tools_manifest.json`.
+- **CDE GUI** — Unchanged this session; Diag & Repair Windows path unchanged.
+- **Next** — USB sync; known-good Quick/Extended CHU validation. Details: `Toolkit\session_handoff.md`; `Core Hardware Utility\session_handoff.md`.
 
 ## 2026-07-20 update — AAA quality checklist
 
