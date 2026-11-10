@@ -60,6 +60,8 @@ Toolkit/Security/CST/rules/baselines/baselines/
 
 # Logs and temp
 *.log
+*.bak
+*.bak_*
 Desktop.ini
 *.lnk
 
