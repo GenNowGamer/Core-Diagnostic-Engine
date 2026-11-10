@@ -1,14 +1,26 @@
 # Core Diagnostic Engine (CDE)
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%20Windows%2011%20%7C%20WinPE%20(x64)-0078D6.svg?logo=windows&logoColor=white)](#core-operating-environments)
+[![Version](https://img.shields.io/badge/Version-1.0.1%20(Beta)-green.svg)](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest)
+[![Latest Release](https://img.shields.io/badge/Release-v1.0.1-orange.svg)](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest)
 [![Framework](https://img.shields.io/badge/Framework-.NET%208%20WPF%20%7C%20PowerShell%205.1%2B-512BD4.svg?logo=dotnet&logoColor=white)](#system-architecture)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](#license--disclaimers)
 [![Execution](https://img.shields.io/badge/Telemetry-Zero%20%7C%20100%25%20Local-success.svg)](#security-privacy--safety-standards)
-[![Architecture](https://img.shields.io/badge/Architecture-Modular%20Workbench-orange.svg)](#system-architecture)
 
 **Core Diagnostic Engine (CDE)** is a professional, modular diagnostic, repair, malware remediation, and bench-testing toolkit for Windows PCs. Engineered for computer repair technicians, IT administrators, and service bench specialists, CDE combines bare-metal UEFI hardware diagnostics, offline recovery inside a custom Windows Preinstallation Environment (WinPE), and live operating system triage into a single, cohesive WPF platform.
 
 Whether diagnosing failing storage on an unbootable machine, neutralizing sophisticated persistence mechanisms, repairing corrupted Windows servicing stacks, or producing polished, client-ready PDF reports, CDE delivers deterministic, evidence-based results without external cloud dependencies.
+
+---
+
+### 📥 Downloads
+
+| Asset | Format | Description | Direct Download |
+| :--- | :--- | :--- | :--- |
+| **CDE Portable Package** | Standalone Archive (`.zip`) | Full CDE diagnostic toolkit for 64-bit Windows 10/11 & WinPE | [**Download CDE v1.0.1 (.zip)**](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest/download/CDE-v1.0.1-Portable.zip) |
+| **CDE User Guide** | PDF Manual (`.pdf`) | Comprehensive technician bench manual & reference | [**Download User Guide (.pdf)**](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest/download/CDE_User_Guide.pdf) |
+
+---
 
 ---
 
