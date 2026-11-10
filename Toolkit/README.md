@@ -3,6 +3,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%20Windows%2011%20%7C%20WinPE%20(x64)-0078D6.svg?logo=windows&logoColor=white)](#core-operating-environments)
 [![Version](https://img.shields.io/badge/Version-1.0.1%20(Beta)-green.svg)](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest)
 [![Latest Release](https://img.shields.io/badge/Release-v1.0.1-orange.svg)](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/GenNowGamer/Core-Diagnostic-Engine/total?color=2ea44f&logo=github&label=Downloads)](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases)
 [![Framework](https://img.shields.io/badge/Framework-.NET%208%20WPF%20%7C%20PowerShell%205.1%2B-512BD4.svg?logo=dotnet&logoColor=white)](#system-architecture)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](#license--disclaimers)
 [![Execution](https://img.shields.io/badge/Telemetry-Zero%20%7C%20100%25%20Local-success.svg)](#security-privacy--safety-standards)
