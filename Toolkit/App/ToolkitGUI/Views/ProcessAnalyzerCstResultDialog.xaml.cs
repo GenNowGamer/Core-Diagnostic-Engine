@@ -337,6 +337,7 @@ namespace ToolkitGUI.Views
                 "Incomplete" => "Incomplete scan",
                 "Review" => "Review recommended",
                 "Suspicious" => "Suspicious signals",
+                "HealthyWithNotes" => "Pass (audit notes)",
                 _ => "No threats found"
             };
 
@@ -346,6 +347,7 @@ namespace ToolkitGUI.Views
                 "Incomplete" => new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06)),
                 "Review" => new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06)),
                 "Suspicious" => new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06)),
+                "HealthyWithNotes" => new SolidColorBrush(Color.FromRgb(0x16, 0xA3, 0x4A)),
                 _ => new SolidColorBrush(Color.FromRgb(0x16, 0xA3, 0x4A))
             };
 
@@ -376,7 +378,8 @@ namespace ToolkitGUI.Views
             if (presentation.HasSuppressedFindings)
             {
                 SuppressedExpander.Visibility = Visibility.Visible;
-                SuppressedExpander.IsExpanded = false;
+                SuppressedExpanderHeaderText.Text = $"Suppressed audit Findings ({presentation.SuppressedFindings.Count}) — low confidence / outside threat scope";
+                SuppressedExpander.IsExpanded = presentation.Findings.Count == 0;
                 SuppressedGrid.ItemsSource = presentation.SuppressedFindings;
             }
             else

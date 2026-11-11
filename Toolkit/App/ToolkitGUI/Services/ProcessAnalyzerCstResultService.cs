@@ -787,11 +787,14 @@ namespace ToolkitGUI.Services
                 return "Incomplete";
             }
 
-            if (warnings > 0
-                || findings.Count > 0
-                || suppressed.Count > 0)
+            if (warnings > 0 || findings.Count > 0)
             {
                 return "Review";
+            }
+
+            if (suppressed.Count > 0)
+            {
+                return "HealthyWithNotes";
             }
 
             return "Clean";
@@ -817,10 +820,17 @@ namespace ToolkitGUI.Services
                     ? $"Scan finished with {scanErrors} error(s). Review details before trusting a clean result."
                     : "Scan coverage was incomplete.",
                 "Review" => warnings > 0
-                    ? $"{warnings} warning(s) and {findingCount + suppressedCount} finding row(s) to review."
-                    : findingCount + suppressedCount > 0
-                        ? $"{findingCount + suppressedCount} finding row(s) to review. No confirmed threats."
+                    ? (suppressedCount > 0
+                        ? $"{warnings} warning(s) and {findingCount} finding row(s) to review ({suppressedCount} audit trace(s) suppressed)."
+                        : $"{warnings} warning(s) and {findingCount} finding row(s) to review.")
+                    : findingCount > 0
+                        ? (suppressedCount > 0
+                            ? $"{findingCount} finding row(s) to review ({suppressedCount} audit trace(s) suppressed). No confirmed threats."
+                            : $"{findingCount} finding row(s) to review. No confirmed threats.")
                         : "Low-risk signals detected. No confirmed threats.",
+                "HealthyWithNotes" => suppressedCount > 0
+                    ? $"No confirmed threats ({suppressedCount} low-confidence audit trace(s) suppressed below)."
+                    : "No malware or unwanted-program detections for this target.",
                 _ => string.Equals(scanMode, "ThreatScan", StringComparison.OrdinalIgnoreCase)
                     ? "No malware or unwanted-program detections in high-risk paths."
                     : "No malware or unwanted-program detections for this target."

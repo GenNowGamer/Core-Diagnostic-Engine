@@ -338,7 +338,8 @@
                           BorderBrush="{StaticResource BorderBrush}"
                           BorderThickness="0,1,0,0">
                     <Expander.Header>
-                        <TextBlock Text="Suppressed audit Findings"
+                        <TextBlock x:Name="SuppressedExpanderHeaderText"
+                                   Text="Suppressed audit Findings"
                                    Margin="8,8,0,8"
                                    FontSize="12"
                                    FontWeight="SemiBold"
