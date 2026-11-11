@@ -1,8 +1,8 @@
 # Core Diagnostic Engine (CDE)
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%20Windows%2011%20%7C%20WinPE%20(x64)-0078D6.svg?logo=windows&logoColor=white)](#core-operating-environments)
-[![Version](https://img.shields.io/badge/Version-1.0.1%20(Beta)-green.svg)](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest)
-[![Latest Release](https://img.shields.io/badge/Release-v1.0.1-orange.svg)](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest)
+[![Version](https://img.shields.io/badge/Version-1.0.2%20(Beta)-green.svg)](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest)
+[![Latest Release](https://img.shields.io/badge/Release-v1.0.2-orange.svg)](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/GenNowGamer/Core-Diagnostic-Engine/total?color=2ea44f&logo=github&label=Downloads)](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases)
 [![Framework](https://img.shields.io/badge/Framework-.NET%208%20WPF%20%7C%20PowerShell%205.1%2B-512BD4.svg?logo=dotnet&logoColor=white)](#system-architecture)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](#license--disclaimers)
@@ -18,7 +18,7 @@ Whether diagnosing failing storage on an unbootable machine, neutralizing sophis
 
 | Asset | Format | Description | Direct Download |
 | :--- | :--- | :--- | :--- |
-| **CDE Portable Package** | Standalone Archive (`.zip`) | Full CDE diagnostic toolkit for 64-bit Windows 10/11 & WinPE | [**Download CDE v1.0.1 (.zip)**](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest/download/CDE-v1.0.1-Portable.zip) |
+| **CDE Portable Package** | Standalone Archive (`.zip`) | Full CDE diagnostic toolkit for 64-bit Windows 10/11 & WinPE | [**Download CDE v1.0.2 (.zip)**](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest/download/CDE-v1.0.2-Portable.zip) |
 | **CDE User Guide** | PDF Manual (`.pdf`) | Comprehensive technician bench manual & reference | [**Download User Guide (.pdf)**](https://github.com/GenNowGamer/Core-Diagnostic-Engine/releases/latest/download/CDE_User_Guide.pdf) |
 
 ---
