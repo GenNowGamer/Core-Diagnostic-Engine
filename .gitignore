@@ -11,6 +11,10 @@ out/
 # Local WinPE / deploy (copype output, mounted WIM work, ISOs)
 *.iso
 Toolkit.zip
+dist/
+Toolkit/dist/
+scripts/
+Toolkit/scripts/
 Toolkit/Mount/
 Toolkit/Deploy/
 Toolkit/WinPE/
