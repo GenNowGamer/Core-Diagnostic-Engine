@@ -1,30 +1,44 @@
-﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     CDE WinPE Customization Script - Phase 5
-    Mounts boot.wim, injects CDE startnet.cmd, and commits.
+    Stages ADK WinPE base, mounts boot.wim, injects CDE startnet.cmd, and commits.
 .NOTES
-    Run as Administrator. Requires Windows ADK (DISM).
+    Run as Administrator. Requires Windows ADK (DISM & WinPE Add-on).
 #>
+
+# Self-elevation check: ensure Administrator privileges
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "Requesting Administrator privileges..." -ForegroundColor Yellow
+    $argsList = "-NoProfile -ExecutionPolicy Bypass -NoExit -File `"$PSCommandPath`""
+    if ($PSBoundParameters.Count -gt 0) {
+        foreach ($key in $PSBoundParameters.Keys) {
+            $argsList += " -$key `"$($PSBoundParameters[$key])`""
+        }
+    }
+    Start-Process powershell.exe -ArgumentList $argsList -Verb RunAs
+    exit 0
+}
 
 $CDE_ROOT  = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $WIM_PATH  = "$CDE_ROOT\sources\boot.wim"
 $MOUNT_DIR = "$CDE_ROOT\Mount\WinPE"
-$STARTNET  = "$CDE_ROOT\Mount\WinPEWork\startnet.cmd"
-
-# Use the ADK's own DISM instead of the system DISM.
-# System DISM (10.0.26100.5074+) cannot load the older hive format
-# in the WinPE image (10.0.26100.1) - CBS fails with 0xD0000043.
-# Prepending the ADK DISM directory makes PowerShell resolve 'Dism'
-# to the ADK binary, which loads its own matching DLLs from the same folder.
-$adkDismDir = "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\DISM"
-if (Test-Path $adkDismDir) {
-    $env:PATH = "$adkDismDir;$env:PATH"
-    $adkDismVer = (Get-Item "$adkDismDir\dism.exe").VersionInfo.FileVersion
-    Write-Host "Using ADK DISM: $adkDismVer" -ForegroundColor DarkGray
+$STARTNET  = if (Test-Path "$CDE_ROOT\Scripts\WinPE\startnet.cmd") {
+    "$CDE_ROOT\Scripts\WinPE\startnet.cmd"
 } else {
-    Write-Host "WARNING: ADK DISM not found - falling back to system DISM (may fail)" -ForegroundColor Yellow
+    "$CDE_ROOT\Mount\WinPEWork\startnet.cmd"
 }
+
+# Windows ADK paths
+$adkRoot    = "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit"
+$adkWinPE   = "$adkRoot\Windows Preinstallation Environment\amd64"
+$adkWimSrc  = "$adkWinPE\en-us\winpe.wim"
+$adkMedia   = "$adkWinPE\Media"
+$adkDeploy  = "$adkRoot\Deployment Tools\amd64"
+$adkDismDir = "$adkDeploy\DISM"
+$adkBootsect= "$adkDeploy\BCDBoot\bootsect.exe"
+$adkOscdimg = "$adkDeploy\Oscdimg\oscdimg.exe"
+$adkEtfsboot= "$adkDeploy\Oscdimg\etfsboot.com"
 
 function Write-Step($msg) { Write-Host "`n[STEP] $msg" -ForegroundColor Cyan }
 function Write-OK($msg)   { Write-Host "[OK]   $msg" -ForegroundColor Green }
@@ -34,26 +48,106 @@ Write-Host "`nCDE WinPE Customization Script" -ForegroundColor Yellow
 Write-Host "================================" -ForegroundColor Yellow
 
 # ---------------------------------------------------------------
-# Pre-flight checks
+# Pre-flight: Check Windows ADK installation
 # ---------------------------------------------------------------
-Write-Step "Pre-flight checks"
+Write-Step "Checking Windows ADK & WinPE Add-on..."
 
-if (-not (Test-Path $WIM_PATH))  { Write-Fail "boot.wim not found at: $WIM_PATH" }
+if (-not (Test-Path $adkWinPE) -or -not (Test-Path $adkWimSrc)) {
+    Write-Host @"
+================================================================
+  WINDOWS ADK & WINPE ADD-ON REQUIRED
+================================================================
+  To build and customize the offline WinPE environment, Windows ADK 
+  and the Windows PE add-on must be installed on this computer.
+
+  Download links (Official Microsoft):
+  1. Windows ADK:
+     https://learn.microsoft.com/windows-hardware/get-started/adk-install
+  2. Windows PE Add-on for ADK:
+     (Downloadable from the same Microsoft page above)
+
+  Install both components, then re-run this script or Build-WinPE.bat.
+================================================================
+"@ -ForegroundColor Yellow
+    exit 1
+}
+Write-OK "Windows ADK and WinPE Add-on detected"
+
+# Use ADK DISM
+if (Test-Path $adkDismDir) {
+    $env:PATH = "$adkDismDir;$env:PATH"
+    $adkDismVer = (Get-Item "$adkDismDir\dism.exe").VersionInfo.FileVersion
+    Write-Host "Using ADK DISM: $adkDismVer" -ForegroundColor DarkGray
+} else {
+    Write-Host "WARNING: ADK DISM not found - falling back to system DISM (may fail)" -ForegroundColor Yellow
+}
+
+# ---------------------------------------------------------------
+# Stage Boot Scaffolding from ADK if missing
+# ---------------------------------------------------------------
+Write-Step "Checking boot scaffolding from Windows ADK..."
+
+$sourcesDir = "$CDE_ROOT\sources"
+if (-not (Test-Path $sourcesDir)) {
+    New-Item -ItemType Directory -Path $sourcesDir -Force | Out-Null
+    Write-OK "Created sources directory"
+}
+
+if (Test-Path $adkMedia) {
+    if (-not (Test-Path "$CDE_ROOT\bootmgr") -and (Test-Path "$adkMedia\bootmgr")) {
+        Copy-Item "$adkMedia\bootmgr" "$CDE_ROOT\bootmgr" -Force
+        Write-OK "Staged bootmgr from ADK"
+    }
+    if (-not (Test-Path "$CDE_ROOT\bootmgr.efi") -and (Test-Path "$adkMedia\bootmgr.efi")) {
+        Copy-Item "$adkMedia\bootmgr.efi" "$CDE_ROOT\bootmgr.efi" -Force
+        Write-OK "Staged bootmgr.efi from ADK"
+    }
+    if (-not (Test-Path "$CDE_ROOT\Boot") -and (Test-Path "$adkMedia\Boot")) {
+        Copy-Item "$adkMedia\Boot" "$CDE_ROOT\Boot" -Recurse -Force
+        Write-OK "Staged Boot folder (BCD, boot.sdi) from ADK"
+    }
+    if (-not (Test-Path "$CDE_ROOT\EFI\microsoft") -and (Test-Path "$adkMedia\EFI\microsoft")) {
+        Copy-Item "$adkMedia\EFI\microsoft" "$CDE_ROOT\EFI\microsoft" -Recurse -Force
+        Write-OK "Staged EFI\microsoft from ADK"
+    }
+}
+
+if (Test-Path $adkBootsect) {
+    $bootDir = "$CDE_ROOT\Boot"
+    if (-not (Test-Path $bootDir)) { New-Item -ItemType Directory -Path $bootDir -Force | Out-Null }
+    if (-not (Test-Path "$bootDir\bootsect.exe")) {
+        Copy-Item $adkBootsect "$bootDir\bootsect.exe" -Force
+        Write-OK "Staged bootsect.exe to Boot\ folder"
+    }
+}
+
+if (Test-Path $adkOscdimg) {
+    $halpDir = "$CDE_ROOT\HALP"
+    if (-not (Test-Path $halpDir)) { New-Item -ItemType Directory -Path $halpDir -Force | Out-Null }
+    if (-not (Test-Path "$halpDir\oscdimg.exe")) {
+        Copy-Item $adkOscdimg "$halpDir\oscdimg.exe" -Force
+        Write-OK "Staged oscdimg.exe to HALP\"
+    }
+    if (Test-Path $adkEtfsboot -and -not (Test-Path "$halpDir\etfsboot.com")) {
+        Copy-Item $adkEtfsboot "$halpDir\etfsboot.com" -Force
+        Write-OK "Staged etfsboot.com to HALP\"
+    }
+}
+
+# ---------------------------------------------------------------
+# Stage or refresh boot.wim from ADK base image
+# ---------------------------------------------------------------
+Write-Step "Staging base WinPE image..."
+if (-not (Test-Path $WIM_PATH)) {
+    Write-Host "  Copying fresh winpe.wim from ADK base image..."
+    Copy-Item $adkWimSrc $WIM_PATH -Force
+    Write-OK "Base boot.wim staged ($([math]::Round((Get-Item $WIM_PATH).Length/1MB,0)) MB)"
+} else {
+    Write-Host "  Using existing boot.wim at $WIM_PATH ($([math]::Round((Get-Item $WIM_PATH).Length/1MB,0)) MB)"
+}
+
 if (-not (Test-Path $STARTNET))  { Write-Fail "startnet.cmd not found at: $STARTNET" }
 if (-not (Test-Path $MOUNT_DIR)) { New-Item $MOUNT_DIR -ItemType Directory | Out-Null }
-
-# Replace boot.wim with the fresh ADK base image so that the CBS schema.dat
-# is compatible with the ADK package .cabs. The current boot.wim's schema.dat
-# cannot be loaded by CBS, blocking all /Add-Package operations.
-$adkWimSrc = "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\en-us\winpe.wim"
-if (Test-Path $adkWimSrc) {
-    Write-Host "  Refreshing boot.wim from fresh ADK base image..."
-    Copy-Item $adkWimSrc $WIM_PATH -Force
-    Write-Host "  boot.wim refreshed ($([math]::Round((Get-Item $WIM_PATH).Length/1MB,0)) MB)" -ForegroundColor Green
-} else {
-    Write-Host "  WARNING: ADK winpe.wim not found at: $adkWimSrc" -ForegroundColor Yellow
-    Write-Host "           Proceeding with existing boot.wim (package install may fail)"
-}
 
 # Ensure mount dir is empty / clean any stale mounts
 $stale = Dism /Get-MountedImageInfo 2>$null | Select-String ([regex]::Escape($MOUNT_DIR))
@@ -271,6 +365,14 @@ Write-Host "  boot.wim: $WIM_PATH ($wimSize MB)"
 Write-Host "  startnet.cmd: INJECTED (CDE Boot Menu)"
 Write-Host "  Module:       CDECore.psm1 in WinPE modules"
 Write-Host "`n  Next steps:"
-Write-Host "  1. Run CreateISO.ps1 to generate CDE ISO"
-Write-Host "  2. Or run Prepare-BootableUSB.ps1 for USB deployment"
+Write-Host "  1. Run Prepare-USB.bat to create a bootable USB drive"
+Write-Host "  2. Or run CreateISO.ps1 to generate a CDE ISO"
 Write-Host "================================================================`n" -ForegroundColor Green
+
+$askUsb = Read-Host "Would you like to prepare a bootable USB drive now? (Y/N)"
+if ($askUsb.Trim().ToUpper() -eq 'Y') {
+    $usbScript = Join-Path $PSScriptRoot "Prepare-BootableUSB.ps1"
+    if (Test-Path $usbScript) {
+        & $usbScript
+    }
+}

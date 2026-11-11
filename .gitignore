@@ -15,14 +15,14 @@ Toolkit/Mount/
 Toolkit/Deploy/
 Toolkit/WinPE/
 Toolkit/sources/
-Toolkit/**/WinPEWork/
-Toolkit/**/WinPE/
 Toolkit/Logs/
 Toolkit/**/sources/boot.wim
 Toolkit/Tools/Boot/PCDoctor/
 Toolkit/App/ToolkitGUI/perf_reports/
 Toolkit/CDE.exe
+Toolkit/CDE_User_Guide.pdf
 Toolkit/**/publish-staging/
+*.code-workspace
 
 # Microsoft ADK / WinPE redistributables (obtain from Windows ADK; not redistributable via public git)
 Toolkit/EFI/microsoft/**
@@ -76,3 +76,19 @@ Toolkit/offline_env.txt
 # PowerShell transcript/temp
 *.transcript
 *.pslog
+
+# Document Exclusion Guarantee (README.md only)
+*.md
+!README.md
+!readme.md
+!**/README.md
+!**/readme.md
+session_handoff.md
+CHANGELOG.md
+GEMINI.md
+AGENTS.md
+docs/
+Docs/
+*.pdf
+*.docx
+

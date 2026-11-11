@@ -38,7 +38,13 @@ namespace ToolkitGUI
         }
 
         internal static string GetUserGuidePath()
-            => Path.Combine(GetToolkitRoot(), "HALP", "CDE_User_Guide.pdf");
+        {
+            var rootPath = Path.Combine(GetToolkitRoot(), "CDE_User_Guide.pdf");
+            if (File.Exists(rootPath))
+                return rootPath;
+
+            return Path.Combine(GetToolkitRoot(), "HALP", "CDE_User_Guide.pdf");
+        }
 
         internal static string GetHealthCheckCatalogPath()
             => Path.Combine(GetToolkitRoot(), "Config", "HealthCheckCatalog.json");

@@ -1,4 +1,3 @@
-﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     CDE Bootable USB Preparation Script
@@ -11,7 +10,7 @@
     USB partitioning uses diskpart first (Storage module fallback). Supports BIOS + UEFI.
     
 .PARAMETER DiskNumber
-    The disk number from 'list disk' (NOT the partition letter). Mandatory.
+    Optional: The disk number from 'list disk' (NOT the partition letter). If omitted, an interactive menu is displayed.
 .PARAMETER IsoPath
     Optional: If provided, extracts the ISO. Otherwise copies CDE folder directly.
 .EXAMPLE
@@ -24,11 +23,24 @@
 #>
 
 param(
-    [Parameter(Mandatory)]
-    [int]$DiskNumber,
+    [int]$DiskNumber = -1,
     
     [string]$IsoPath = ""
 )
+
+# Self-elevation check: ensure Administrator privileges
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "Requesting Administrator privileges..." -ForegroundColor Yellow
+    $argsList = "-NoProfile -ExecutionPolicy Bypass -NoExit -File `"$PSCommandPath`""
+    if ($PSBoundParameters.Count -gt 0) {
+        foreach ($key in $PSBoundParameters.Keys) {
+            $argsList += " -$key `"$($PSBoundParameters[$key])`""
+        }
+    }
+    Start-Process powershell.exe -ArgumentList $argsList -Verb RunAs
+    exit 0
+}
 
 $CDE_ROOT  = Split-Path -Parent $PSScriptRoot   # Toolkit\ (parent of Scripts\)
 $USB_LABEL = "CDEDATA"
@@ -400,6 +412,28 @@ Write-Step "Current disk list:"
 $diskInfo = Get-Disk | Select-Object Number, FriendlyName, Size, PartitionStyle, 
     @{N="Size_GB";E={[math]::Round($_.Size/1GB,1)}}
 $diskInfo | Format-Table -AutoSize
+
+if ($DiskNumber -lt 0) {
+    do {
+        $userInput = Read-Host "`nEnter the Disk Number of your target USB drive (or 'q' to quit)"
+        if ($userInput.Trim().ToLower() -eq 'q') {
+            Write-Host "Preparation aborted by user."
+            exit 0
+        }
+        if ($userInput -match '^\d+$') {
+            $parsedNum = [int]$userInput
+            $testDisk = Get-Disk -Number $parsedNum -ErrorAction SilentlyContinue
+            if ($testDisk) {
+                $DiskNumber = $parsedNum
+                break
+            } else {
+                Write-Warn "Disk $parsedNum was not found in the list above. Please try again."
+            }
+        } else {
+            Write-Warn "Please enter a valid numeric disk number (e.g. 1, 2) or 'q' to quit."
+        }
+    } while ($true)
+}
 
 # Identify target disk
 $targetDisk = Get-Disk -Number $DiskNumber -ErrorAction SilentlyContinue

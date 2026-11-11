@@ -372,6 +372,8 @@ if ($LASTEXITCODE -ne 0) {
 if (-not (Test-Path -LiteralPath $userGuidePdf)) {
     throw "User guide generation completed but PDF was not found at: $userGuidePdf"
 }
+$rootUserGuide = Join-Path $toolkitRoot 'CDE_User_Guide.pdf'
+Copy-Item -LiteralPath $userGuidePdf -Destination $rootUserGuide -Force
 $userGuideItem = Get-Item -LiteralPath $userGuidePdf
 Write-Host ("User guide: {0}" -f $userGuideItem.FullName) -ForegroundColor Green
 Write-Host ("User guide size: {0:N0} bytes" -f $userGuideItem.Length)

@@ -1,4 +1,3 @@
-#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     CDE ISO Creation Script - Phase 6
@@ -16,6 +15,20 @@ param(
     [string]$OutputPath = "",
     [switch]$NoPrompt
 )
+
+# Self-elevation check: ensure Administrator privileges
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "Requesting Administrator privileges..." -ForegroundColor Yellow
+    $argsList = "-NoProfile -ExecutionPolicy Bypass -NoExit -File `"$PSCommandPath`""
+    if ($PSBoundParameters.Count -gt 0) {
+        foreach ($key in $PSBoundParameters.Keys) {
+            $argsList += " -$key `"$($PSBoundParameters[$key])`""
+        }
+    }
+    Start-Process powershell.exe -ArgumentList $argsList -Verb RunAs
+    exit 0
+}
 
 $CDE_ROOT  = Split-Path -Parent $PSScriptRoot
 $OSCDIMG   = "$CDE_ROOT\HALP\oscdimg.exe"

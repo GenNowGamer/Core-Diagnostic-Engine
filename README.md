@@ -361,26 +361,24 @@ The build pipeline will:
 
 ---
 
-### Building Bootable WinPE Media
+### Creating Bootable Media
 
-To create a bootable USB recovery drive:
+CDE supports both bare-metal UEFI hardware diagnostics and full offline Windows PE recovery.
 
-1. Insert a USB flash drive (16 GB or larger recommended).
-2. Open PowerShell as Administrator and run the WinPE customization and USB preparation scripts:
+#### Option A: 1-Click Bootable USB (Recommended)
+1. Insert a USB flash drive (16 GB or 32 GB recommended).
+2. Double-click **`Prepare-USB.bat`** in the root directory (click **Yes** on the UAC Administrator prompt).
+3. Select your USB drive's disk number from the interactive table and confirm.
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-cd Toolkit\Scripts
+> **Note on Out-of-the-Box Booting:**  
+> The USB boots immediately via **rEFInd** into bare-metal UEFI hardware diagnostics (**Core Hardware Utility / CHU** and **MemTest86**) without any additional configuration.
 
-# Customize boot.wim with PowerShell and CDE runtime components
-.\Customize-WinPE.ps1
-
-# Partition and prepare the target USB drive (replace drive letter accordingly)
-.\Prepare-BootableUSB.ps1 -DriveLetter "E:"
-
-# Sync the published toolkit, rEFInd bootloader, and diagnostic payloads to USB
-..\SyncUSB.bat
-```
+#### Option B: Building Full Offline WinPE Recovery Media
+To enable the full offline Windows PE environment (for offline DISM, registry repair, and offline malware remediation):
+1. Install the official Microsoft [Windows ADK and Windows PE Add-on](https://learn.microsoft.com/windows-hardware/get-started/adk-install).
+2. Double-click **`Build-WinPE.bat`** in the root directory.  
+   *This automatically stages the base Windows PE image and boot scaffolding from your ADK, injects PowerShell components, storage/network drivers, and `startnet.cmd`, and commits `sources\boot.wim`.*
+3. When prompted, select **Y** to automatically prepare your bootable USB, or run **`Create-ISO.bat`** to generate a hybrid BIOS/UEFI `.iso` for Ventoy, Rufus, or virtual machines.
 
 ---
 
