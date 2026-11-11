@@ -2940,11 +2940,11 @@ namespace ToolkitGUI.ViewModels
     public class DiagAndRepairViewModel : WorkflowViewModelBase
     {
         private static readonly Regex HwTaggedPayloadRegex = new(
-            @"^\[HW:(?<kind>[A-Z_]+)\]\s*(?<json>\{.*\})$",
+            @"\[HW:(?<kind>[A-Z_]+)\]\s*(?<json>\{.*\})",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex CstTaggedPayloadRegex = new(
-            @"^\[CST:(?<kind>[A-Z]+)\]\s*(?<json>\{.*\})$",
+            @"\[CST:(?<kind>[A-Z]+)\]\s*(?<json>\{.*\})",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private const string CstCategoryKey = "Security Scan";
@@ -3875,10 +3875,41 @@ namespace ToolkitGUI.ViewModels
                 }
             }
 
+            if (stepsByName is null && !string.IsNullOrWhiteSpace(ResultJson))
+            {
+                try
+                {
+                    var json = WorkflowReportExportHelper.TryExtractWorkflowJson(ResultJson);
+                    if (!string.IsNullOrWhiteSpace(json))
+                    {
+                        var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                        var report = JsonSerializer.Deserialize<WorkflowExecutionReport>(json, opts);
+                        stepsByName = report?.Steps?
+                            .Where(s => !string.IsNullOrWhiteSpace(s.Name))
+                            .GroupBy(s => s.Name!, StringComparer.OrdinalIgnoreCase)
+                            .ToDictionary(g => g.Key, g => g.Last(), StringComparer.OrdinalIgnoreCase);
+                    }
+                }
+                catch
+                {
+                    stepsByName = null;
+                }
+            }
+
             foreach (var item in stuck)
             {
-                if (stepsByName is not null
-                    && stepsByName.TryGetValue(item.LookupKey, out var step))
+                WorkflowExecutionStep? step = null;
+                if (stepsByName is not null)
+                {
+                    if (!stepsByName.TryGetValue(item.LookupKey, out step) && item.LookupKey.Contains('|'))
+                    {
+                        var parts = item.LookupKey.Split('|', 2);
+                        var alternateKey = $"Drive {parts[0]}: {parts[1]}";
+                        stepsByName.TryGetValue(alternateKey, out step);
+                    }
+                }
+
+                if (step is not null)
                 {
                     var detail = step.Detail ?? step.Output ?? string.Empty;
                     item.Status = step.Status?.ToUpperInvariant() switch
