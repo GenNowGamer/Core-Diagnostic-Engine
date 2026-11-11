@@ -94,20 +94,23 @@ Toolkit/offline_env.txt
 *.transcript
 *.pslog
 
-# Document Exclusion Guarantee (README.md only)
+# Document Exclusion Guarantee (Public repository docs only)
 *.md
 !README.md
 !readme.md
 !**/README.md
 !**/readme.md
+!THIRD_PARTY_NOTICES.md
+!Toolkit/CHANGELOG.md
+!Toolkit/Tools/PLACEHOLDER_ACQUISITION.md
+
+# Strictly exclude internal developer-only documentation
 AAA_Quality_Checklist.md
 Toolkit/AAA_Quality_Checklist.md
 CDE_BOOT_FILES_MANIFEST.md
 Toolkit/CDE_BOOT_FILES_MANIFEST.md
 CDE_Folder_Structure_Map.md
 Toolkit/CDE_Folder_Structure_Map.md
-CHANGELOG.md
-Toolkit/CHANGELOG.md
 PHASE_1_2_COMPLETION_SUMMARY.md
 Toolkit/PHASE_1_2_COMPLETION_SUMMARY.md
 PHASE_3_BOOT_ARCHITECTURE.md

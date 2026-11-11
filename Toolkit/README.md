@@ -396,7 +396,7 @@ To run CDE directly on a live Windows machine without booting into WinPE:
 
 In accordance with redistribution licenses, third-party vendor binaries (such as Microsoft Windows ADK boot components and PassMark MemTest86 images) are **not** committed to the Git repository. 
 
-Refer to [`Toolkit\Tools\PLACEHOLDER_ACQUISITION.md`](Toolkit/Tools/PLACEHOLDER_ACQUISITION.md) for step-by-step instructions on acquiring and staging these optional external assets. Once placed, execute `Toolkit\Tools\update_tools_manifest.ps1` to update cryptographic SHA256 integrity hashes in the catalog manifest.
+Refer to [`Tools\PLACEHOLDER_ACQUISITION.md`](Tools/PLACEHOLDER_ACQUISITION.md) for step-by-step instructions on acquiring and staging these optional external assets. Once placed, execute `Tools\update_tools_manifest.ps1` to update cryptographic SHA256 integrity hashes in the catalog manifest.
 
 ---
 
@@ -413,5 +413,5 @@ Refer to [`Toolkit\Tools\PLACEHOLDER_ACQUISITION.md`](Toolkit/Tools/PLACEHOLDER_
 ## License & Disclaimers
 
 - **License:** Core Diagnostic Engine source code is open source under the [MIT License](LICENSE).
-- **Third-Party Components:** Bundled utilities, open-source libraries, and boot components are governed by their respective licenses as detailed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- **Third-Party Components:** Bundled utilities, open-source libraries, and boot components are governed by their respective licenses as detailed in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 - **Disclaimer:** Core Diagnostic Engine is an independent software toolkit developed for technician use. Windows, WinPE, DISM, and Windows Defender are registered trademarks of Microsoft Corporation. Other trademarks, product names, and company brands are the property of their respective owners.
