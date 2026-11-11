@@ -68,6 +68,19 @@ Toolkit/Security/CST/rules/baselines/baselines/
 *.bak_*
 Desktop.ini
 *.lnk
+script_output.txt
+
+# Legacy VBScript wrappers and developer scratch scripts
+*.vbs
+Toolkit/*.vbs
+SyncUSB.bat
+Toolkit/SyncUSB.bat
+SyncUSB_Debug.bat
+Toolkit/SyncUSB_Debug.bat
+do_update.ps1
+Toolkit/do_update.ps1
+update_script.ps1
+Toolkit/update_script.ps1
 
 # offline_env.txt is machine-generated at WinPE boot
 Toolkit/offline_env.txt
