@@ -1,5 +1,5 @@
 ﻿{
-    "ToolkitVersion":  "1.0.3",
+    "ToolkitVersion":  "1.0.4",
     "ToolkitRoot":  "$TOOLKIT_ROOT",
     "LogsRoot":  "$TOOLKIT_ROOT\\Logs",
     "ToolsRoot":  "$TOOLKIT_ROOT",
