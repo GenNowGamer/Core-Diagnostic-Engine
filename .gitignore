@@ -87,12 +87,25 @@ Toolkit/offline_env.txt
 !readme.md
 !**/README.md
 !**/readme.md
-session_handoff.md
+AAA_Quality_Checklist.md
+Toolkit/AAA_Quality_Checklist.md
+CDE_BOOT_FILES_MANIFEST.md
+Toolkit/CDE_BOOT_FILES_MANIFEST.md
+CDE_Folder_Structure_Map.md
+Toolkit/CDE_Folder_Structure_Map.md
 CHANGELOG.md
+Toolkit/CHANGELOG.md
+PHASE_1_2_COMPLETION_SUMMARY.md
+Toolkit/PHASE_1_2_COMPLETION_SUMMARY.md
+PHASE_3_BOOT_ARCHITECTURE.md
+Toolkit/PHASE_3_BOOT_ARCHITECTURE.md
+session_handoff.md
+Toolkit/session_handoff.md
 GEMINI.md
 AGENTS.md
 docs/
 Docs/
+Toolkit/Docs/
 *.pdf
 *.docx
 
