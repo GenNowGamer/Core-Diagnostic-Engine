@@ -14,6 +14,15 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-11-12)
+
+- **CDE Brand Icon Asset Modernization** — Fully replaced all legacy CDE application and brand icon assets across the workspace with the modernized high-contrast hexagonal CDE brand emblem:
+  - **Multi-Resolution Windows Icons (`appicon.ico`, `cde_brand.ico`)**: Generated clean multi-frame ICO packages containing 16×16, 20×20, 24×24, 32×32, 48×48, 64×64, 128×128, and 256×256 frames, ensuring sharp scaling across Windows desktop, taskbar, Alt+Tab, and high-DPI displays.
+  - **Standalone PNG Resolution Hierarchy**: Generated full-ladder PNG assets (`cde_icon_16.png` through `cde_icon_512.png`, `appicon_1024.png`, and `cde_icon_master_2048.png`) in `App\ToolkitGUI\Assets\` using Lanczos resampling.
+  - **rEFInd Bootloader Icon**: Updated `Toolkit\EFI\boot\icons\cde_brand.png` (128×128) for the "CDE WinPE" graphical UEFI boot menu entry.
+- **Startup Splash Screen Refresh (`splash_1920x1080.png`)** — Re-composed the 1920×1080 black-canvas splash asset with the new badge centered at proportional aspect ratio (`w=496, h=580`), preserving necessary vertical clearance for the bottom notification and progress bars across WPF startup (`StartupSplashWindow.xaml`), offline environment loading (`OfflineLoadProgressWindow.xaml`), and WinPE boot choice (`WinPEBootMenuWindow.xaml`).
+- **Publish & Payload Sync (`Publish-ToolkitGUI.ps1`)** — Recompiled and published the updated payload to `Toolkit\CDE\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.exe` and refreshed the canonical root launcher executable `Toolkit\CDE.exe`. Verified successful builds with 0 errors.
+
 ## Session Update (2026-11-11)
 
 - **Hardware Diag & Repair Storage Test Execution & Packaging Fix** — Resolved an issue where running Storage line tests from standalone/downloaded distributions resulted in all tests reporting `"Warn"` with detail `"Live status update was missed; see the workflow report for details."`:
