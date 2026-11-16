@@ -51,6 +51,15 @@ namespace ToolkitGUI.Models
         [JsonPropertyName("BusType")]
         public string BusType { get; set; } = string.Empty;
 
+        [JsonPropertyName("RawSectorIntegrityStatus")]
+        public string RawSectorIntegrityStatus { get; set; } = string.Empty;
+
+        [JsonPropertyName("PrimaryGptValid")]
+        public bool? PrimaryGptValid { get; set; }
+
+        [JsonPropertyName("BackupGptValid")]
+        public bool? BackupGptValid { get; set; }
+
         [JsonPropertyName("Partitions")]
         public List<CdePartitionModel> Partitions { get; set; } = new();
     }

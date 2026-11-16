@@ -317,6 +317,16 @@
           "winpe_offline": "requires_offline_registry"
         }
       }
+    },
+    "StorageRecovery": {
+      "actions": {
+        "Run": {
+          "live_win10": "supported",
+          "live_win11": "supported",
+          "winpe_online": "supported",
+          "winpe_offline": "supported"
+        }
+      }
     }
   }
 }

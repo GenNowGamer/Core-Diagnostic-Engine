@@ -19,6 +19,8 @@ App/CdeBehaviorCollector/bin/
 App/CdeBehaviorCollector/obj/
 App/CdeGpuDiagCli/bin/
 App/CdeGpuDiagCli/obj/
+App/CdeRecovery.Core/bin/
+App/CdeRecovery.Core/obj/
 App/CDELauncher/bin/
 App/CDELauncher/obj/
 CDE/ToolkitGUI/bin/

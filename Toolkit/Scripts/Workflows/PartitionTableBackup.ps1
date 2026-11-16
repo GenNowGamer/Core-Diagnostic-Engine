@@ -124,6 +124,36 @@ $workflow = Start-Workflow -WorkflowName 'PartitionTable_Backup' -ScriptBlock {
             Output   = 'Get-Disk unavailable; diskpart text export only.'
         })
     }
+
+    # Sector-level binary metadata backup (MBR LBA 0 + Primary GPT LBA 1..33)
+    $rawBinPath = Join-Path $resolvedBackupRoot "PartitionMetadataSectors_Disk${DiskNumber}_$timestamp.bin"
+    try {
+        $devPath = "\\.\PhysicalDrive$DiskNumber"
+        $fs = [System.IO.File]::Open($devPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+            $buf = New-Object byte[] (34 * 512)
+            $readBytes = $fs.Read($buf, 0, $buf.Length)
+            if ($readBytes -gt 0) {
+                [System.IO.File]::WriteAllBytes($rawBinPath, $buf[0..($readBytes - 1)])
+                $sha = (Get-FileHash -LiteralPath $rawBinPath -Algorithm SHA256).Hash
+                Add-BootloaderStep -Result $r -Step ([PSCustomObject]@{
+                    Name     = 'RawSectorMetadataBackup'
+                    Status   = 'Pass'
+                    ExitCode = 0
+                    Output   = "Captured $readBytes bytes (LBA 0..33) to $rawBinPath (SHA256: $sha)"
+                })
+            }
+        } finally {
+            $fs.Dispose()
+        }
+    } catch {
+        Add-BootloaderStep -Result $r -Step ([PSCustomObject]@{
+            Name     = 'RawSectorMetadataBackup'
+            Status   = 'Warn'
+            ExitCode = 1
+            Output   = "Sector-level metadata backup skipped/failed: $($_.Exception.Message)"
+        })
+    }
 }
 
 try {

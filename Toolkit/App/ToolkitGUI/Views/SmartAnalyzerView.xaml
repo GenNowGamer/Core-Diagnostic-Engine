@@ -44,6 +44,8 @@
                     </Border>
                     <Button Content="↻  Scan" Style="{StaticResource ActionButtonStyle}"
                             Command="{Binding ScanCommand}" Padding="18,9" Margin="0,0,8,6"/>
+                    <Button Content="🗄  Storage Recovery" Style="{StaticResource ActionButtonStyle}"
+                            Command="{Binding OpenStorageRecoveryCommand}" Padding="16,9" Margin="0,0,8,6"/>
                     <Button Content="Open Report" Style="{StaticResource ActionButtonStyle}"
                             Command="{Binding OpenReportCommand}" Padding="18,9" Margin="0,0,0,6"
                             IsEnabled="{Binding CanOpenReport}"/>

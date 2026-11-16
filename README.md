@@ -204,6 +204,12 @@ The **System Health Check** view is CDE's central automated diagnostic clearingh
   - **BCD Backup & Restore:** Safeguards existing boot configuration data prior to repair operations.
   - **EFI Bootloader Rebuild:** Reconstructs corrupted EFI system partitions (`bootx64.efi`, Microsoft BCD structures) using `bcdboot` targeting detected offline Windows installations.
   - **MBR & Boot Sector Repair:** Restores master boot records and volume boot codes (`bootrec /fixmbr`, `bootrec /fixboot`).
+* **Storage Recovery — Partition & File System Diagnostics (`CdeRecovery.Core`):**  
+  Read-only-first partition and file system recovery suite for corrupted, uninitialized, or `RAW` internal and external drives (supporting both live Windows 10/11 and WinPE, 64-bit LBA offsets, and `512e`/`4Kn` sector sizes):
+  - **Raw Sector MBR, GPT & File System Inspection:** Independently validates Sector 0 Protective MBR, Primary and Backup GPT headers & 128-entry arrays (IEEE 802.3 CRC32), Lost Partition boundaries, Primary & Backup Volume Boot Records (NTFS, exFAT, FAT32), `$MFT` / `$MFTMirr` Record 0 headers, BitLocker (`-FVE-FS-`) encryption headers, and Linux `ext4` superblocks.
+  - **Binary Metadata Snapshots & Resumable Disk Imaging:** Captures SHA-256 verified binary metadata snapshots for rollback, or creates resumable block-level `.img` backups with `.cdemap` mapfile tracking and bad-sector skipping/scraping.
+  - **Evidence-Based Guided Repair Engine:** Reconstructs damaged Primary or Backup GPTs, Protective MBRs, missing partition entries, or damaged NTFS Boot Sectors from verified redundant metadata copies—supporting both disk images and authorized in-place physical disk repair (`REPAIR DISK N` + mandatory pre-repair snapshot).
+  - **Read-Only NTFS `$MFT` File Browser & Extractor:** Parses `$MFT` records directly from unmounted/`RAW` NTFS volumes (with Multi-Sector USA fixup, resident/non-resident fragmented & sparse runlist decoding, full directory path reconstruction, and optional deleted-file recovery) and exports recoverable files with a SHA-256 verification manifest.
 * **Offline Update Removal:**  
   Uninstall problematic Windows cumulative updates directly from offline Windows images inside WinPE, resolving blue-screen boot loops caused by faulty updates.
 
@@ -294,6 +300,7 @@ Core-Diagnostic-Engine/
 ├── Toolkit/
 │   ├── App/
 │   │   ├── ToolkitGUI/             # Main C# WPF desktop application
+│   │   ├── CdeRecovery.Core/       # Native C# partition, file system & imaging recovery engine
 │   │   ├── CdeCpuSimdCli/          # SIMD instruction diagnostic CLI helper
 │   │   ├── CdeGpuDiagCli/          # GPU functional diagnostic CLI helper
 │   │   ├── UserGuideGenerator/     # Markdown-to-PDF documentation generator

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
@@ -13,6 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\CdeRecovery.Core\CdeRecovery.Core.csproj" />
     <ProjectReference Include="..\ToolkitGUI\ToolkitGUI.csproj" />
   </ItemGroup>
 

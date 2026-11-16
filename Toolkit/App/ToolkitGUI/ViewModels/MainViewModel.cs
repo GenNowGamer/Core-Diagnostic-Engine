@@ -29,6 +29,7 @@ namespace ToolkitGUI.ViewModels
         private SystemHealthView? _systemHealthView;
         private ProcessAnalyzerView? _processAnalyzerView;
         private HijackRepairView? _hijackRepairView;
+        private StorageRecoveryView? _storageRecoveryView;
 
         public object? CurrentView
         {
@@ -220,6 +221,7 @@ namespace ToolkitGUI.ViewModels
                 "OSRepair" => new OSRepairView(),
                 "MalwareCleanup" => new MalwareCleanupView(),
                 "BootloaderRepair" => new BootloaderRepairView(),
+                "StorageRecovery" => _storageRecoveryView ??= new StorageRecoveryView(),
                 "BackupAndImaging" => new BackupAndImagingView(),
                 "PostOp" => new PostOpView(),
                 "HijackRepair" => _hijackRepairView ??= new HijackRepairView(),

@@ -228,6 +228,8 @@ namespace ToolkitGUI
                         "MalwareCleanup" => BtnMalware,
                         "HijackRepair" => BtnHijackRepair,
                         "SmartAnalyzer" => BtnSmartAnalyzer,
+                        "StorageRecovery" => BtnStorageRecovery,
+                        "BackupAndImaging" => BtnBackup,
                         "DiagAndRepair" => BtnHwDiag,
                         "HardwareDiagnostics" => BtnHwDiag,
                         "FastFixes" => BtnFastFixes,

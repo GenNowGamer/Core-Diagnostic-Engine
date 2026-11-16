@@ -1419,6 +1419,16 @@ namespace ToolkitGUI.ViewModels
                 "RobocopyBackup", item => RunToolAsync(item, script));
             robocopyTool.ActionButtonLabel = "⚙  Open";
             Tools.Add(robocopyTool);
+
+            var storageRecoveryTool = new ToolItem("Storage Recovery & Raw Metadata Snapshot",
+                "Inspect corrupted/RAW drives, capture binary GPT/MBR/VBR snapshots, and run guided partition & boot-sector repairs",
+                "StorageRecoveryNav", _ =>
+                {
+                    NavigationService.Request("StorageRecovery");
+                    return Task.CompletedTask;
+                });
+            storageRecoveryTool.ActionButtonLabel = "🗄  Open";
+            Tools.Add(storageRecoveryTool);
         }
 
         private async Task RunToolAsync(ToolItem item, string scriptPath)
@@ -2514,6 +2524,7 @@ namespace ToolkitGUI.ViewModels
 
         public RelayCommand ScanCommand { get; }
         public RelayCommand OpenReportCommand { get; }
+        public RelayCommand OpenStorageRecoveryCommand { get; }
 
         private string _reportPdfPath = string.Empty;
         public bool CanOpenReport => !string.IsNullOrWhiteSpace(_reportPdfPath) && File.Exists(_reportPdfPath);
@@ -2522,6 +2533,11 @@ namespace ToolkitGUI.ViewModels
         {
             ScanCommand = new RelayCommand(ScanAsync);
             OpenReportCommand = new RelayCommand(OpenReportAsync);
+            OpenStorageRecoveryCommand = new RelayCommand(() =>
+            {
+                NavigationService.Request("StorageRecovery");
+                return Task.CompletedTask;
+            });
         }
 
         public async Task ScanAsync()

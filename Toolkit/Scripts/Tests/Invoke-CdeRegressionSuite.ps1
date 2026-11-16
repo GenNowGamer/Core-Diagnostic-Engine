@@ -101,6 +101,7 @@ Invoke-Tier -Name 'Unit: Environment capability matrix' -ScriptPath (Join-Path $
 Invoke-Tier -Name 'Unit: Symptom flows E2E' -ScriptPath (Join-Path $testsRoot 'Test-SymptomFlowsE2E.ps1')
 Invoke-Tier -Name 'Unit: Toolkit elevation' -ScriptPath (Join-Path $testsRoot 'Test-ToolkitElevation.ps1')
 Invoke-Tier -Name 'Unit: Bootloader common' -ScriptPath (Join-Path $testsRoot 'Test-BootloaderCommon.ps1')
+Invoke-Tier -Name 'Unit: Storage recovery' -ScriptPath (Join-Path $testsRoot 'Test-StorageRecovery.ps1')
 Invoke-Tier -Name 'Unit: Shadow copy browse' -ScriptPath (Join-Path $testsRoot 'Test-ShadowCopyBrowse.ps1')
 Invoke-Tier -Name 'Unit: Offline SAM crypto' -ScriptPath (Join-Path $workflowsRoot 'Test-OfflineSamCrypto.ps1')
 Invoke-Tier -Name 'Unit: Startup audit review UX' -ScriptPath (Join-Path $testsRoot 'Test-StartupAuditReviewUx.ps1')

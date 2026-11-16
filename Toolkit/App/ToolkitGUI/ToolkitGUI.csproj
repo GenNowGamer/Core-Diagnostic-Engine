@@ -38,6 +38,9 @@
     <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\CdeRecovery.Core\CdeRecovery.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Dirkster.AvalonDock" Version="4.72.1" />
     <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.4.1" />
     <PackageReference Include="System.Management.Automation" Version="7.4.1" />
