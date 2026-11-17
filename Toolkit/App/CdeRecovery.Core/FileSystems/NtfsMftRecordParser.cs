@@ -124,7 +124,30 @@ namespace CdeRecovery.Core.FileSystems
             return runs;
         }
 
+        public sealed class NtfsAttributeListExtensionRef
+        {
+            public long StartingVcn { get; init; }
+            public long MftRecordNumber { get; init; }
+        }
+
+        public sealed class NtfsParsedMftRecordResult
+        {
+            public RecoverableFileItem? Item { get; init; }
+            public byte[]? AttributeListResidentBytes { get; init; }
+            public List<NtfsDataRun>? AttributeListNonResidentRuns { get; init; }
+            public long AttributeListRealSize { get; init; }
+        }
+
         public static RecoverableFileItem? TryParseFileRecord(
+            ReadOnlySpan<byte> rawRecord,
+            long mftRecordNumber,
+            long partitionStartOffset,
+            int clusterSizeBytes)
+        {
+            return TryParseFileRecordDetailed(rawRecord, mftRecordNumber, partitionStartOffset, clusterSizeBytes)?.Item;
+        }
+
+        public static NtfsParsedMftRecordResult? TryParseFileRecordDetailed(
             ReadOnlySpan<byte> rawRecord,
             long mftRecordNumber,
             long partitionStartOffset,
@@ -165,10 +188,18 @@ namespace CdeRecovery.Core.FileSystems
 
             bool hasDataAttr = false;
             bool isResidentData = true;
+            bool isCompressed = false;
+            bool isEncrypted = false;
+            int compressionUnitClusters = 16;
             long dataRealSize = 0;
             long dataAllocSize = 0;
             byte[] residentBytes = Array.Empty<byte>();
             var dataRuns = new List<NtfsDataRun>();
+
+            bool hasAttributeList = false;
+            byte[]? attrListResidentBytes = null;
+            List<NtfsDataRun>? attrListNonResidentRuns = null;
+            long attrListRealSize = 0;
 
             int pos = firstAttrOffset;
             while (pos > 0 && pos + 16 <= working.Length)
@@ -194,6 +225,35 @@ namespace CdeRecovery.Core.FileSystems
                         if (fileTime > 0)
                         {
                             try { modifiedUtc = DateTime.FromFileTimeUtc(fileTime); } catch { }
+                        }
+                    }
+                    if (valLen >= 36 && pos + valOff + 36 <= working.Length)
+                    {
+                        uint fileAttrs = BinaryPrimitives.ReadUInt32LittleEndian(working.AsSpan(pos + valOff + 32, 4));
+                        if ((fileAttrs & 0x0800u) != 0) isCompressed = true;
+                        if ((fileAttrs & 0x4000u) != 0) isEncrypted = true;
+                    }
+                }
+                else if (attrType == AttrAttributeList)
+                {
+                    hasAttributeList = true;
+                    if (nonResident == 0 && pos + 24 <= working.Length)
+                    {
+                        uint valLen = BinaryPrimitives.ReadUInt32LittleEndian(working.AsSpan(pos + 16, 4));
+                        ushort valOff = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 20, 2));
+                        if (pos + valOff + (int)valLen <= working.Length)
+                        {
+                            attrListResidentBytes = working.AsSpan(pos + valOff, (int)valLen).ToArray();
+                            attrListRealSize = valLen;
+                        }
+                    }
+                    else if (nonResident == 1 && pos + 64 <= working.Length)
+                    {
+                        ushort runOff = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 0x20, 2));
+                        attrListRealSize = BinaryPrimitives.ReadInt64LittleEndian(working.AsSpan(pos + 0x30, 8));
+                        if (runOff >= 0x40 && runOff < attrLen)
+                        {
+                            attrListNonResidentRuns = DecodeDataRuns(working.AsSpan(pos + runOff, (int)attrLen - runOff));
                         }
                     }
                 }
@@ -232,6 +292,12 @@ namespace CdeRecovery.Core.FileSystems
                 else if (attrType == AttrData && attrNameLen == 0) // Default unnamed $DATA stream
                 {
                     hasDataAttr = true;
+                    ushort attrFlags = pos + 14 <= working.Length
+                        ? BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 12, 2))
+                        : (ushort)0;
+                    if ((attrFlags & 0x0001) != 0) isCompressed = true;
+                    if ((attrFlags & 0x4000) != 0) isEncrypted = true;
+
                     if (nonResident == 0 && pos + 24 <= working.Length)
                     {
                         uint valLen = BinaryPrimitives.ReadUInt32LittleEndian(working.AsSpan(pos + 16, 4));
@@ -248,6 +314,11 @@ namespace CdeRecovery.Core.FileSystems
                     {
                         isResidentData = false;
                         ushort runOff = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 0x20, 2));
+                        ushort compUnitExp = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 0x22, 2));
+                        if (compUnitExp > 0 && compUnitExp < 16)
+                        {
+                            compressionUnitClusters = 1 << compUnitExp;
+                        }
                         dataAllocSize = BinaryPrimitives.ReadInt64LittleEndian(working.AsSpan(pos + 0x28, 8));
                         dataRealSize = BinaryPrimitives.ReadInt64LittleEndian(working.AsSpan(pos + 0x30, 8));
                         if (runOff >= 0x40 && runOff < attrLen)
@@ -264,10 +335,10 @@ namespace CdeRecovery.Core.FileSystems
             if (string.IsNullOrWhiteSpace(bestFileName))
                 return null;
 
-            if (!isDirectory && !hasDataAttr)
+            if (!isDirectory && !hasDataAttr && !hasAttributeList)
                 return null;
 
-            return new RecoverableFileItem
+            var item = new RecoverableFileItem
             {
                 MftRecordNumber = mftRecordNumber,
                 SequenceNumber = seqNumber,
@@ -279,6 +350,9 @@ namespace CdeRecovery.Core.FileSystems
                 IsDirectory = isDirectory,
                 IsDeleted = isDeleted,
                 IsResident = isResidentData,
+                IsCompressed = isCompressed,
+                IsEncrypted = isEncrypted,
+                CompressionUnitClusters = compressionUnitClusters,
                 HasTornWriteWarning = hasTornWriteWarning,
                 ModifiedUtc = modifiedUtc,
                 PartitionStartOffset = partitionStartOffset,
@@ -286,6 +360,107 @@ namespace CdeRecovery.Core.FileSystems
                 ResidentData = residentBytes,
                 DataRuns = dataRuns
             };
+
+            return new NtfsParsedMftRecordResult
+            {
+                Item = item,
+                AttributeListResidentBytes = attrListResidentBytes,
+                AttributeListNonResidentRuns = attrListNonResidentRuns,
+                AttributeListRealSize = attrListRealSize
+            };
+        }
+
+        public static List<NtfsAttributeListExtensionRef> ParseAttributeListDataExtensions(ReadOnlySpan<byte> attrListBytes)
+        {
+            var list = new List<NtfsAttributeListExtensionRef>();
+            int pos = 0;
+            while (pos + 24 <= attrListBytes.Length)
+            {
+                uint attrType = BinaryPrimitives.ReadUInt32LittleEndian(attrListBytes.Slice(pos, 4));
+                ushort recLen = BinaryPrimitives.ReadUInt16LittleEndian(attrListBytes.Slice(pos + 4, 2));
+                if (recLen < 24 || pos + recLen > attrListBytes.Length)
+                    break;
+
+                byte nameLen = attrListBytes[pos + 6];
+                long startingVcn = BinaryPrimitives.ReadInt64LittleEndian(attrListBytes.Slice(pos + 8, 8));
+                ulong baseFileRef = BinaryPrimitives.ReadUInt64LittleEndian(attrListBytes.Slice(pos + 16, 8));
+                long extMftRecord = (long)(baseFileRef & 0x0000FFFFFFFFFFFFUL);
+
+                if (attrType == AttrData && nameLen == 0 && extMftRecord > 0)
+                {
+                    list.Add(new NtfsAttributeListExtensionRef
+                    {
+                        StartingVcn = startingVcn,
+                        MftRecordNumber = extMftRecord
+                    });
+                }
+
+                pos += recLen;
+            }
+            return list;
+        }
+
+        public static (long StartingVcn, long RealSize, long AllocSize, bool IsCompressed, int CompressionUnitClusters, List<NtfsDataRun> Runs)
+            ParseExtensionRecordData(ReadOnlySpan<byte> rawRecord)
+        {
+            var runs = new List<NtfsDataRun>();
+            if (rawRecord.Length < 48)
+                return (0, 0, 0, false, 16, runs);
+
+            byte[] working = rawRecord.ToArray();
+            if (!ApplyMultiSectorFixup(working, out _))
+                return (0, 0, 0, false, 16, runs);
+
+            ushort firstAttrOffset = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(20, 2));
+            if (firstAttrOffset < 40 || firstAttrOffset >= working.Length)
+                return (0, 0, 0, false, 16, runs);
+
+            long bestStartingVcn = 0;
+            long realSize = 0;
+            long allocSize = 0;
+            bool isCompressed = false;
+            int compressionUnitClusters = 16;
+
+            int pos = firstAttrOffset;
+            while (pos > 0 && pos + 16 <= working.Length)
+            {
+                uint attrType = BinaryPrimitives.ReadUInt32LittleEndian(working.AsSpan(pos, 4));
+                if (attrType == AttrEndMarker || attrType == 0)
+                    break;
+
+                uint attrLen = BinaryPrimitives.ReadUInt32LittleEndian(working.AsSpan(pos + 4, 4));
+                if (attrLen < 16 || pos + (int)attrLen > working.Length)
+                    break;
+
+                byte nonResident = working[pos + 8];
+                byte attrNameLen = working[pos + 9];
+
+                if (attrType == AttrData && attrNameLen == 0 && nonResident == 1 && pos + 64 <= working.Length)
+                {
+                    ushort attrFlags = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 12, 2));
+                    if ((attrFlags & 0x0001) != 0) isCompressed = true;
+
+                    bestStartingVcn = BinaryPrimitives.ReadInt64LittleEndian(working.AsSpan(pos + 0x10, 8));
+                    ushort runOff = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 0x20, 2));
+                    ushort compUnitExp = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 0x22, 2));
+                    if (compUnitExp > 0 && compUnitExp < 16)
+                        compressionUnitClusters = 1 << compUnitExp;
+
+                    long extAlloc = BinaryPrimitives.ReadInt64LittleEndian(working.AsSpan(pos + 0x28, 8));
+                    long extReal = BinaryPrimitives.ReadInt64LittleEndian(working.AsSpan(pos + 0x30, 8));
+                    if (extAlloc > allocSize) allocSize = extAlloc;
+                    if (extReal > realSize) realSize = extReal;
+
+                    if (runOff >= 0x40 && runOff < attrLen)
+                    {
+                        runs.AddRange(DecodeDataRuns(working.AsSpan(pos + runOff, (int)attrLen - runOff)));
+                    }
+                }
+
+                pos += (int)attrLen;
+            }
+
+            return (bestStartingVcn, realSize, allocSize, isCompressed, compressionUnitClusters, runs);
         }
 
         private static long ReadUnsignedVariableInt(ReadOnlySpan<byte> bytes)

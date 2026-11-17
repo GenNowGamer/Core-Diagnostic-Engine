@@ -50,6 +50,9 @@ namespace ToolkitGUI.ViewModels
         private string _imagingStatusSummary = "Ready to create or resume a raw disk/partition backup image (.img + .cdemap).";
         private System.Threading.CancellationTokenSource? _imagingCts;
         private System.Threading.CancellationTokenSource? _fileScanCts;
+        private System.Threading.CancellationTokenSource? _inspectCts;
+        private System.Threading.CancellationTokenSource? _fileExportCts;
+        private ImagingScopeOption? _selectedImagingScope;
 
         private FileSystemAnalysisResult? _selectedRecoveryPartition;
         private bool _includeDeletedFiles = true;
@@ -69,6 +72,7 @@ namespace ToolkitGUI.ViewModels
         public ObservableCollection<VerifiedRepairPlan> ProposedRepairs { get; } = new();
         public ObservableCollection<RepairBytePatch> SelectedPlanPatches { get; } = new();
         public ObservableCollection<RecoverableFileRowViewModel> DisplayedRecoverableFiles { get; } = new();
+        public ObservableCollection<ImagingScopeOption> ImagingScopes { get; } = new();
         public ObservableCollection<string> FixturePresets { get; } = new()
         {
             "10 TB Sparse — Damaged Primary GPT (Backup GPT Intact)",
@@ -85,6 +89,7 @@ namespace ToolkitGUI.ViewModels
         public RelayCommand OpenImageFileCommand { get; }
         public RelayCommand CreateTestFixtureCommand { get; }
         public RelayCommand InspectTargetCommand { get; }
+        public RelayCommand CancelInspectCommand { get; }
         public RelayCommand CaptureSnapshotCommand { get; }
         public RelayCommand BrowseSnapshotDirCommand { get; }
         public RelayCommand VerifyExistingSnapshotCommand { get; }
@@ -101,6 +106,7 @@ namespace ToolkitGUI.ViewModels
         public RelayCommand StopImagingCommand { get; }
         public RelayCommand ScanRecoverableFilesCommand { get; }
         public RelayCommand CancelFileScanCommand { get; }
+        public RelayCommand CancelFileExportCommand { get; }
         public RelayCommand SelectAllFilesCommand { get; }
         public RelayCommand ClearSelectedFilesCommand { get; }
         public RelayCommand BrowseExportDestCommand { get; }
@@ -152,6 +158,7 @@ namespace ToolkitGUI.ViewModels
             OpenImageFileCommand = new RelayCommand(OpenImageFileAsync);
             CreateTestFixtureCommand = new RelayCommand(CreateTestFixtureAsync);
             InspectTargetCommand = new RelayCommand(InspectSelectedTargetAsync);
+            CancelInspectCommand = new RelayCommand(() => { _inspectCts?.Cancel(); return Task.CompletedTask; });
             CaptureSnapshotCommand = new RelayCommand(CaptureMetadataSnapshotAsync);
             BrowseSnapshotDirCommand = new RelayCommand(BrowseSnapshotDirAsync);
             VerifyExistingSnapshotCommand = new RelayCommand(VerifyExistingSnapshotAsync);
@@ -171,6 +178,10 @@ namespace ToolkitGUI.ViewModels
             ClearSelectedFilesCommand = new RelayCommand(() => { SetAllFileSelections(false); return Task.CompletedTask; });
             BrowseExportDestCommand = new RelayCommand(BrowseExportDestAsync);
             ExportSelectedFilesCommand = new RelayCommand(ExportSelectedFilesAsync);
+            CancelFileExportCommand = new RelayCommand(() => { _fileExportCts?.Cancel(); return Task.CompletedTask; });
+
+            ImagingScopes.Add(new ImagingScopeOption { Label = "Whole Disk", StartOffset = 0, LengthBytes = 0, FileTag = "WholeDisk" });
+            _selectedImagingScope = ImagingScopes[0];
 
             AppendAudit("Storage Recovery module initialized in read-only diagnostic mode.");
             RefreshPhysicalDisks();
@@ -370,6 +381,17 @@ namespace ToolkitGUI.ViewModels
             set { _imagingStatusSummary = value; OnPropertyChanged(); }
         }
 
+        public ImagingScopeOption? SelectedImagingScope
+        {
+            get => _selectedImagingScope;
+            set
+            {
+                _selectedImagingScope = value;
+                OnPropertyChanged();
+                UpdateDefaultImagingFilenameForScope();
+            }
+        }
+
         public FileSystemAnalysisResult? SelectedRecoveryPartition
         {
             get => _selectedRecoveryPartition;
@@ -524,13 +546,20 @@ namespace ToolkitGUI.ViewModels
             }
 
             IsBusy = true;
+            _inspectCts?.Dispose();
+            _inspectCts = new System.Threading.CancellationTokenSource();
             StatusText = $"Inspecting {SelectedTarget.DisplayTitle} (strictly read-only)...";
             try
             {
-                var assessment = await StorageRecoveryService.InspectTargetAsync(SelectedTarget);
+                var assessment = await StorageRecoveryService.InspectTargetAsync(SelectedTarget, _inspectCts.Token);
                 ApplyAssessmentToViewModel(assessment);
                 AppendAudit($"Completed read-only inspection of {assessment.Device.FriendlyName} ({assessment.Device.DisplayCapacity}): Verdict='{assessment.OverallVerdict}', Findings={assessment.Findings.Count}, RepairPlans={assessment.ProposedRepairs.Count}.");
                 StatusText = $"Inspection complete — {assessment.OverallVerdict}.";
+            }
+            catch (OperationCanceledException)
+            {
+                StatusText = "Read-only disk inspection cancelled.";
+                AppendAudit("[INSPECT] Cancelled by user.");
             }
             catch (Exception ex)
             {
@@ -568,7 +597,35 @@ namespace ToolkitGUI.ViewModels
             foreach (var fs in a.FileSystems)
                 FileSystems.Add(fs);
 
-            SelectedRecoveryPartition = FileSystems.FirstOrDefault(f => f.DetectedFileSystem == "NTFS") ?? FileSystems.FirstOrDefault();
+            SelectedRecoveryPartition = FileSystems.FirstOrDefault(f =>
+                string.Equals(f.DetectedFileSystem, "NTFS", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(f.DetectedFileSystem, "exFAT", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(f.DetectedFileSystem, "FAT32", StringComparison.OrdinalIgnoreCase))
+                ?? FileSystems.FirstOrDefault();
+
+            ImagingScopes.Clear();
+            ImagingScopes.Add(new ImagingScopeOption
+            {
+                Label = $"Whole Disk ({a.Device.DisplayCapacity})",
+                StartOffset = 0,
+                LengthBytes = 0,
+                FileTag = "WholeDisk"
+            });
+            foreach (var fs in a.FileSystems)
+            {
+                if (fs.PartitionSizeBytes <= 0) continue;
+                string sizeStr = fs.PartitionSizeBytes >= (1024L * 1024 * 1024)
+                    ? $"{fs.PartitionSizeBytes / (1024.0 * 1024 * 1024):0.##} GB"
+                    : $"{fs.PartitionSizeBytes / (1024.0 * 1024):0.#} MB";
+                ImagingScopes.Add(new ImagingScopeOption
+                {
+                    Label = $"Partition {fs.PartitionIndex}: {fs.PartitionName} ({fs.DetectedFileSystem}, {sizeStr})",
+                    StartOffset = fs.PartitionStartOffset,
+                    LengthBytes = fs.PartitionSizeBytes,
+                    FileTag = $"Part{fs.PartitionIndex}_{fs.DetectedFileSystem}"
+                });
+            }
+            SelectedImagingScope = ImagingScopes.FirstOrDefault();
 
             ProposedRepairs.Clear();
             foreach (var p in a.ProposedRepairs)
@@ -701,6 +758,11 @@ namespace ToolkitGUI.ViewModels
                         "Repair Succeeded ✓",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
+                    await StorageRecoveryService.RecordActivityWorkOrderReportAsync(
+                        $"Image Repair: {SelectedRepairPlan.Title}",
+                        "Pass",
+                        result.SummaryMessage,
+                        _auditEntries);
                 }
                 else
                 {
@@ -784,6 +846,11 @@ namespace ToolkitGUI.ViewModels
                         "Physical Disk Repair Verified ✓",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
+                    await StorageRecoveryService.RecordActivityWorkOrderReportAsync(
+                        $"Physical Disk Repair: {SelectedRepairPlan.Title}",
+                        "Pass",
+                        $"{result.SummaryMessage} (Snapshot: {result.PreRepairSnapshotManifestPath})",
+                        _auditEntries);
                 }
                 else
                 {
@@ -891,15 +958,17 @@ namespace ToolkitGUI.ViewModels
                 StatusText = ImagingStatusSummary;
             });
 
-            AppendAudit($"[IMAGING] Starting/resuming block-level imaging of {SelectedTarget.DisplayTitle} to {ImagingOutputPath} (ScrapeFailedBlocks={ScrapeFailedBlocks}).");
+            var scope = SelectedImagingScope ?? new ImagingScopeOption { Label = "Whole Disk", StartOffset = 0, LengthBytes = 0, FileTag = "WholeDisk" };
+            AppendAudit($"[IMAGING] Starting/resuming block-level imaging ({scope.Label}) of {SelectedTarget.DisplayTitle} to {ImagingOutputPath} (ScrapeFailedBlocks={ScrapeFailedBlocks}).");
             try
             {
                 var manifest = await StorageRecoveryService.RunOrResumeImagingJobAsync(
                     SelectedTarget,
                     ImagingOutputPath,
-                    sourceStartOffset: 0,
-                    lengthBytes: 0,
+                    sourceStartOffset: scope.StartOffset,
+                    lengthBytes: scope.LengthBytes,
                     scrapeFailedBlocks: ScrapeFailedBlocks,
+                    targetScopeLabel: scope.Label,
                     progress: progress,
                     cancellationToken: _imagingCts.Token);
 
@@ -910,6 +979,11 @@ namespace ToolkitGUI.ViewModels
                 StatusText = manifest.LastStatusMessage;
                 WorkflowStages[1].State = "Completed";
                 AppendAudit($"[IMAGING {manifest.CurrentPhase.ToUpperInvariant()}] {manifest.LastStatusMessage} (Mapfile: {manifest.MapFilePath})");
+                await StorageRecoveryService.RecordActivityWorkOrderReportAsync(
+                    $"Disk Imaging ({scope.Label})",
+                    manifest.BytesBad > 0 ? "Warn" : "Pass",
+                    manifest.LastStatusMessage,
+                    _auditEntries);
             }
             catch (OperationCanceledException)
             {
@@ -1065,6 +1139,8 @@ namespace ToolkitGUI.ViewModels
             }
 
             IsBusy = true;
+            _fileExportCts?.Dispose();
+            _fileExportCts = new System.Threading.CancellationTokenSource();
             var progress = new Progress<string>(msg =>
             {
                 FileRecoveryStatusText = msg;
@@ -1077,13 +1153,19 @@ namespace ToolkitGUI.ViewModels
                     SelectedTarget,
                     selectedModels,
                     FileExportDestination,
-                    progress);
+                    progress,
+                    _fileExportCts.Token);
 
                 WorkflowStages[3].State = "Completed";
                 WorkflowStages[4].State = "Completed";
                 FileRecoveryStatusText = $"Exported {manifest.VerifiedFilesCount} verified file(s), {manifest.PartialFilesCount} partial, {manifest.FailedFilesCount} failed to {manifest.DestinationRoot}";
                 StatusText = FileRecoveryStatusText;
                 AppendAudit($"[FILE EXPORT] {FileRecoveryStatusText} (Manifest: {manifest.ManifestFilePath})");
+                await StorageRecoveryService.RecordActivityWorkOrderReportAsync(
+                    "File Recovery Export",
+                    manifest.FailedFilesCount > 0 || manifest.PartialFilesCount > 0 ? "Warn" : "Pass",
+                    FileRecoveryStatusText,
+                    _auditEntries);
 
                 MessageBox.Show(
                     $"File Recovery Export Complete!\n\n" +
@@ -1097,6 +1179,12 @@ namespace ToolkitGUI.ViewModels
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
             }
+            catch (OperationCanceledException)
+            {
+                FileRecoveryStatusText = "File export cancelled by user.";
+                StatusText = FileRecoveryStatusText;
+                AppendAudit("[FILE EXPORT] Cancelled by user.");
+            }
             catch (Exception ex)
             {
                 FileRecoveryStatusText = $"Export error: {ex.Message}";
@@ -1108,6 +1196,23 @@ namespace ToolkitGUI.ViewModels
             {
                 IsBusy = false;
             }
+        }
+
+        private void UpdateDefaultImagingFilenameForScope()
+        {
+            if (SelectedImagingScope == null || string.IsNullOrWhiteSpace(ImagingOutputPath))
+                return;
+            string? dir = Path.GetDirectoryName(ImagingOutputPath);
+            if (string.IsNullOrWhiteSpace(dir))
+                return;
+
+            string diskTag = SelectedTarget != null && !SelectedTarget.IsDiskImage
+                ? $"Disk{SelectedTarget.Device.DiskNumber}"
+                : "Image";
+            string fileName = SelectedImagingScope.StartOffset == 0 && SelectedImagingScope.LengthBytes == 0
+                ? $"{diskTag}_RecoveryImage.img"
+                : $"{diskTag}_{SelectedImagingScope.FileTag}.img";
+            ImagingOutputPath = Path.Combine(dir, fileName);
         }
 
         private void AppendAudit(string message)
@@ -1132,5 +1237,14 @@ namespace ToolkitGUI.ViewModels
         public event PropertyChangedEventHandler? PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string? name = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+
+    public sealed class ImagingScopeOption
+    {
+        public string Label { get; init; } = "Whole Disk";
+        public long StartOffset { get; init; }
+        public long LengthBytes { get; init; }
+        public string FileTag { get; init; } = "WholeDisk";
+        public override string ToString() => Label;
     }
 }

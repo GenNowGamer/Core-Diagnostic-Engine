@@ -40,6 +40,7 @@ namespace CdeRecovery.Core.Imaging
             bool scrapeFailedBlocks = true,
             bool useSparseOutput = true,
             int copyBlockSizeBytes = 256 * 1024,
+            string targetScopeLabel = "Whole Disk",
             IProgress<ImagingProgressReport>? progress = null,
             CancellationToken cancellationToken = default)
         {
@@ -89,6 +90,7 @@ namespace CdeRecovery.Core.Imaging
                     SourceIdentity = source.Identity,
                     OutputImagePath = fullImgPath,
                     MapFilePath = mapPath,
+                    TargetScopeLabel = string.IsNullOrWhiteSpace(targetScopeLabel) ? "Whole Disk" : targetScopeLabel,
                     SourceStartOffset = sourceStartOffset,
                     TotalBytesToCopy = totalToCopy,
                     CopyBlockSizeBytes = blockSize,

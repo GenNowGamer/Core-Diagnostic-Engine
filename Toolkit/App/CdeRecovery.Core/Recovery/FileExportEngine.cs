@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CdeRecovery.Core.Devices;
 using CdeRecovery.Core.Evidence;
+using CdeRecovery.Core.FileSystems;
 using CdeRecovery.Core.Models;
 
 namespace CdeRecovery.Core.Recovery
@@ -41,7 +42,7 @@ namespace CdeRecovery.Core.Recovery
                 progress?.Report($"Exporting ({index}/{filesToExport.Count}): {file.ReconstructedPath} ({file.DisplaySize})...");
 
                 string relPath = string.IsNullOrWhiteSpace(file.ReconstructedPath) ? file.FileName : file.ReconstructedPath;
-                string targetPath = Path.Combine(fullDestRoot, relPath);
+                string targetPath = ToLongPath(Path.Combine(fullDestRoot, relPath));
                 string? parentDir = Path.GetDirectoryName(targetPath);
                 if (!string.IsNullOrWhiteSpace(parentDir))
                     Directory.CreateDirectory(parentDir);
@@ -64,6 +65,18 @@ namespace CdeRecovery.Core.Recovery
                                 sha256.AppendData(file.ResidentData, 0, len);
                                 bytesWrittenForFile = len;
                             }
+                        }
+                        else if (file.IsCompressed)
+                        {
+                            var (compWritten, compBad) = await ExportCompressedNonResidentAsync(
+                                source,
+                                file,
+                                outStream,
+                                sha256,
+                                sectorSize,
+                                cancellationToken).ConfigureAwait(false);
+                            bytesWrittenForFile += compWritten;
+                            unreadableSectors += compBad;
                         }
                         else
                         {
@@ -223,6 +236,128 @@ namespace CdeRecovery.Core.Recovery
             await File.WriteAllTextAsync(manifestPath, json, cancellationToken).ConfigureAwait(false);
 
             return manifest;
+        }
+
+        private static string ToLongPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || path.Length < 240 || path.StartsWith(@"\\?\", StringComparison.Ordinal))
+                return path;
+            if (path.StartsWith(@"\\", StringComparison.Ordinal))
+                return @"\\?\UNC\" + path.Substring(2);
+            return @"\\?\" + path;
+        }
+
+        private static async Task<(long BytesWritten, int UnreadableSectors)> ExportCompressedNonResidentAsync(
+            IReadOnlyBlockSource source,
+            RecoverableFileItem file,
+            FileStream outStream,
+            IncrementalHash sha256,
+            int sectorSize,
+            CancellationToken cancellationToken)
+        {
+            int clusterSize = file.ClusterSizeBytes > 0 ? file.ClusterSizeBytes : 4096;
+            int unitClusters = file.CompressionUnitClusters > 0 ? file.CompressionUnitClusters : 16;
+            int unitBytes = unitClusters * clusterSize;
+
+            // Flatten runs into cluster-count slices split at compression-unit boundaries
+            var unitRuns = new List<(bool IsSparse, long LcnStart, long ClusterCount)>();
+            long remainingFileBytes = file.SizeBytes;
+            long written = 0;
+            int unreadable = 0;
+
+            int runIdx = 0;
+            long runConsumedClusters = 0;
+
+            while (remainingFileBytes > 0 && runIdx < file.DataRuns.Count)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                unitRuns.Clear();
+                long clustersInUnit = 0;
+
+                while (clustersInUnit < unitClusters && runIdx < file.DataRuns.Count)
+                {
+                    var run = file.DataRuns[runIdx];
+                    long avail = run.ClusterCount - runConsumedClusters;
+                    long take = Math.Min(unitClusters - clustersInUnit, avail);
+                    unitRuns.Add((run.IsSparse || run.LcnStart < 0, run.IsSparse ? -1 : run.LcnStart + runConsumedClusters, take));
+                    clustersInUnit += take;
+                    runConsumedClusters += take;
+                    if (runConsumedClusters >= run.ClusterCount)
+                    {
+                        runIdx++;
+                        runConsumedClusters = 0;
+                    }
+                }
+
+                int expectedUnitOut = (int)Math.Min(unitBytes, remainingFileBytes);
+                bool allSparse = unitRuns.All(r => r.IsSparse);
+                bool hasTrailingSparse = unitRuns.Count >= 2 && !unitRuns[0].IsSparse && unitRuns.Any(r => r.IsSparse);
+                long nonSparseClusters = unitRuns.Where(r => !r.IsSparse).Sum(r => r.ClusterCount);
+
+                if (allSparse || nonSparseClusters == 0)
+                {
+                    byte[] zeros = new byte[expectedUnitOut];
+                    await outStream.WriteAsync(zeros, cancellationToken).ConfigureAwait(false);
+                    sha256.AppendData(zeros, 0, zeros.Length);
+                    written += expectedUnitOut;
+                    remainingFileBytes -= expectedUnitOut;
+                    continue;
+                }
+
+                // Read all non-sparse clusters in this compression unit
+                int rawLen = (int)(nonSparseClusters * clusterSize);
+                byte[] rawBuf = new byte[rawLen];
+                int rawPos = 0;
+
+                foreach (var slice in unitRuns.Where(r => !r.IsSparse))
+                {
+                    long diskOff = file.PartitionStartOffset + (slice.LcnStart * clusterSize);
+                    int sliceBytes = (int)(slice.ClusterCount * clusterSize);
+                    try
+                    {
+                        int read = await source.ReadAtAsync(diskOff, rawBuf.AsMemory(rawPos, sliceBytes), cancellationToken).ConfigureAwait(false);
+                        if (read < sliceBytes)
+                            unreadable += (sliceBytes - read + sectorSize - 1) / sectorSize;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        unreadable += (sliceBytes + sectorSize - 1) / sectorSize;
+                    }
+                    rawPos += sliceBytes;
+                }
+
+                byte[] toWriteBytes;
+                if (!hasTrailingSparse && nonSparseClusters == unitClusters)
+                {
+                    // Incompressible unit stored uncompressed
+                    toWriteBytes = rawBuf;
+                }
+                else
+                {
+                    // LZNT1-compressed unit
+                    toWriteBytes = NtfsLznt1Decompressor.DecompressUnit(rawBuf, expectedUnitOut);
+                }
+
+                int writeLen = Math.Min(expectedUnitOut, toWriteBytes.Length);
+                if (writeLen > 0)
+                {
+                    await outStream.WriteAsync(toWriteBytes.AsMemory(0, writeLen), cancellationToken).ConfigureAwait(false);
+                    sha256.AppendData(toWriteBytes, 0, writeLen);
+                    written += writeLen;
+                    remainingFileBytes -= writeLen;
+                }
+                if (writeLen < expectedUnitOut)
+                {
+                    int padLen = expectedUnitOut - writeLen;
+                    byte[] pad = new byte[padLen];
+                    await outStream.WriteAsync(pad, cancellationToken).ConfigureAwait(false);
+                    sha256.AppendData(pad, 0, padLen);
+                    written += padLen;
+                    remainingFileBytes -= padLen;
+                }
+            }
+
+            return (written, unreadable);
         }
     }
 }

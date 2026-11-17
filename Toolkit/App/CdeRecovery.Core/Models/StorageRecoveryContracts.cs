@@ -308,6 +308,10 @@ namespace CdeRecovery.Core.Models
         public bool IsDirectory { get; init; }
         public bool IsDeleted { get; init; }
         public bool IsResident { get; init; }
+        public bool IsCompressed { get; init; }
+        public bool IsEncrypted { get; init; }
+        public bool HasExtensionMftRecords { get; init; }
+        public int CompressionUnitClusters { get; init; } = 16;
         public bool IsFragmented => !IsResident && DataRuns.Count > 1;
         public bool HasTornWriteWarning { get; init; }
         public DateTime ModifiedUtc { get; init; }
@@ -320,10 +324,17 @@ namespace CdeRecovery.Core.Models
         {
             get
             {
-                if (HasTornWriteWarning) return "Torn MFT Record";
-                if (IsDeleted) return "Deleted (Recoverable)";
-                if (IsFragmented) return $"Intact ({DataRuns.Count} fragments)";
-                return IsResident ? "Intact (Resident)" : "Intact";
+                string baseStatus;
+                if (HasTornWriteWarning) baseStatus = "Torn MFT Record";
+                else if (IsDeleted) baseStatus = "Deleted (Recoverable)";
+                else if (IsFragmented) baseStatus = $"Intact ({DataRuns.Count} fragments)";
+                else baseStatus = IsResident ? "Intact (Resident)" : "Intact";
+
+                var badges = new List<string>(3);
+                if (IsEncrypted) badges.Add("Encrypted");
+                if (IsCompressed) badges.Add("Compressed");
+                if (HasExtensionMftRecords) badges.Add("ExtMFT");
+                return badges.Count > 0 ? $"{baseStatus} [{string.Join(", ", badges)}]" : baseStatus;
             }
         }
 
@@ -396,6 +407,7 @@ namespace CdeRecovery.Core.Models
         public StorageDeviceIdentity SourceIdentity { get; init; } = new();
         public string OutputImagePath { get; init; } = string.Empty;
         public string MapFilePath { get; init; } = string.Empty;
+        public string TargetScopeLabel { get; init; } = "Whole Disk";
         public long SourceStartOffset { get; init; }
         public long TotalBytesToCopy { get; init; }
         public int CopyBlockSizeBytes { get; init; } = 262144; // 256 KiB

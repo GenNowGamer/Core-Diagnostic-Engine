@@ -474,4 +474,142 @@ public class StorageRecoveryTests : IDisposable
         Assert.Equal((2 * 1024 * 1024) - 4096, phase2Manifest.BytesRescued);
         Assert.Equal(4096, phase2Manifest.BytesBad);
     }
+
+    [Fact]
+    public async Task PartitionScopedImaging_SavesScopeAndRejectsMismatchedResume()
+    {
+        var imgPath = Path.Combine(_tempDir, "part_scope_src.img");
+        var outPartImg = Path.Combine(_tempDir, "part_scope_out.img");
+        byte[] src = new byte[4 * 1024 * 1024];
+        for (int i = 0; i < 512; i++) src[(1 * 1024 * 1024) + i] = (byte)(0xA0 + (i % 16));
+        await File.WriteAllBytesAsync(imgPath, src);
+
+        using var reader = new DiskImageReader(imgPath, 512, 4096);
+        var manifest = await ImagingJobEngine.RunOrResumeImagingJobAsync(
+            reader,
+            outPartImg,
+            sourceStartOffset: 1024 * 1024,
+            lengthBytes: 1024 * 1024,
+            scrapeFailedBlocks: false,
+            useSparseOutput: false,
+            copyBlockSizeBytes: 256 * 1024,
+            targetScopeLabel: "Partition 2: Data (NTFS)");
+
+        Assert.Equal("Partition 2: Data (NTFS)", manifest.TargetScopeLabel);
+        Assert.Equal(1024 * 1024, manifest.SourceStartOffset);
+        Assert.Equal(1024 * 1024, manifest.TotalBytesToCopy);
+        byte[] outBytes = await File.ReadAllBytesAsync(outPartImg);
+        Assert.Equal(1024 * 1024, outBytes.Length);
+        Assert.Equal(0xA0, outBytes[0]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ImagingJobEngine.RunOrResumeImagingJobAsync(
+                reader,
+                outPartImg,
+                sourceStartOffset: 0,
+                lengthBytes: 4 * 1024 * 1024,
+                targetScopeLabel: "Whole Disk"));
+    }
+
+    [Fact]
+    public void NtfsLznt1Decompressor_DecompressesCompressedAndRleChunks()
+    {
+        // Build a valid NTFS LZNT1 compressed chunk representing "ABCD" + 12 x 'A' (RLE overlap) + "XYZ"
+        // Uncompressed = "ABCD" + "AAAAAAAAAAAA" (Wait: back-ref at offset=4, len=3 -> "ABC", or offset=1 after 'A')
+        // Let's encode: literals 'A','B','C','D' (4 bytes), then tuple at outPos=4 (shift=12): offset=4 (encoded 3 << 12 = 0x3000), length=4 (encoded 1) => 0x3001 => repeats "ABCD" -> "ABCDABCD"
+        // Flags byte 0: bits 0..3 = 0 (literals A,B,C,D), bit 4 = 1 (tuple 0x3001) -> 0b00010000 = 0x10
+        byte[] chunkPayload = new byte[] { 0x10, (byte)'A', (byte)'B', (byte)'C', (byte)'D', 0x01, 0x30 };
+        ushort header = (ushort)(0x8000 | (chunkPayload.Length - 1));
+        byte[] unit = new byte[2 + chunkPayload.Length + 2];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(unit.AsSpan(0, 2), header);
+        Buffer.BlockCopy(chunkPayload, 0, unit, 2, chunkPayload.Length);
+        // Trailing 0x0000 terminator
+
+        byte[] decompressed = NtfsLznt1Decompressor.DecompressUnit(unit, 8);
+        Assert.Equal("ABCDABCD", System.Text.Encoding.ASCII.GetString(decompressed));
+    }
+
+    [Fact]
+    public void NtfsMftRecordParser_ParsesAttributeListAndEfsEncryptedFlags()
+    {
+        // Build minimal $ATTRIBUTE_LIST payload with one $DATA (0x80) extension record reference at MFT #42
+        byte[] attrList = new byte[24];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(attrList.AsSpan(0, 4), 0x80u);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(attrList.AsSpan(4, 2), 24);
+        attrList[6] = 0; // unnamed
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(attrList.AsSpan(8, 8), 16UL); // StartingVcn = 16
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(attrList.AsSpan(16, 8), 42UL); // MFT #42
+
+        var refs = NtfsMftRecordParser.ParseAttributeListDataExtensions(attrList);
+        Assert.Single(refs);
+        Assert.Equal(16, refs[0].StartingVcn);
+        Assert.Equal(42, refs[0].MftRecordNumber);
+
+        var encryptedItem = new RecoverableFileItem
+        {
+            FileName = "secret.txt",
+            IsEncrypted = true,
+            IsCompressed = false,
+            HasExtensionMftRecords = true
+        };
+        Assert.Contains("Encrypted", encryptedItem.StatusLabel);
+        Assert.Contains("ExtMFT", encryptedItem.StatusLabel);
+    }
+
+    [Fact]
+    public async Task Fat32AndExFatRecovery_ScansAndExportsActiveAndDeletedFiles()
+    {
+        // 1. Synthetic FAT32 partition image (1 MiB): 512B/sec, 8 sec/clus (4 KB clusters), 32 reserved, 1 FAT of 8 sectors, root cluster 2
+        var fatImg = Path.Combine(_tempDir, "fat32_test.img");
+        byte[] fatDisk = new byte[1024 * 1024];
+        fatDisk[0x0B] = 0x00; fatDisk[0x0C] = 0x02; // 512 bps
+        fatDisk[0x0D] = 8; // 8 spc -> 4096 cluster
+        fatDisk[0x0E] = 32; fatDisk[0x0F] = 0; // 32 reserved sectors
+        fatDisk[0x10] = 1; // 1 FAT
+        fatDisk[0x24] = 8; // 8 sectors per FAT
+        fatDisk[0x2C] = 2; // root cluster 2
+        fatDisk[510] = 0x55; fatDisk[511] = 0xAA;
+
+        int fatOff = 32 * 512;
+        int dataOff = (32 + 8) * 512;
+        // FAT entries: cluster 2 (root) = EOC, cluster 3 (HELLO.TXT) = EOC, cluster 4 (deleted) = 0
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(fatDisk.AsSpan(fatOff + (2 * 4), 4), 0x0FFFFFFFu);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(fatDisk.AsSpan(fatOff + (3 * 4), 4), 0x0FFFFFFFu);
+
+        // Root dir entry 0: HELLO.TXT (cluster 3, 5 bytes)
+        System.Text.Encoding.ASCII.GetBytes("HELLO   TXT").CopyTo(fatDisk, dataOff);
+        fatDisk[dataOff + 0x0B] = 0x20;
+        fatDisk[dataOff + 0x1A] = 3;
+        fatDisk[dataOff + 0x1C] = 5;
+        System.Text.Encoding.ASCII.GetBytes("World").CopyTo(fatDisk, dataOff + 4096);
+
+        // Root dir entry 1: deleted _EL.TXT (0xE5, cluster 4, 4 bytes)
+        System.Text.Encoding.ASCII.GetBytes("DEL     TXT").CopyTo(fatDisk, dataOff + 32);
+        fatDisk[dataOff + 32] = 0xE5;
+        fatDisk[dataOff + 32 + 0x0B] = 0x20;
+        fatDisk[dataOff + 32 + 0x1A] = 4;
+        fatDisk[dataOff + 32 + 0x1C] = 4;
+        System.Text.Encoding.ASCII.GetBytes("Gone").CopyTo(fatDisk, dataOff + (2 * 4096));
+
+        await File.WriteAllBytesAsync(fatImg, fatDisk);
+        using var fatReader = new DiskImageReader(fatImg, 512, 512);
+        var fatPart = new FileSystemAnalysisResult
+        {
+            PartitionIndex = 1,
+            DetectedFileSystem = "FAT32",
+            PartitionStartOffset = 0,
+            PartitionSizeBytes = fatDisk.Length
+        };
+
+        var fatFiles = await Fat32FileRecoveryEngine.ScanRecoverableFilesAsync(fatReader, fatPart, includeDeleted: true);
+        Assert.Equal(2, fatFiles.Count);
+        Assert.Contains(fatFiles, f => f.FileName == "HELLO.TXT" && !f.IsDeleted);
+        Assert.Contains(fatFiles, f => f.FileName == "_EL.TXT" && f.IsDeleted);
+
+        var exportDir = Path.Combine(_tempDir, "fat32_export");
+        var manifest = await FileExportEngine.ExportFilesAsync(fatReader, fatFiles, exportDir);
+        Assert.Equal(2, manifest.VerifiedFilesCount);
+        Assert.Equal("World", await File.ReadAllTextAsync(Path.Combine(exportDir, "HELLO.TXT")));
+        Assert.Equal("Gone", await File.ReadAllTextAsync(Path.Combine(exportDir, "_EL.TXT")));
+    }
 }

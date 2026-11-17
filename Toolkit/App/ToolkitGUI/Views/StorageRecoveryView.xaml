@@ -71,6 +71,9 @@
                               DisplayMemberPath="DisplayTitle"/>
                     <Button Content="▶  Inspect Disk (Read-Only)" Style="{StaticResource ActionButtonStyle}"
                             Command="{Binding InspectTargetCommand}" Padding="16,7" Margin="0,0,8,6"/>
+                    <Button Content="Cancel" Command="{Binding CancelInspectCommand}"
+                            Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"
+                            Padding="10,7" Margin="0,0,8,6"/>
                     <Button Content="↻  Refresh Drives" Style="{StaticResource ActionButtonStyle}"
                             Command="{Binding RefreshDisksCommand}" Padding="12,7" Margin="0,0,8,6"/>
                     <Button Content="📂  Open Disk Image (.img)" Style="{StaticResource ActionButtonStyle}"
@@ -309,10 +312,15 @@
                     <!-- Resumable Disk / Partition Imaging Card -->
                     <Border Grid.Row="2" Background="#F0F6FF" BorderBrush="#B4D2F5" BorderThickness="1" CornerRadius="5" Padding="12" Margin="0,0,0,10">
                         <StackPanel>
-                            <TextBlock Text="PART B — RESUMABLE SECTOR-LEVEL DISK IMAGER (WITH BAD-SECTOR SKIPPING &amp; .CDEMAP TRACKING)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,6"/>
+                            <TextBlock Text="PART B — RESUMABLE SECTOR-LEVEL DISK / PARTITION IMAGER (WITH BAD-SECTOR SKIPPING &amp; .CDEMAP TRACKING)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,6"/>
                             <controls:ResponsiveToolbar>
+                                <TextBlock Text="Target Scope:" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,6"/>
+                                <ComboBox Width="250" Height="28" VerticalContentAlignment="Center" Margin="0,0,12,6"
+                                          ItemsSource="{Binding ImagingScopes}"
+                                          SelectedItem="{Binding SelectedImagingScope}"
+                                          DisplayMemberPath="Label"/>
                                 <TextBlock Text="Output Image (.img):" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,6"/>
-                                <TextBox Text="{Binding ImagingOutputPath, UpdateSourceTrigger=PropertyChanged}" Width="380" Height="28" VerticalContentAlignment="Center" Margin="0,0,8,6"/>
+                                <TextBox Text="{Binding ImagingOutputPath, UpdateSourceTrigger=PropertyChanged}" Width="340" Height="28" VerticalContentAlignment="Center" Margin="0,0,8,6"/>
                                 <Button Content="Browse..." Style="{StaticResource ActionButtonStyle}" Command="{Binding BrowseImagingOutputCommand}" Padding="12,6" Margin="0,0,12,6"/>
                                 <CheckBox Content="Scrape failed blocks (4K sector recovery pass)" IsChecked="{Binding ScrapeFailedBlocks}" VerticalAlignment="Center" Margin="0,0,14,6" FontSize="12"/>
                                 <Button Content="▶ Start / Resume Image Job" Style="{StaticResource ActionButtonStyle}" Command="{Binding StartOrResumeImagingCommand}" Padding="14,6" Margin="0,0,8,6"/>
@@ -460,7 +468,7 @@
                     <!-- Top Scan & Filter Bar -->
                     <Border Grid.Row="0" Background="#F8FAFC" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="5" Padding="12" Margin="0,0,0,10">
                         <StackPanel>
-                            <TextBlock Text="READ-ONLY NTFS $MFT FILE BROWSER &amp; EXTRACTOR (WORKS ON UNMOUNTED / RAW VOLUMES)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,6"/>
+                            <TextBlock Text="READ-ONLY FILE BROWSER &amp; EXTRACTOR (NTFS $MFT, FAT32 &amp; exFAT — WORKS ON UNMOUNTED / RAW VOLUMES)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,6"/>
                             <controls:ResponsiveToolbar>
                                 <TextBlock Text="Partition:" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,6"/>
                                 <ComboBox Width="220" Height="28" VerticalContentAlignment="Center" Margin="0,0,10,6"
@@ -469,8 +477,8 @@
                                           DisplayMemberPath="PartitionName"/>
                                 <CheckBox Content="Include deleted files" IsChecked="{Binding IncludeDeletedFiles}" VerticalAlignment="Center" FontSize="12" Margin="0,0,10,6"/>
                                 <CheckBox Content="Full $MFT scan" IsChecked="{Binding FullMftScan}" VerticalAlignment="Center" FontSize="12" Margin="0,0,12,6"
-                                          ToolTip="Scan the entire $MFT instead of stopping at 16,384 records"/>
-                                <Button Content="🔍 Scan $MFT for Recoverable Files" Style="{StaticResource ActionButtonStyle}"
+                                          ToolTip="Scan the entire $MFT on NTFS instead of stopping at 16,384 records"/>
+                                <Button Content="🔍 Scan Partition for Recoverable Files" Style="{StaticResource ActionButtonStyle}"
                                         Command="{Binding ScanRecoverableFilesCommand}" Padding="14,6" Margin="0,0,8,6"/>
                                 <Button Content="Cancel" Command="{Binding CancelFileScanCommand}"
                                         Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"
@@ -510,7 +518,10 @@
                             <TextBox Text="{Binding FileExportDestination, UpdateSourceTrigger=PropertyChanged}" Width="420" Height="28" VerticalContentAlignment="Center" Margin="0,0,8,6"/>
                             <Button Content="Browse..." Style="{StaticResource ActionButtonStyle}" Command="{Binding BrowseExportDestCommand}" Padding="12,6" Margin="0,0,14,6"/>
                             <Button Content="📤 Export Checked Files (With SHA-256 Manifest)" Style="{StaticResource ActionButtonStyle}"
-                                    Command="{Binding ExportSelectedFilesCommand}" Padding="18,8" Margin="0,0,0,6"/>
+                                    Command="{Binding ExportSelectedFilesCommand}" Padding="18,8" Margin="0,0,8,6"/>
+                            <Button Content="Cancel Export" Command="{Binding CancelFileExportCommand}"
+                                    Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"
+                                    Padding="12,8" Margin="0,0,0,6"/>
                         </controls:ResponsiveToolbar>
                     </Border>
                 </Grid>

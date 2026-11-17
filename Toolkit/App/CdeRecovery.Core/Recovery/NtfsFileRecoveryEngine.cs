@@ -129,6 +129,7 @@ namespace CdeRecovery.Core.Recovery
 
             var directories = new Dictionary<long, RecoverableFileItem>();
             var files = new List<RecoverableFileItem>();
+            var pendingAttrLists = new List<NtfsMftRecordParser.NtfsParsedMftRecordResult>();
 
             // Batch read MFT records in 64 KiB chunks (64 records at a time)
             const int recordsPerBatch = 64;
@@ -193,6 +194,7 @@ namespace CdeRecovery.Core.Recovery
                         includeDeleted,
                         directories,
                         files,
+                        pendingAttrLists,
                         ref consecutiveEmptyRecords);
 
                     globalRecordIndex += actualRecords;
@@ -212,33 +214,27 @@ namespace CdeRecovery.Core.Recovery
                     break;
             }
 
-            // Reconstruct full folder paths by walking ParentMftRecordNumber up to Root (Record 5)
-            var resolvedFiles = new List<RecoverableFileItem>(files.Count);
-            foreach (var f in files)
+            // Resolve $ATTRIBUTE_LIST extension MFT records (for heavily fragmented files)
+            if (pendingAttrLists.Count > 0)
             {
-                string fullRelPath = ReconstructRelativePath(f, directories);
-                resolvedFiles.Add(new RecoverableFileItem
-                {
-                    MftRecordNumber = f.MftRecordNumber,
-                    SequenceNumber = f.SequenceNumber,
-                    ParentMftRecordNumber = f.ParentMftRecordNumber,
-                    FileName = f.FileName,
-                    ReconstructedPath = fullRelPath,
-                    SizeBytes = f.SizeBytes,
-                    AllocatedSizeBytes = f.AllocatedSizeBytes,
-                    IsDirectory = f.IsDirectory,
-                    IsDeleted = f.IsDeleted,
-                    IsResident = f.IsResident,
-                    HasTornWriteWarning = f.HasTornWriteWarning,
-                    ModifiedUtc = f.ModifiedUtc,
-                    PartitionStartOffset = f.PartitionStartOffset,
-                    ClusterSizeBytes = f.ClusterSizeBytes,
-                    ResidentData = f.ResidentData,
-                    DataRuns = f.DataRuns
-                });
+                await ResolveAttributeListExtensionsAsync(
+                    source,
+                    mftExtents,
+                    recordSize,
+                    partition.PartitionStartOffset,
+                    clusterSize,
+                    pendingAttrLists,
+                    files,
+                    cancellationToken).ConfigureAwait(false);
             }
 
-            return resolvedFiles
+            // Reconstruct full folder paths by walking ParentMftRecordNumber up to Root (Record 5)
+            foreach (var f in files)
+            {
+                f.ReconstructedPath = ReconstructRelativePath(f, directories);
+            }
+
+            return files
                 .OrderBy(f => f.ReconstructedPath, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
@@ -293,6 +289,178 @@ namespace CdeRecovery.Core.Recovery
             return new string(chars).Trim();
         }
 
+        private static async Task ResolveAttributeListExtensionsAsync(
+            IReadOnlyBlockSource source,
+            List<(long ByteOffset, long RecordCount)> mftExtents,
+            int recordSize,
+            long partitionStartOffset,
+            int clusterSize,
+            List<NtfsMftRecordParser.NtfsParsedMftRecordResult> pendingAttrLists,
+            List<RecoverableFileItem> files,
+            CancellationToken cancellationToken)
+        {
+            foreach (var entry in pendingAttrLists)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var baseItem = entry.Item;
+                if (baseItem == null)
+                    continue;
+
+                byte[]? attrListBytes = entry.AttributeListResidentBytes;
+                if (attrListBytes == null && entry.AttributeListNonResidentRuns != null && entry.AttributeListRealSize > 0)
+                {
+                    attrListBytes = await ReadNonResidentAttributeBytesAsync(
+                        source,
+                        partitionStartOffset,
+                        clusterSize,
+                        entry.AttributeListNonResidentRuns,
+                        (int)Math.Min(entry.AttributeListRealSize, 1024 * 1024),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                if (attrListBytes == null || attrListBytes.Length < 24)
+                    continue;
+
+                var extRefs = NtfsMftRecordParser.ParseAttributeListDataExtensions(attrListBytes);
+                if (extRefs.Count == 0)
+                    continue;
+
+                var segments = new List<(long StartingVcn, List<NtfsDataRun> Runs)>();
+                if (baseItem.DataRuns.Count > 0)
+                    segments.Add((0, baseItem.DataRuns));
+
+                long resolvedSize = baseItem.SizeBytes;
+                long resolvedAlloc = baseItem.AllocatedSizeBytes;
+                bool resolvedCompressed = baseItem.IsCompressed;
+                int resolvedCompUnit = baseItem.CompressionUnitClusters;
+                bool usedExtension = false;
+
+                var seenExtRecords = new HashSet<long> { baseItem.MftRecordNumber };
+                foreach (var extRef in extRefs.OrderBy(e => e.StartingVcn))
+                {
+                    if (!seenExtRecords.Add(extRef.MftRecordNumber))
+                        continue;
+
+                    byte[]? extRecordBytes = await ReadMftRecordByIndexAsync(
+                        source, mftExtents, recordSize, extRef.MftRecordNumber, cancellationToken).ConfigureAwait(false);
+                    if (extRecordBytes == null)
+                        continue;
+
+                    var extData = NtfsMftRecordParser.ParseExtensionRecordData(extRecordBytes);
+                    if (extData.Runs.Count > 0)
+                    {
+                        segments.Add((extData.StartingVcn, extData.Runs));
+                        usedExtension = true;
+                    }
+                    if (extData.RealSize > resolvedSize) resolvedSize = extData.RealSize;
+                    if (extData.AllocSize > resolvedAlloc) resolvedAlloc = extData.AllocSize;
+                    if (extData.IsCompressed) resolvedCompressed = true;
+                    if (extData.CompressionUnitClusters > 0) resolvedCompUnit = extData.CompressionUnitClusters;
+                }
+
+                if (!usedExtension)
+                    continue;
+
+                var mergedRuns = new List<NtfsDataRun>();
+                foreach (var seg in segments.OrderBy(s => s.StartingVcn))
+                    mergedRuns.AddRange(seg.Runs);
+
+                int idx = files.IndexOf(baseItem);
+                var updated = new RecoverableFileItem
+                {
+                    MftRecordNumber = baseItem.MftRecordNumber,
+                    SequenceNumber = baseItem.SequenceNumber,
+                    ParentMftRecordNumber = baseItem.ParentMftRecordNumber,
+                    FileName = baseItem.FileName,
+                    ReconstructedPath = baseItem.ReconstructedPath,
+                    SizeBytes = resolvedSize,
+                    AllocatedSizeBytes = resolvedAlloc,
+                    IsDirectory = false,
+                    IsDeleted = baseItem.IsDeleted,
+                    IsResident = false,
+                    IsCompressed = resolvedCompressed,
+                    IsEncrypted = baseItem.IsEncrypted,
+                    HasExtensionMftRecords = true,
+                    CompressionUnitClusters = resolvedCompUnit,
+                    HasTornWriteWarning = baseItem.HasTornWriteWarning,
+                    ModifiedUtc = baseItem.ModifiedUtc,
+                    PartitionStartOffset = baseItem.PartitionStartOffset,
+                    ClusterSizeBytes = baseItem.ClusterSizeBytes,
+                    ResidentData = Array.Empty<byte>(),
+                    DataRuns = mergedRuns
+                };
+
+                if (idx >= 0) files[idx] = updated;
+                else files.Add(updated);
+            }
+        }
+
+        private static async Task<byte[]?> ReadMftRecordByIndexAsync(
+            IReadOnlyBlockSource source,
+            List<(long ByteOffset, long RecordCount)> mftExtents,
+            int recordSize,
+            long targetRecordIndex,
+            CancellationToken cancellationToken)
+        {
+            long remaining = targetRecordIndex;
+            foreach (var ext in mftExtents)
+            {
+                if (remaining < ext.RecordCount)
+                {
+                    long offset = ext.ByteOffset + (remaining * recordSize);
+                    if (offset + recordSize > source.Length)
+                        return null;
+                    byte[] buf = new byte[recordSize];
+                    try
+                    {
+                        int read = await source.ReadAtAsync(offset, buf, cancellationToken).ConfigureAwait(false);
+                        return read == recordSize ? buf : null;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        return null;
+                    }
+                }
+                remaining -= ext.RecordCount;
+            }
+            return null;
+        }
+
+        private static async Task<byte[]?> ReadNonResidentAttributeBytesAsync(
+            IReadOnlyBlockSource source,
+            long partitionStartOffset,
+            int clusterSize,
+            List<NtfsDataRun> runs,
+            int maxBytes,
+            CancellationToken cancellationToken)
+        {
+            byte[] output = new byte[maxBytes];
+            int outOffset = 0;
+            foreach (var run in runs)
+            {
+                if (outOffset >= maxBytes) break;
+                long runBytes = run.ClusterCount * clusterSize;
+                int toCopy = (int)Math.Min(runBytes, maxBytes - outOffset);
+                if (run.IsSparse)
+                {
+                    outOffset += toCopy;
+                    continue;
+                }
+                long diskOff = partitionStartOffset + (run.LcnStart * clusterSize);
+                if (diskOff + toCopy > source.Length) break;
+                try
+                {
+                    int read = await source.ReadAtAsync(diskOff, output.AsMemory(outOffset, toCopy), cancellationToken).ConfigureAwait(false);
+                    outOffset += read;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    break;
+                }
+            }
+            return output;
+        }
+
         private static void ParseBatchRecords(
             byte[] batchBuffer,
             int actualRecords,
@@ -303,6 +471,7 @@ namespace CdeRecovery.Core.Recovery
             bool includeDeleted,
             Dictionary<long, RecoverableFileItem> directories,
             List<RecoverableFileItem> files,
+            List<NtfsMftRecordParser.NtfsParsedMftRecordResult> pendingAttrLists,
             ref int consecutiveEmptyRecords)
         {
             for (int i = 0; i < actualRecords; i++)
@@ -323,12 +492,13 @@ namespace CdeRecovery.Core.Recovery
                 if (recNum < 16 && recNum != 5)
                     continue;
 
-                var parsed = NtfsMftRecordParser.TryParseFileRecord(
+                var detailed = NtfsMftRecordParser.TryParseFileRecordDetailed(
                     recordSpan,
                     recNum,
                     partitionStartOffset,
                     clusterSize);
 
+                var parsed = detailed?.Item;
                 if (parsed == null)
                     continue;
 
@@ -344,7 +514,15 @@ namespace CdeRecovery.Core.Recovery
                 if (parsed.FileName.StartsWith('$'))
                     continue;
 
-                files.Add(parsed);
+                if (detailed!.AttributeListResidentBytes != null || detailed.AttributeListNonResidentRuns != null)
+                {
+                    pendingAttrLists.Add(detailed);
+                }
+
+                if (parsed.DataRuns.Count > 0 || parsed.IsResident)
+                {
+                    files.Add(parsed);
+                }
             }
         }
 

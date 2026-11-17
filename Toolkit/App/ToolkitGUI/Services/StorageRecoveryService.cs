@@ -140,6 +140,28 @@ namespace ToolkitGUI.Services
                     ? new DiskImageReader(target.ImagePath, target.Device.LogicalSectorSize > 0 ? target.Device.LogicalSectorSize : 512)
                     : new PhysicalDiskReader(target.Device);
 
+                if (string.Equals(partition.DetectedFileSystem, "FAT32", StringComparison.OrdinalIgnoreCase))
+                {
+                    return await Fat32FileRecoveryEngine.ScanRecoverableFilesAsync(
+                        source,
+                        partition,
+                        includeDeleted,
+                        maxRecords,
+                        progress,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                if (string.Equals(partition.DetectedFileSystem, "exFAT", StringComparison.OrdinalIgnoreCase))
+                {
+                    return await ExFatFileRecoveryEngine.ScanRecoverableFilesAsync(
+                        source,
+                        partition,
+                        includeDeleted,
+                        maxRecords,
+                        progress,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
                 return await NtfsFileRecoveryEngine.ScanRecoverableFilesAsync(
                     source,
                     partition,
@@ -181,6 +203,7 @@ namespace ToolkitGUI.Services
             long sourceStartOffset = 0,
             long lengthBytes = 0,
             bool scrapeFailedBlocks = true,
+            string targetScopeLabel = "Whole Disk",
             IProgress<ImagingProgressReport>? progress = null,
             CancellationToken cancellationToken = default)
         {
@@ -200,6 +223,7 @@ namespace ToolkitGUI.Services
                     scrapeFailedBlocks,
                     useSparseOutput: true,
                     copyBlockSizeBytes: 256 * 1024,
+                    targetScopeLabel: targetScopeLabel,
                     progress: progress,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
             }, cancellationToken).ConfigureAwait(false);
@@ -268,7 +292,61 @@ namespace ToolkitGUI.Services
                 await Task.Run(() => WorkflowReportPdfService.TryGeneratePdf(wfReport, pdfPath, out _)).ConfigureAwait(false);
             }
 
-            return (jsonPath, File.Exists(pdfPath) ? pdfPath : string.Empty);
+            string resolvedPdf = File.Exists(pdfPath) ? pdfPath : string.Empty;
+            WorkOrderService.TryRecordWorkflowReport(wfReport, jsonPath, string.IsNullOrWhiteSpace(resolvedPdf) ? null : resolvedPdf);
+
+            return (jsonPath, resolvedPdf);
+        }
+
+        public static async Task RecordActivityWorkOrderReportAsync(
+            string actionTitle,
+            string stepStatus,
+            string detail,
+            IReadOnlyList<string> sessionAuditLog)
+        {
+            var now = DateTime.Now;
+            var steps = new List<WorkflowExecutionStep>
+            {
+                new WorkflowExecutionStep
+                {
+                    Name = actionTitle,
+                    Status = stepStatus,
+                    Detail = detail,
+                    Output = sessionAuditLog.Count > 0 ? $"{detail}\n\n{string.Join("\n", sessionAuditLog)}" : detail
+                }
+            };
+
+            string overallHealth = string.Equals(stepStatus, "Fail", StringComparison.OrdinalIgnoreCase)
+                ? "Critical"
+                : string.Equals(stepStatus, "Warn", StringComparison.OrdinalIgnoreCase)
+                    ? "Warning"
+                    : "Healthy";
+
+            var wfReport = new WorkflowExecutionReport
+            {
+                WorkflowName = "StorageRecovery",
+                StartTime = now,
+                EndTime = now,
+                Status = string.Equals(stepStatus, "Fail", StringComparison.OrdinalIgnoreCase) ? "Failed" : "Completed",
+                EnvironmentMode = Environment.GetEnvironmentVariable("SystemDrive")?.Equals("X:", StringComparison.OrdinalIgnoreCase) == true
+                    ? "WinPE"
+                    : "Windows",
+                OverallHealth = overallHealth,
+                Steps = steps
+            };
+
+            string baseName = WorkflowReportExportHelper.BuildReportBaseName(wfReport);
+            string jsonPath = Path.Combine(ReportPathHelper.GetWorkflowDataRoot(), $"{baseName}.json");
+            var json = JsonSerializer.Serialize(wfReport, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(jsonPath, json).ConfigureAwait(false);
+
+            string pdfPath = ReportPathHelper.GetOperatorPdfPathForInternalJson(jsonPath);
+            if (!string.IsNullOrWhiteSpace(pdfPath))
+            {
+                await Task.Run(() => WorkflowReportPdfService.TryGeneratePdf(wfReport, pdfPath, out _)).ConfigureAwait(false);
+            }
+
+            WorkOrderService.TryRecordWorkflowReport(wfReport, jsonPath, File.Exists(pdfPath) ? pdfPath : null);
         }
     }
 }
