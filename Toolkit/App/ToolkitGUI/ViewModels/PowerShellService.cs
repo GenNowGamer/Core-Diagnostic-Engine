@@ -242,6 +242,8 @@ namespace ToolkitGUI.ViewModels
             });
         }
 
+        public static bool IsWinPeEnvironment() => TestIsWinPe();
+
         private static bool TestIsWinPe()
         {
             try
@@ -272,6 +274,16 @@ namespace ToolkitGUI.ViewModels
         {
             if (string.IsNullOrWhiteSpace(elevPidDir) || !Directory.Exists(elevPidDir))
                 return;
+
+            // Signal any elevated relay wrapper in this directory to terminate its elevated child.
+            try
+            {
+                File.WriteAllText(Path.Combine(elevPidDir, "cancel.flag"), "cancel");
+            }
+            catch
+            {
+                // Best-effort.
+            }
 
             IEnumerable<string> pidFiles;
             try

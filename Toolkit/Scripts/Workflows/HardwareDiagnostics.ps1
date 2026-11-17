@@ -48,8 +48,11 @@ function Invoke-HardwareDiagnosticsElevationRelay {
     if (-not (Test-ToolkitShouldRelayElevation -ElevatedRelay:$ElevatedRelay)) { return $false }
 
     try {
-        $relay = Invoke-ToolkitElevatedRelay -ScriptPath $Script:HardwareDiagnosticsScriptPath `
-            -ArgumentString (Get-HardwareDiagnosticsRelayArgumentString)
+        $relayOut = @{}
+        Invoke-ToolkitElevatedRelay -ScriptPath $Script:HardwareDiagnosticsScriptPath `
+            -ArgumentString (Get-HardwareDiagnosticsRelayArgumentString) `
+            -RelayOut $relayOut
+        $relay = $relayOut['Result']
         if ($null -eq $relay) { return $false }
         if ($relay.ExitCode -ne 0) {
             Write-Log ("Elevated Diag and Repair exited with code {0}; continuing without elevation." -f $relay.ExitCode) -Level Warning

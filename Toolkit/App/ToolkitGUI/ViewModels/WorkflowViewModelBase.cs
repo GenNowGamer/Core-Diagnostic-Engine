@@ -354,14 +354,33 @@ namespace ToolkitGUI.ViewModels
                     _runCancellationTokenSource.Token,
                     line =>
                     {
-                        if (!HandleLiveWorkflowOutput(line))
+                        void ProcessLine()
                         {
-                            AppendLog(line);
-                            UpdateExecutionStateFromOutput(line);
-                            Progress = Math.Min(Progress + 2, 92);
-                            ProgressPercentText = $"{Progress}%";
+                            if (!HandleLiveWorkflowOutput(line))
+                            {
+                                AppendLog(line);
+                                UpdateExecutionStateFromOutput(line);
+                                Progress = Math.Min(Progress + 2, 92);
+                                ProgressPercentText = $"{Progress}%";
+                            }
+                        }
+
+                        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                        if (dispatcher != null && !dispatcher.CheckAccess())
+                        {
+                            dispatcher.BeginInvoke((Action)ProcessLine);
+                        }
+                        else
+                        {
+                            ProcessLine();
                         }
                     });
+
+                var postRunDispatcher = System.Windows.Application.Current?.Dispatcher;
+                if (postRunDispatcher != null)
+                {
+                    await postRunDispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+                }
 
                 ResultJson = result.Stdout;
                 Progress = 100;

@@ -205,24 +205,43 @@ function Invoke-PostOpProxyReset {
     $details = [System.Collections.Generic.List[string]]::new()
     $warn = $false
 
-    $internetSettings = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
-    if (-not (Test-Path -LiteralPath $internetSettings)) {
-        New-Item -Path $internetSettings -Force | Out-Null
-    }
-
+    $targetPaths = [System.Collections.Generic.List[string]]::new()
+    $targetPaths.Add('HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings') | Out-Null
     try {
-        Set-ItemProperty -LiteralPath $internetSettings -Name ProxyEnable -Value 0 -Type DWord -Force -ErrorAction Stop
-        $details.Add('User Internet Settings: ProxyEnable set to 0.') | Out-Null
-    } catch {
-        $warn = $true
-        $details.Add("User Internet Settings: failed to disable proxy - $($_.Exception.Message)") | Out-Null
-    }
+        foreach ($sidKey in (Get-ChildItem 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue)) {
+            $sidName = $sidKey.PSChildName
+            if ($sidName -match '^S-1-5-21-\d+-\d+-\d+-\d+$') {
+                $candidate = "Registry::HKEY_USERS\$sidName\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+                if (Test-Path -LiteralPath $candidate) {
+                    $targetPaths.Add($candidate) | Out-Null
+                }
+            }
+        }
+    } catch { }
 
-    foreach ($name in @('ProxyServer', 'AutoConfigURL', 'ProxyOverride')) {
+    foreach ($internetSettings in ($targetPaths | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $internetSettings)) {
+            if ($internetSettings -like 'HKCU:*') {
+                New-Item -Path $internetSettings -Force | Out-Null
+            } else {
+                continue
+            }
+        }
+
         try {
-            Remove-ItemProperty -LiteralPath $internetSettings -Name $name -ErrorAction Stop
-            $details.Add("Removed Internet Settings value: $name") | Out-Null
-        } catch { }
+            Set-ItemProperty -LiteralPath $internetSettings -Name ProxyEnable -Value 0 -Type DWord -Force -ErrorAction Stop
+            $details.Add("Internet Settings ($internetSettings): ProxyEnable set to 0.") | Out-Null
+        } catch {
+            $warn = $true
+            $details.Add("Internet Settings ($internetSettings): failed to disable proxy - $($_.Exception.Message)") | Out-Null
+        }
+
+        foreach ($name in @('ProxyServer', 'AutoConfigURL', 'ProxyOverride')) {
+            try {
+                Remove-ItemProperty -LiteralPath $internetSettings -Name $name -ErrorAction Stop
+                $details.Add("Removed Internet Settings value ($internetSettings): $name") | Out-Null
+            } catch { }
+        }
     }
 
     $winhttp = Invoke-PostOpCapturedCommand -FilePath "$env:SystemRoot\System32\netsh.exe" -ArgumentList @('winhttp', 'reset', 'proxy')

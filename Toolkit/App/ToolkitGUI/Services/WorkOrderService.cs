@@ -727,30 +727,52 @@ namespace ToolkitGUI.Services
             var lockPath = counterPath + ".lock";
             Directory.CreateDirectory(Path.GetDirectoryName(counterPath)!);
 
-            using var lockStream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-            var prefix = "CDE";
-            var lastSequence = 0;
-
-            if (File.Exists(counterPath))
+            FileStream? lockStream = null;
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (true)
             {
                 try
                 {
-                    var node = JsonNode.Parse(File.ReadAllText(counterPath)) as JsonObject;
-                    prefix = node?["Prefix"]?.GetValue<string>() ?? "CDE";
-                    lastSequence = node?["LastSequence"]?.GetValue<int>() ?? 0;
+                    lockStream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                    break;
                 }
-                catch { /* defaults */ }
+                catch (IOException) when (DateTime.UtcNow < deadline)
+                {
+                    System.Threading.Thread.Sleep(50);
+                }
             }
 
-            lastSequence++;
-            var payload = new JsonObject
+            try
             {
-                ["Prefix"] = prefix,
-                ["LastSequence"] = lastSequence
-            };
-            File.WriteAllText(counterPath, payload.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                var prefix = "CDE";
+                var lastSequence = 0;
 
-            return $"{prefix}-{DateTime.Now:yyyyMMdd}-{lastSequence:D5}";
+                if (File.Exists(counterPath))
+                {
+                    try
+                    {
+                        var node = JsonNode.Parse(File.ReadAllText(counterPath)) as JsonObject;
+                        prefix = node?["Prefix"]?.GetValue<string>() ?? "CDE";
+                        lastSequence = node?["LastSequence"]?.GetValue<int>() ?? 0;
+                    }
+                    catch { /* defaults */ }
+                }
+
+                lastSequence++;
+                var payload = new JsonObject
+                {
+                    ["Prefix"] = prefix,
+                    ["LastSequence"] = lastSequence
+                };
+                File.WriteAllText(counterPath, payload.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+                return $"{prefix}-{DateTime.Now:yyyyMMdd}-{lastSequence:D5}";
+            }
+            finally
+            {
+                lockStream.Dispose();
+                try { File.Delete(lockPath); } catch { /* best-effort */ }
+            }
         }
 
         private static int ParseSequence(string caseId)

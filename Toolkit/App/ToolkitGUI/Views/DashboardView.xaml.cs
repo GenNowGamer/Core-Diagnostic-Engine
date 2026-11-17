@@ -441,7 +441,7 @@ namespace ToolkitGUI.Views
             }
         }
 
-        private void CloseWorkOrder_Click(object sender, RoutedEventArgs e)
+        private async void CloseWorkOrder_Click(object sender, RoutedEventArgs e)
         {
             var active = WorkOrderService.GetActiveWorkOrder();
             if (active == null)
@@ -460,7 +460,8 @@ namespace ToolkitGUI.Views
 
             try
             {
-                var pdfPath = WorkOrderService.CloseActiveWorkOrder(ReadFormFromUi());
+                var form = ReadFormFromUi();
+                var pdfPath = await System.Threading.Tasks.Task.Run(() => WorkOrderService.CloseActiveWorkOrder(form));
                 ClientNameTextBox.Clear();
                 ClientPhoneTextBox.Clear();
                 WorkOrderNotesTextBox.Clear();
@@ -494,11 +495,11 @@ namespace ToolkitGUI.Views
             window.ShowDialog();
         }
 
-        private void ExportFeedbackBundle_Click(object sender, RoutedEventArgs e)
+        private async void ExportFeedbackBundle_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                var zipPath = WorkOrderService.ExportFieldFeedbackBundle();
+                var zipPath = await System.Threading.Tasks.Task.Run(() => WorkOrderService.ExportFieldFeedbackBundle());
                 MessageBox.Show(
                     $"Field feedback bundle created:\n\n{zipPath}",
                     "Export Feedback",

@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 param(
     [string]$Action = 'List',
     [string]$UninstallKey = '',
@@ -562,11 +562,14 @@ function Invoke-UninstallCommand {
 
     $exitCode = 0
     if ([string]::IsNullOrWhiteSpace($parsed.Arguments)) {
-        $proc = Start-Process -FilePath $exe -Wait -PassThru -ErrorAction Stop
+        $proc = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
     } else {
-        $proc = Start-Process -FilePath $exe -ArgumentList $parsed.Arguments -Wait -PassThru -ErrorAction Stop
+        $proc = Start-Process -FilePath $exe -ArgumentList $parsed.Arguments -PassThru -ErrorAction Stop
     }
     if ($null -ne $proc) {
+        if (-not $proc.WaitForExit(300000)) {
+            throw "Uninstaller '$exe' timed out after 5 minutes (it may be waiting for interactive UI input)."
+        }
         $exitCode = [int]$proc.ExitCode
     }
 

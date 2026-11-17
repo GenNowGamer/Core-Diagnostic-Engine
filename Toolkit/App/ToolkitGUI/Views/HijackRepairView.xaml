@@ -46,6 +46,9 @@
                                 Style="{StaticResource ActionButtonStyle}" Padding="16,8" Margin="0,0,8,6"/>
                         <Button Content="Repair Selected" Command="{Binding RepairSelectedCommand}"
                                 Style="{StaticResource ActionButtonStyle}" Padding="16,8" Margin="0,0,8,6"/>
+                        <Button Content="Cancel" Command="{Binding CancelCommand}"
+                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}"
+                                Padding="12,8" Margin="0,0,8,6"/>
                         <Button Content="Open Report" Command="{Binding OpenReportCommand}"
                                 IsEnabled="{Binding HasScanResults}"
                                 Padding="12,8" Margin="0,0,8,6"/>

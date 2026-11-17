@@ -563,36 +563,6 @@ function Invoke-DISM {
     if ($step.Output) { Write-Log $step.Output }
 }
 
-function Invoke-BCDRepair {
-    param($r)
-
-    Write-Log "Running BCD repair..."
-    try {
-        $bcdedit = Invoke-CommandCaptured -FilePath 'bcdedit.exe' -ArgumentList '/enum', 'all' -StepName 'BCDEnum'
-        $r.Steps.Add($bcdedit)
-
-        if ($bcdedit.ExitCode -ne 0) {
-            Write-Log "BCD appears corrupted. Running bootrec..." -Level Warning
-
-            $pairs = @(
-                @('BootrecFixMBR', '/fixmbr'),
-                @('BootrecFixBoot', '/fixboot'),
-                @('BootrecRebuildBCD', '/rebuildbcd')
-            )
-
-            foreach ($pair in $pairs) {
-                $step = Invoke-CommandCaptured -FilePath 'bootrec.exe' -ArgumentList $pair[1] -StepName $pair[0]
-                $r.Steps.Add($step)
-                Write-Log "$($pair[0]): $($step.Status)"
-            }
-        } else {
-            Write-Log "BCD looks healthy - no repair needed."
-        }
-    } catch {
-        $r.Steps.Add([PSCustomObject]@{ Name='BCDRepair'; Status='Fail'; Output=$_.Exception.Message })
-    }
-}
-
 function Invoke-NetworkReset {
     param($r)
 
@@ -626,7 +596,8 @@ function Invoke-WindowsUpdateRepair {
         $r.Steps.Add((Invoke-CommandCaptured -FilePath 'sc' -ArgumentList @('stop', $svc) -StepName "Stop_$svc"))
     }
 
-    foreach ($folder in @('C:\Windows\SoftwareDistribution', 'C:\Windows\System32\catroot2')) {
+    $winDir = if (-not [string]::IsNullOrWhiteSpace($WindowsDir)) { $WindowsDir } elseif (-not [string]::IsNullOrWhiteSpace($env:SystemRoot)) { $env:SystemRoot } else { 'C:\Windows' }
+    foreach ($folder in @((Join-Path $winDir 'SoftwareDistribution'), (Join-Path $winDir 'System32\catroot2'))) {
         if (Test-Path $folder) {
             $backup = "${folder}.old_$(Get-Date -Format 'yyyyMMddHHmmss')"
             try {

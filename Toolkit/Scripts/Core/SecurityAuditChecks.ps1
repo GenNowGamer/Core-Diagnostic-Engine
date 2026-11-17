@@ -186,7 +186,7 @@ function Invoke-CoreSecurityTool {
         $maxMinutes = if ($CstMode -eq 'ThreatScan') {
             if ($isWinPe) { 12 } else { 10 }
         } else {
-            $null
+            0
         }
         $toolkitRoot = $ScriptDir | Split-Path -Parent | Split-Path -Parent
         $cstDataRoot = Join-Path $toolkitRoot 'CDE\Runtime\Data\cst'
@@ -266,7 +266,35 @@ function Invoke-CoreSecurityTool {
             Write-Log ("WinPE CST scan root: {0}" -f $winPeScanRoot)
         }
 
-        $result = & $cstScript @invokeArgs
+        $result = $null
+        if (-not (Test-ToolkitIsElevated) -and (Get-Command Invoke-ToolkitElevatedRelay -ErrorAction SilentlyContinue)) {
+            $relayParts = [System.Collections.Generic.List[string]]::new()
+            $relayParts.Add("-Mode '$($CstMode.Replace("'", "''"))'") | Out-Null
+            $relayParts.Add("-DetectionScope '$($CstDetectionScope.Replace("'", "''"))'") | Out-Null
+            $relayParts.Add("-ActionMode '$($effectiveActionMode.Replace("'", "''"))'") | Out-Null
+            $relayParts.Add("-OutputPath '$($resultArtifactPath.Replace("'", "''"))'") | Out-Null
+            if ($null -ne $maxMinutes) {
+                $relayParts.Add("-MaxMinutes $([int]$maxMinutes)") | Out-Null
+            }
+            if ($behaviorPaths.Count -gt 0) {
+                $quotedBeh = ($behaviorPaths | ForEach-Object { "'$($_.Replace("'", "''"))'" }) -join ','
+                $relayParts.Add("-BehaviorArtifactsPath $quotedBeh") | Out-Null
+            }
+            if ($invokeArgs.ContainsKey('Target') -and $invokeArgs.Target.Count -gt 0) {
+                $quotedTgt = ($invokeArgs.Target | ForEach-Object { "'$($_.Replace("'", "''"))'" }) -join ','
+                $relayParts.Add("-Target $quotedTgt") | Out-Null
+            }
+            if ($invokeArgs.OfflineOnly) {
+                $relayParts.Add('-OfflineOnly') | Out-Null
+            }
+            $relayOut = @{}
+            Invoke-ToolkitElevatedRelay -ScriptPath $cstScript -ArgumentString ($relayParts -join ' ') -RelayOut $relayOut
+            if (Test-Path -LiteralPath $resultArtifactPath -PathType Leaf) {
+                $result = Get-Content -LiteralPath $resultArtifactPath -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json -ErrorAction SilentlyContinue
+            }
+        } else {
+            $result = & $cstScript @invokeArgs
+        }
 
         if (-not $result) {
             $r.Steps.Add([PSCustomObject]@{ Name='CoreSecurityTool'; Status='Warn'; Output='Core Security Tool returned no result object.' })

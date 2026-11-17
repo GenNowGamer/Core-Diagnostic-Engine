@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Shared hijack/scam audit and repair helpers for HijackRepair.ps1 and System Health Check.
@@ -26,9 +26,25 @@ $Script:TrustedSearchProviderHosts = @(
     'ecosia.org', 'startpage.com', 'qwant.com', 'brave.com'
 )
 
+function Get-HijackUsersRoot {
+    if (-not [string]::IsNullOrWhiteSpace($env:OFFLINE_WINDOWS_ROOT)) {
+        $offlineUsers = Join-Path $env:OFFLINE_WINDOWS_ROOT 'Users'
+        if (Test-Path -LiteralPath $offlineUsers -PathType Container) {
+            return $offlineUsers
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:SystemDrive)) {
+        $sysUsers = Join-Path ($env:SystemDrive.TrimEnd('\') + '\') 'Users'
+        if (Test-Path -LiteralPath $sysUsers -PathType Container) {
+            return $sysUsers
+        }
+    }
+    return 'C:\Users'
+}
+
 function Get-HijackChromiumProfileRoots {
     $roots = [System.Collections.Generic.List[object]]::new()
-    $users = @(Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue)
+    $users = @(Get-ChildItem (Get-HijackUsersRoot) -Directory -ErrorAction SilentlyContinue)
     foreach ($user in $users) {
         if ($user.Name -in @('Public', 'Default', 'Default User', 'All Users')) { continue }
         $userRoot = $user.FullName
@@ -281,7 +297,6 @@ function Test-HijackFirefoxPrefHijacked {
 
     if ($PrefName -match 'homepage' -and (Test-HijackSuspiciousUrl -Url $PrefValue)) { return $true }
     if ($PrefName -eq 'browser.search.defaultenginename' -and $PrefValue -notmatch '(?i)^(google|bing|duckduckgo|yahoo)') { return $true }
-    if ($PrefName -eq 'browser.startup.page' -and $PrefValue -eq '3' -and (Test-HijackSuspiciousUrl -Url $PrefValue)) { return $true }
     return $false
 }
 
@@ -483,7 +498,7 @@ function Invoke-HijackBrowserAudit {
         }
     }
 
-    $users = @(Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue)
+    $users = @(Get-ChildItem (Get-HijackUsersRoot) -Directory -ErrorAction SilentlyContinue)
     foreach ($user in $users) {
         if ($user.Name -in @('Public', 'Default', 'Default User', 'All Users')) { continue }
         $ffRoot = Join-Path $user.FullName 'AppData\Roaming\Mozilla\Firefox\Profiles'
@@ -1051,7 +1066,7 @@ function Invoke-HijackBrowserRepair {
         }
     }
 
-    $users = @(Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue)
+    $users = @(Get-ChildItem (Get-HijackUsersRoot) -Directory -ErrorAction SilentlyContinue)
     foreach ($user in $users) {
         if ($user.Name -in @('Public', 'Default', 'Default User', 'All Users')) { continue }
         $ffRoot = Join-Path $user.FullName 'AppData\Roaming\Mozilla\Firefox\Profiles'
@@ -1265,7 +1280,7 @@ function Get-HijackBrowserExtensionInventory {
         }
     }
 
-    $users = @(Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue)
+    $users = @(Get-ChildItem (Get-HijackUsersRoot) -Directory -ErrorAction SilentlyContinue)
     foreach ($user in $users) {
         if ($user.Name -in @('Public', 'Default', 'Default User', 'All Users')) { continue }
         $ffRoot = Join-Path $user.FullName 'AppData\Roaming\Mozilla\Firefox\Profiles'
@@ -1337,7 +1352,7 @@ function Get-HijackBrowserShortcutProfiles {
 
 function Get-HijackBrowserShortcutSearchRoots {
     $roots = [System.Collections.Generic.List[string]]::new()
-    $users = @(Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue)
+    $users = @(Get-ChildItem (Get-HijackUsersRoot) -Directory -ErrorAction SilentlyContinue)
     foreach ($user in $users) {
         if ($user.Name -in @('Public', 'Default', 'Default User', 'All Users')) { continue }
         foreach ($sub in @('Desktop', 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs')) {

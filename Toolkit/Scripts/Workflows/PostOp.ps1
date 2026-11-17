@@ -503,6 +503,9 @@ try {
     }
 
     Generate-Report -WorkflowResult $workflow | Out-Null
+    if ($workflow.Status -eq 'Failed' -or @($workflow.Steps | Where-Object { $_.Status -eq 'Fail' }).Count -gt 0) {
+        exit 1
+    }
 } catch {
     Write-Error "PostOp workflow failed: $($_.Exception.Message)"
     exit 1

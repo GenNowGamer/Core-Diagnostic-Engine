@@ -588,6 +588,14 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
+            if (!string.IsNullOrWhiteSpace(result.Output) &&
+                result.Output.Contains("ALREADY_IN_DESIRED_STATE", StringComparison.OrdinalIgnoreCase))
+            {
+                StatusText = $"{s.ServiceName} is already in the desired state.";
+                await LoadServicesAsync();
+                return;
+            }
+
             var newStatus = string.Empty;
             for (var i = 0; i < 20; i++)
             {
@@ -1338,7 +1346,8 @@ namespace ToolkitGUI.ViewModels
                 {
                     RootPath = root,
                     DisplayName = $"{rootTrimmed}{freeText}",
-                    IsSelected = string.Equals(rootTrimmed, systemRootTrimmed, StringComparison.OrdinalIgnoreCase)
+                    IsSelected = !PowerShellService.IsWinPeEnvironment()
+                        && string.Equals(rootTrimmed, systemRootTrimmed, StringComparison.OrdinalIgnoreCase)
                 });
             }
         }
@@ -1355,6 +1364,12 @@ namespace ToolkitGUI.ViewModels
 
         public async Task ScanAsync()
         {
+            if (PowerShellService.IsWinPeEnvironment())
+            {
+                StatusText = "Not applicable in WinPE (live Windows temp cleanup only).";
+                return;
+            }
+
             var selectedDrives = GetSelectedDriveRoots();
             if (selectedDrives.Count == 0)
             {
@@ -1999,7 +2014,6 @@ namespace ToolkitGUI.ViewModels
             "ResetWinsock",
             "RenewIp",
             "DisableIPv6",
-            "ResetWindowsUpdate",
             "ClearEventLogs",
             "EnableWuauserv",
             "EnableBits",
@@ -2040,7 +2054,7 @@ namespace ToolkitGUI.ViewModels
             }
 
             var systemRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? string.Empty;
-            return systemRoot.StartsWith(@"X:\\", StringComparison.OrdinalIgnoreCase);
+            return systemRoot.StartsWith(@"X:\", StringComparison.OrdinalIgnoreCase);
         }
 
         public async Task LoadFixesAsync()

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -643,11 +643,21 @@ namespace ToolkitGUI.Views
                 return;
             }
 
+            if (!ValidateManifestHash(tool, toolPath!, out var hashError))
+            {
+                MessageBox.Show(hashError, "Tool Verification", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             var psi = new ProcessStartInfo
             {
                 FileName = toolPath,
                 UseShellExecute = true
             };
+            if (tool.RequiresAdmin)
+            {
+                psi.Verb = "runas";
+            }
             if (tool.ExecutionMode == ToolExecutionMode.Native)
             {
                 var dir = Path.GetDirectoryName(toolPath);
@@ -1384,10 +1394,13 @@ namespace ToolkitGUI.Views
                     return false;
                 }
 
+                var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+                var stderrTask = proc.StandardError.ReadToEndAsync();
                 proc.WaitForExit();
+                var stderr = stderrTask.GetAwaiter().GetResult();
+                _ = stdoutTask.GetAwaiter().GetResult();
                 if (proc.ExitCode != 0)
                 {
-                    var stderr = proc.StandardError.ReadToEnd();
                     error = string.IsNullOrWhiteSpace(stderr)
                         ? $"7-Zip exited with code {proc.ExitCode}."
                         : $"7-Zip exited with code {proc.ExitCode}: {stderr}";

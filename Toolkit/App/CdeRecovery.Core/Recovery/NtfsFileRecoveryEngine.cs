@@ -138,12 +138,13 @@ namespace CdeRecovery.Core.Recovery
             long globalRecordIndex = 0;
             int consecutiveEmptyRecords = 0;
 
+            long effectiveMaxRecords = maxRecords <= 0 ? long.MaxValue : maxRecords;
             foreach (var extent in mftExtents)
             {
-                long recordsRemainingInExtent = Math.Min(extent.RecordCount, maxRecords - globalRecordIndex);
+                long recordsRemainingInExtent = Math.Min(extent.RecordCount, effectiveMaxRecords - globalRecordIndex);
                 long currentExtentByteOffset = extent.ByteOffset;
 
-                while (recordsRemainingInExtent > 0 && globalRecordIndex < maxRecords)
+                while (recordsRemainingInExtent > 0 && globalRecordIndex < effectiveMaxRecords)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
@@ -157,11 +158,12 @@ namespace CdeRecovery.Core.Recovery
                     {
                         bytesRead = await source.ReadAtAsync(currentExtentByteOffset, batchBuffer.AsMemory(0, bytesToRead), cancellationToken).ConfigureAwait(false);
                     }
-                    catch
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         // If a batch fails due to a bad sector inside $MFT, fall back to individual record reads
                         for (int r = 0; r < recordsThisBatch; r++)
                         {
+                            cancellationToken.ThrowIfCancellationRequested();
                             try
                             {
                                 await source.ReadAtAsync(
@@ -169,7 +171,7 @@ namespace CdeRecovery.Core.Recovery
                                     batchBuffer.AsMemory(r * recordSize, recordSize),
                                     cancellationToken).ConfigureAwait(false);
                             }
-                            catch
+                            catch (Exception innerEx) when (innerEx is not OperationCanceledException)
                             {
                                 Array.Clear(batchBuffer, r * recordSize, recordSize);
                             }
@@ -199,14 +201,14 @@ namespace CdeRecovery.Core.Recovery
 
                     progress?.Report($"Scanned {globalRecordIndex:N0} $MFT records — found {files.Count:N0} recoverable file(s)...");
 
-                    if (consecutiveEmptyRecords >= 128 && globalRecordIndex >= 64)
+                    if (consecutiveEmptyRecords >= 4096 && globalRecordIndex >= 64)
                     {
                         // Reached unallocated tail of $MFT
                         break;
                     }
                 }
 
-                if (globalRecordIndex >= maxRecords || (consecutiveEmptyRecords >= 128 && globalRecordIndex >= 64))
+                if (globalRecordIndex >= effectiveMaxRecords || (consecutiveEmptyRecords >= 4096 && globalRecordIndex >= 64))
                     break;
             }
 

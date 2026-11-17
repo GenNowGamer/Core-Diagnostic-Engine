@@ -467,9 +467,14 @@
                                           ItemsSource="{Binding FileSystems}"
                                           SelectedItem="{Binding SelectedRecoveryPartition}"
                                           DisplayMemberPath="PartitionName"/>
-                                <CheckBox Content="Include deleted files" IsChecked="{Binding IncludeDeletedFiles}" VerticalAlignment="Center" FontSize="12" Margin="0,0,12,6"/>
+                                <CheckBox Content="Include deleted files" IsChecked="{Binding IncludeDeletedFiles}" VerticalAlignment="Center" FontSize="12" Margin="0,0,10,6"/>
+                                <CheckBox Content="Full $MFT scan" IsChecked="{Binding FullMftScan}" VerticalAlignment="Center" FontSize="12" Margin="0,0,12,6"
+                                          ToolTip="Scan the entire $MFT instead of stopping at 16,384 records"/>
                                 <Button Content="🔍 Scan $MFT for Recoverable Files" Style="{StaticResource ActionButtonStyle}"
-                                        Command="{Binding ScanRecoverableFilesCommand}" Padding="14,6" Margin="0,0,14,6"/>
+                                        Command="{Binding ScanRecoverableFilesCommand}" Padding="14,6" Margin="0,0,8,6"/>
+                                <Button Content="Cancel" Command="{Binding CancelFileScanCommand}"
+                                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"
+                                        Padding="10,6" Margin="0,0,14,6"/>
 
                                 <TextBlock Text="Filter:" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,6"/>
                                 <TextBox Text="{Binding FileSearchFilter, UpdateSourceTrigger=PropertyChanged}" Width="180" Height="28" VerticalContentAlignment="Center" Margin="0,0,10,6"

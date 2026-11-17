@@ -24,7 +24,8 @@ function Invoke-ToolkitElevatedRelay {
     #>
     param(
         [Parameter(Mandatory)][string]$ScriptPath,
-        [string]$ArgumentString = ''
+        [string]$ArgumentString = '',
+        [hashtable]$RelayOut = $null
     )
 
     if (Test-ToolkitIsElevated) {
@@ -46,12 +47,16 @@ function Invoke-ToolkitElevatedRelay {
 
     $runId = [Guid]::NewGuid().ToString('N')
     $pidFile = Join-Path $elevDir ("cde_elev_pid_{0}.txt" -f $runId)
-    $transcriptFile = Join-Path $elevDir ("cde_elev_{0}.log" -f $runId)
+    $logFile = Join-Path $elevDir ("cde_elev_{0}.log" -f $runId)
+    $exitFile = Join-Path $elevDir ("cde_elev_exit_{0}.txt" -f $runId)
+    $cancelFile = Join-Path $elevDir 'cancel.flag'
     $env:CDE_ELEVATED_PID_FILE = $pidFile
 
     $escapedScript = $ScriptPath.Replace("'", "''")
     $escapedPidFile = $pidFile.Replace("'", "''")
-    $escapedTranscript = $transcriptFile.Replace("'", "''")
+    $escapedLogFile = $logFile.Replace("'", "''")
+    $escapedExitFile = $exitFile.Replace("'", "''")
+    $escapedCancelFile = $cancelFile.Replace("'", "''")
     $argSuffix = if ([string]::IsNullOrWhiteSpace($ArgumentString)) { '' } else { " $ArgumentString" }
 
     $envLines = [System.Collections.Generic.List[string]]::new()
@@ -63,18 +68,72 @@ function Invoke-ToolkitElevatedRelay {
     }
     $envPrefix = if ($envLines.Count -gt 0) { ($envLines -join "`n") + "`n" } else { '' }
 
+    $targetScript = @"
+`$ErrorActionPreference = 'Continue'
+$envPrefix`$env:CDE_ELEVATED_PID_FILE = '$escapedPidFile'
+try {
+    & '$escapedScript'$argSuffix
+    `$code = if (`$null -ne `$LASTEXITCODE) { [int]`$LASTEXITCODE } else { 0 }
+} catch {
+    Write-Error `$_.Exception.Message
+    `$code = 1
+}
+exit `$code
+"@
+    $targetEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($targetScript))
+
     $inner = @"
 `$ErrorActionPreference = 'Continue'
 $envPrefix`$env:CDE_ELEVATED_PID_FILE = '$escapedPidFile'
-Start-Transcript -LiteralPath '$escapedTranscript' -Force | Out-Null
+`$sync = New-Object object
+`$utf8NoBom = New-Object System.Text.UTF8Encoding(`$false)
+`$writer = New-Object System.IO.StreamWriter('$escapedLogFile', `$false, `$utf8NoBom)
+`$writer.AutoFlush = `$true
+`$psi = New-Object System.Diagnostics.ProcessStartInfo
+`$psi.FileName = 'powershell.exe'
+`$psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $targetEncoded'
+`$psi.UseShellExecute = `$false
+`$psi.RedirectStandardOutput = `$true
+`$psi.RedirectStandardError = `$true
+`$psi.CreateNoWindow = `$true
+`$psi.StandardOutputEncoding = `$utf8NoBom
+`$psi.StandardErrorEncoding = `$utf8NoBom
+`$proc = New-Object System.Diagnostics.Process
+`$proc.StartInfo = `$psi
+`$proc.EnableRaisingEvents = `$true
+`$outSub = Register-ObjectEvent -InputObject `$proc -EventName OutputDataReceived -Action {
+    if (`$null -ne `$EventArgs.Data) {
+        [System.Threading.Monitor]::Enter(`$Event.MessageData.Sync)
+        try { `$Event.MessageData.Writer.WriteLine(`$EventArgs.Data) } finally { [System.Threading.Monitor]::Exit(`$Event.MessageData.Sync) }
+    }
+} -MessageData @{ Sync = `$sync; Writer = `$writer }
+`$errSub = Register-ObjectEvent -InputObject `$proc -EventName ErrorDataReceived -Action {
+    if (`$null -ne `$EventArgs.Data) {
+        [System.Threading.Monitor]::Enter(`$Event.MessageData.Sync)
+        try { `$Event.MessageData.Writer.WriteLine(`$EventArgs.Data) } finally { [System.Threading.Monitor]::Exit(`$Event.MessageData.Sync) }
+    }
+} -MessageData @{ Sync = `$sync; Writer = `$writer }
+`$exitCode = 1
 try {
-    & '$escapedScript'$argSuffix
-    `$exitCode = if (`$null -ne `$LASTEXITCODE) { `$LASTEXITCODE } else { 0 }
-} catch {
-    Write-Error `$_.Exception.Message
-    `$exitCode = 1
+    [void]`$proc.Start()
+    Set-Content -LiteralPath '$escapedPidFile' -Value ([string]`$proc.Id) -Encoding ascii -Force -ErrorAction SilentlyContinue
+    `$proc.BeginOutputReadLine()
+    `$proc.BeginErrorReadLine()
+    while (-not `$proc.WaitForExit(150)) {
+        if (Test-Path -LiteralPath '$escapedCancelFile') {
+            try { & taskkill.exe /PID `$proc.Id /T /F 2>`$null | Out-Null } catch { }
+            try { `$proc.Kill() } catch { }
+            break
+        }
+    }
+    `$proc.WaitForExit()
+    `$exitCode = if (Test-Path -LiteralPath '$escapedCancelFile') { 1 } else { [int]`$proc.ExitCode }
 } finally {
-    Stop-Transcript | Out-Null
+    try { Unregister-Event -SourceIdentifier `$outSub.Name -ErrorAction SilentlyContinue } catch { }
+    try { Unregister-Event -SourceIdentifier `$errSub.Name -ErrorAction SilentlyContinue } catch { }
+    try { `$writer.Flush(); `$writer.Dispose() } catch { }
+    try { `$proc.Dispose() } catch { }
+    Set-Content -LiteralPath '$escapedExitFile' -Value ([string]`$exitCode) -Encoding ascii -Force -ErrorAction SilentlyContinue
 }
 exit `$exitCode
 "@
@@ -82,36 +141,85 @@ exit `$exitCode
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
     $launchArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded"
 
+    $byteOffset = [long]0
+    $readAvailableLines = {
+        param([bool]$FlushRemainder)
+        if (-not (Test-Path -LiteralPath $logFile)) { return }
+        try {
+            $fs = [System.IO.FileStream]::new($logFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            try {
+                if ($fs.Length -le $byteOffset) { return }
+                $remaining = [int]($fs.Length - $byteOffset)
+                $buf = New-Object byte[] $remaining
+                [void]$fs.Seek($byteOffset, [System.IO.SeekOrigin]::Begin)
+                $bytesRead = $fs.Read($buf, 0, $remaining)
+                if ($bytesRead -le 0) { return }
+
+                $consumeCount = $bytesRead
+                if (-not $FlushRemainder) {
+                    $lastLf = [Array]::LastIndexOf($buf, [byte]10, $bytesRead - 1)
+                    if ($lastLf -lt 0) { return }
+                    $consumeCount = $lastLf + 1
+                }
+
+                $chunk = [System.Text.Encoding]::UTF8.GetString($buf, 0, $consumeCount)
+                $byteOffset += $consumeCount
+                $lines = $chunk -split "\r?\n"
+                for ($i = 0; $i -lt $lines.Length; $i++) {
+                    if ($i -eq $lines.Length - 1 -and $lines[$i].Length -eq 0) { continue }
+                    Write-Output $lines[$i]
+                }
+            } finally {
+                $fs.Dispose()
+            }
+        } catch { }
+    }
+
     $child = $null
+    $resolvedExitCode = 1
     try {
         $child = Start-Process -FilePath 'powershell.exe' -ArgumentList $launchArgs -Verb RunAs -PassThru -WindowStyle Hidden
         if ($null -eq $child) {
             throw "Elevation request was canceled or failed: no process started"
         }
 
-        Set-Content -LiteralPath $pidFile -Value ([string]$child.Id) -Encoding ascii -Force
-        Wait-Process -Id $child.Id -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $pidFile)) {
+            Set-Content -LiteralPath $pidFile -Value ([string]$child.Id) -Encoding ascii -Force
+        }
+
+        while (-not $child.HasExited) {
+            & $readAvailableLines $false
+            Start-Sleep -Milliseconds 150
+            try { $child.Refresh() } catch { }
+        }
+        $child.WaitForExit()
         try { $child.Refresh() } catch { }
+        $resolvedExitCode = [int]$child.ExitCode
     } catch {
         throw "Elevation request was canceled or failed: $($_.Exception.Message)"
     } finally {
-        if (Test-Path -LiteralPath $transcriptFile) {
-            Get-Content -LiteralPath $transcriptFile -Encoding UTF8 -ErrorAction SilentlyContinue |
-                ForEach-Object {
-                    if ($_ -match '^(?:\*{3}|Host Application:|Windows PowerShell transcript (?:start|end))') { return }
-                    if ($_ -match '^PS(?:>| )') { return }
-                    Write-Host $_
-                }
-            Remove-Item -LiteralPath $transcriptFile -Force -ErrorAction SilentlyContinue
+        & $readAvailableLines $true
+        if (Test-Path -LiteralPath $exitFile) {
+            $rawExit = (Get-Content -LiteralPath $exitFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+            if ($rawExit -match '^-?\d+$') {
+                $resolvedExitCode = [int]$rawExit
+            }
+            Remove-Item -LiteralPath $exitFile -Force -ErrorAction SilentlyContinue
         }
+        Remove-Item -LiteralPath $logFile -Force -ErrorAction SilentlyContinue
     }
 
-    return [PSCustomObject]@{
+    $resultObj = [PSCustomObject]@{
         Relayed  = $true
-        ExitCode = if ($null -ne $child) { $child.ExitCode } else { 1 }
+        ExitCode = $resolvedExitCode
         PidFile  = $pidFile
         Pid      = if ($null -ne $child) { $child.Id } else { $null }
     }
+    if ($null -ne $RelayOut) {
+        $RelayOut['Result'] = $resultObj
+        return
+    }
+    return $resultObj
 }
 
 function Test-ToolkitShouldRelayElevation {
@@ -139,7 +247,9 @@ function Invoke-ToolkitWorkflowElevationRelay {
         return $false
     }
 
-    $relay = Invoke-ToolkitElevatedRelay -ScriptPath $ScriptPath -ArgumentString $ArgumentString
+    $relayOut = @{}
+    Invoke-ToolkitElevatedRelay -ScriptPath $ScriptPath -ArgumentString $ArgumentString -RelayOut $relayOut
+    $relay = $relayOut['Result']
     if ($null -eq $relay) { return $false }
     if ($relay.ExitCode -ne 0) {
         throw "Elevated workflow failed (exit code $($relay.ExitCode))."

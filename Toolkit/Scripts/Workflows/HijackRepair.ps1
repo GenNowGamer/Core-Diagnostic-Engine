@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     HijackRepair.ps1 — Hijack scanner, selective repair, and bulk repair dispatcher.
@@ -76,7 +76,9 @@ function Invoke-HijackRepairElevationRelay {
         $argString = "$argString $ExtraArgs".Trim()
     }
 
-    $relay = Invoke-ToolkitElevatedRelay -ScriptPath $Script:HijackRepairScriptPath -ArgumentString $argString
+    $relayOut = @{}
+    Invoke-ToolkitElevatedRelay -ScriptPath $Script:HijackRepairScriptPath -ArgumentString $argString -RelayOut $relayOut
+    $relay = $relayOut['Result']
     if ($null -eq $relay) { return $false }
     if ($relay.ExitCode -ne 0) {
         throw "Elevated hijack repair failed (exit code $($relay.ExitCode))."

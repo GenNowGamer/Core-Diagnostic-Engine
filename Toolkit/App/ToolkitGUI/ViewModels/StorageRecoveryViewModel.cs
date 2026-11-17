@@ -49,9 +49,11 @@ namespace ToolkitGUI.ViewModels
         private double _imagingProgressPercent;
         private string _imagingStatusSummary = "Ready to create or resume a raw disk/partition backup image (.img + .cdemap).";
         private System.Threading.CancellationTokenSource? _imagingCts;
+        private System.Threading.CancellationTokenSource? _fileScanCts;
 
         private FileSystemAnalysisResult? _selectedRecoveryPartition;
         private bool _includeDeletedFiles = true;
+        private bool _fullMftScan;
         private string _fileSearchFilter = string.Empty;
         private string _fileExportDestination;
         private string _fileRecoveryStatusText = "Select an NTFS partition and click 'Scan $MFT for Recoverable Files'.";
@@ -98,6 +100,7 @@ namespace ToolkitGUI.ViewModels
         public RelayCommand StartOrResumeImagingCommand { get; }
         public RelayCommand StopImagingCommand { get; }
         public RelayCommand ScanRecoverableFilesCommand { get; }
+        public RelayCommand CancelFileScanCommand { get; }
         public RelayCommand SelectAllFilesCommand { get; }
         public RelayCommand ClearSelectedFilesCommand { get; }
         public RelayCommand BrowseExportDestCommand { get; }
@@ -163,6 +166,7 @@ namespace ToolkitGUI.ViewModels
             StartOrResumeImagingCommand = new RelayCommand(StartOrResumeImagingAsync);
             StopImagingCommand = new RelayCommand(StopImagingAsync);
             ScanRecoverableFilesCommand = new RelayCommand(ScanRecoverableFilesAsync);
+            CancelFileScanCommand = new RelayCommand(() => { _fileScanCts?.Cancel(); return Task.CompletedTask; });
             SelectAllFilesCommand = new RelayCommand(() => { SetAllFileSelections(true); return Task.CompletedTask; });
             ClearSelectedFilesCommand = new RelayCommand(() => { SetAllFileSelections(false); return Task.CompletedTask; });
             BrowseExportDestCommand = new RelayCommand(BrowseExportDestAsync);
@@ -376,6 +380,12 @@ namespace ToolkitGUI.ViewModels
         {
             get => _includeDeletedFiles;
             set { _includeDeletedFiles = value; OnPropertyChanged(); }
+        }
+
+        public bool FullMftScan
+        {
+            get => _fullMftScan;
+            set { _fullMftScan = value; OnPropertyChanged(); }
         }
 
         public string FileSearchFilter
@@ -953,12 +963,16 @@ namespace ToolkitGUI.ViewModels
 
             try
             {
+                _fileScanCts?.Dispose();
+                _fileScanCts = new System.Threading.CancellationTokenSource();
+                int maxRecords = FullMftScan ? 0 : 16384;
                 var recovered = await StorageRecoveryService.ScanRecoverableFilesAsync(
                     SelectedTarget,
                     part,
                     IncludeDeletedFiles,
-                    maxRecords: 16384,
-                    progress: progress);
+                    maxRecords: maxRecords,
+                    progress: progress,
+                    cancellationToken: _fileScanCts.Token);
 
                 foreach (var item in recovered)
                 {
@@ -972,9 +986,18 @@ namespace ToolkitGUI.ViewModels
                 RefreshDisplayedRecoverableFiles();
                 int delCount = _allRecoverableFiles.Count(f => f.Model.IsDeleted);
                 int fragCount = _allRecoverableFiles.Count(f => f.Model.IsFragmented);
-                FileRecoveryStatusText = $"Found {_allRecoverableFiles.Count:N0} recoverable file(s) ({delCount:N0} deleted, {fragCount:N0} fragmented). Select files and click Export.";
+                string limitNote = (!FullMftScan && recovered.Count >= 16384)
+                    ? " (Quick-scan limit 16,384 reached — enable 'Full $MFT scan' for complete volume)"
+                    : string.Empty;
+                FileRecoveryStatusText = $"Found {_allRecoverableFiles.Count:N0} recoverable file(s) ({delCount:N0} deleted, {fragCount:N0} fragmented){limitNote}. Select files and click Export.";
                 StatusText = FileRecoveryStatusText;
-                AppendAudit($"[FILE SCAN] Found {_allRecoverableFiles.Count} recoverable file(s) on Partition {part.PartitionIndex} (IncludeDeleted={IncludeDeletedFiles}).");
+                AppendAudit($"[FILE SCAN] Found {_allRecoverableFiles.Count} recoverable file(s) on Partition {part.PartitionIndex} (IncludeDeleted={IncludeDeletedFiles}, FullMftScan={FullMftScan}).");
+            }
+            catch (OperationCanceledException)
+            {
+                FileRecoveryStatusText = "File scan cancelled.";
+                StatusText = FileRecoveryStatusText;
+                AppendAudit("[FILE SCAN] Cancelled by user.");
             }
             catch (Exception ex)
             {

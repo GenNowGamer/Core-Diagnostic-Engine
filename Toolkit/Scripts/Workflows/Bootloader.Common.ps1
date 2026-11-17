@@ -238,6 +238,9 @@ function global:Select-BootloaderItemFromList {
     }
 
     while ($true) {
+        if ([Console]::IsInputRedirected -or ([Environment]::GetCommandLineArgs() -contains '-NonInteractive')) {
+            throw "Cannot prompt for '$PromptTitle' in non-interactive mode. Specify the target parameter explicitly."
+        }
         $cancelHint = if ($AllowCancel) { ', 0=skip' } else { ', 0=cancel' }
         Write-Host ("Enter selection (1-{0}{1}): " -f $itemList.Count, $cancelHint) -ForegroundColor Cyan -NoNewline
         $raw = Read-Host
@@ -308,6 +311,9 @@ function global:Select-BootloaderTargetWithConfirmation {
 
     $selectedIndex = 0
     while ($true) {
+        if ([Console]::IsInputRedirected -or ([Environment]::GetCommandLineArgs() -contains '-NonInteractive')) {
+            throw "Cannot prompt for target selection in non-interactive mode. Specify -TargetDrive explicitly."
+        }
         Write-Host "Enter target number (1-$($targetList.Count), 0=cancel): " -ForegroundColor Cyan -NoNewline
         $raw = Read-Host
         if ($raw -eq '0') {
@@ -332,6 +338,9 @@ function global:Select-BootloaderTargetWithConfirmation {
     Write-Host ''
 
     if (-not $SkipConfirmation) {
+        if ([Console]::IsInputRedirected -or ([Environment]::GetCommandLineArgs() -contains '-NonInteractive')) {
+            throw "Cannot prompt for target confirmation in non-interactive mode. Pass -Confirmed explicitly."
+        }
         $choice = $null
         while ($choice -ne 'Y' -and $choice -ne 'N') {
             Write-Host "Proceed with $ActionName on this target? (Y/N): " -ForegroundColor Cyan -NoNewline
@@ -683,6 +692,9 @@ function global:Confirm-BootloaderWriteAction {
     Write-Host ''
     Write-Host $Message -ForegroundColor Yellow
     Write-Host ''
+    if ([Console]::IsInputRedirected -or ([Environment]::GetCommandLineArgs() -contains '-NonInteractive')) {
+        throw "Cannot prompt for confirmation in non-interactive mode. Pass -Confirmed explicitly."
+    }
     $choice = $null
     while ($choice -ne 'Y' -and $choice -ne 'N') {
         Write-Host 'Proceed? (Y/N): ' -ForegroundColor Cyan -NoNewline

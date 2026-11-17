@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     BackupAndImage.ps1 - Individual backup and imaging tools dispatcher.
@@ -48,7 +48,7 @@ function Resolve-BackupDest {
     $dest = $BackupDestination
     if ($null -eq $dest -or [string]::IsNullOrWhiteSpace([string]$dest)) {
         $extDrives = Get-PSDrive -PSProvider FileSystem |
-                 Where-Object { $null -ne $_.Free -and $_.Name -ne 'C' -and $_.Name.Length -eq 1 }
+                 Where-Object { $null -ne $_.Free -and $_.Name -notin @('C', 'X') -and $_.Name.Length -eq 1 }
         if ($extDrives) {
             $dest = "$($extDrives[0].Root)ToolkitBackup\$(Get-Date -Format 'yyyyMMdd_HHmmss')"
             Write-Log "Auto-selected destination: $dest"
@@ -170,13 +170,18 @@ function Invoke-RobocopyBackup {
             $roboArgs += '/L'
         }
 
-        $proc = Start-Process -FilePath 'robocopy.exe' -ArgumentList $roboArgs `
-                              -Wait -PassThru -NoNewWindow `
-                              -RedirectStandardOutput "$env:TEMP\robocopy_out.txt"
-        $output = if (Test-Path "$env:TEMP\robocopy_out.txt") {
-            Get-Content "$env:TEMP\robocopy_out.txt" -Raw
-        } else {
-            ''
+        $roboLog = Join-Path $env:TEMP ("robocopy_out_{0}.txt" -f ([Guid]::NewGuid().ToString('N')))
+        try {
+            $proc = Start-Process -FilePath 'robocopy.exe' -ArgumentList $roboArgs `
+                                  -Wait -PassThru -NoNewWindow `
+                                  -RedirectStandardOutput $roboLog
+            $output = if (Test-Path -LiteralPath $roboLog) {
+                Get-Content -LiteralPath $roboLog -Raw
+            } else {
+                ''
+            }
+        } finally {
+            Remove-Item -LiteralPath $roboLog -Force -ErrorAction SilentlyContinue
         }
         $counts = Get-RobocopySummaryCounts -Output $output
         $success = $proc.ExitCode -le 7

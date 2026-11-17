@@ -670,7 +670,7 @@ namespace ToolkitGUI.Views
             SetStatus($"Copied {paths.Count} item(s) to clipboard.");
         }
 
-        private void PasteIntoPane(Pane pane)
+        private async void PasteIntoPane(Pane pane)
         {
             if (_clipboardPaths == null || _clipboardPaths.Count == 0)
             {
@@ -708,29 +708,34 @@ namespace ToolkitGUI.Views
             try
             {
                 var wasCut = _clipboardIsCut;
-                foreach (var source in _clipboardPaths.ToList())
+                var sources = _clipboardPaths.ToList();
+                SetStatus(wasCut ? "Moving items..." : "Copying items...");
+                await System.Threading.Tasks.Task.Run(() =>
                 {
-                    if (!File.Exists(source) && !Directory.Exists(source))
-                        continue;
-
-                    var name = Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                    if (string.IsNullOrEmpty(name))
-                        continue;
-
-                    var dest = GetUniquePath(Path.Combine(targetPath, name));
-                    if (Directory.Exists(source))
+                    foreach (var source in sources)
                     {
-                        CopyDirectory(source, dest);
-                        if (_clipboardIsCut)
-                            Directory.Delete(source, recursive: true);
+                        if (!File.Exists(source) && !Directory.Exists(source))
+                            continue;
+
+                        var name = Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                        if (string.IsNullOrEmpty(name))
+                            continue;
+
+                        var dest = GetUniquePath(Path.Combine(targetPath, name));
+                        if (Directory.Exists(source))
+                        {
+                            CopyDirectory(source, dest);
+                            if (wasCut)
+                                Directory.Delete(source, recursive: true);
+                        }
+                        else
+                        {
+                            File.Copy(source, dest);
+                            if (wasCut)
+                                File.Delete(source);
+                        }
                     }
-                    else
-                    {
-                        File.Copy(source, dest);
-                        if (_clipboardIsCut)
-                            File.Delete(source);
-                    }
-                }
+                });
 
                 if (_clipboardIsCut)
                 {
@@ -1077,7 +1082,7 @@ namespace ToolkitGUI.Views
             CopyOrMoveSelected(copyOnly: false);
         }
 
-        private void DeleteSelected_Click(object sender, RoutedEventArgs e)
+        private async void DeleteSelected_Click(object sender, RoutedEventArgs e)
         {
             SyncActivePaneFromFocus();
             if (IsReadOnlyBrowsePath(GetPanePath(_activePane)))
@@ -1110,13 +1115,17 @@ namespace ToolkitGUI.Views
 
             try
             {
-                foreach (var item in selected)
+                SetStatus("Deleting selected item(s)...");
+                await System.Threading.Tasks.Task.Run(() =>
                 {
-                    if (item.IsDirectory)
-                        Directory.Delete(item.FullPath, recursive: true);
-                    else
-                        File.Delete(item.FullPath);
-                }
+                    foreach (var item in selected)
+                    {
+                        if (item.IsDirectory)
+                            Directory.Delete(item.FullPath, recursive: true);
+                        else
+                            File.Delete(item.FullPath);
+                    }
+                });
                 RefreshPane(_activePane);
                 SetStatus("Deleted selected item(s).");
             }
@@ -1212,7 +1221,7 @@ namespace ToolkitGUI.Views
             }
         }
 
-        private void CopyOrMoveSelected(bool copyOnly)
+        private async void CopyOrMoveSelected(bool copyOnly)
         {
             if (!_splitViewEnabled)
             {
@@ -1264,24 +1273,28 @@ namespace ToolkitGUI.Views
 
             try
             {
-                foreach (var item in selected)
+                SetStatus(copyOnly ? "Copying items..." : "Moving items...");
+                await System.Threading.Tasks.Task.Run(() =>
                 {
-                    var dest = Path.Combine(targetFolder, item.Name);
-                    dest = GetUniquePath(dest);
+                    foreach (var item in selected)
+                    {
+                        var dest = Path.Combine(targetFolder, item.Name);
+                        dest = GetUniquePath(dest);
 
-                    if (item.IsDirectory)
-                    {
-                        CopyDirectory(item.FullPath, dest);
-                        if (!copyOnly)
-                            Directory.Delete(item.FullPath, recursive: true);
+                        if (item.IsDirectory)
+                        {
+                            CopyDirectory(item.FullPath, dest);
+                            if (!copyOnly)
+                                Directory.Delete(item.FullPath, recursive: true);
+                        }
+                        else
+                        {
+                            File.Copy(item.FullPath, dest);
+                            if (!copyOnly)
+                                File.Delete(item.FullPath);
+                        }
                     }
-                    else
-                    {
-                        File.Copy(item.FullPath, dest);
-                        if (!copyOnly)
-                            File.Delete(item.FullPath);
-                    }
-                }
+                });
 
                 RefreshPane(destination);
                 RefreshPane(source);
@@ -1302,7 +1315,11 @@ namespace ToolkitGUI.Views
                 file.CopyTo(Path.Combine(targetDir, file.Name));
 
             foreach (var subDir in dirInfo.GetDirectories())
+            {
+                if (subDir.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    continue;
                 CopyDirectory(subDir.FullName, Path.Combine(targetDir, subDir.Name));
+            }
         }
 
         private void RefreshPane(Pane pane)

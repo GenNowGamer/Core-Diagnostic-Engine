@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 param(
     [string]$Action  = 'List',
     # List | ListStartupItems | ListDrivers | ListUserLogon | ListExtensions | Enable | Disable | Delete | EnableEntry | DisableEntry | DeleteEntry | ResetWinlogonEntry | UndoWinlogonEntry | ListServices | StartService | StopService | SetStartType
@@ -1468,6 +1468,7 @@ switch ($Action) {
             }
         } catch {
             Write-Error "EnableEntry failed for ${EntryName}: $($_.Exception.Message)"
+            exit 1
         }
     }
     'DisableEntry' {
@@ -1499,6 +1500,7 @@ switch ($Action) {
             }
         } catch {
             Write-Error "DisableEntry failed for ${EntryName}: $($_.Exception.Message)"
+            exit 1
         }
     }
     'DeleteEntry' {
@@ -1528,6 +1530,7 @@ switch ($Action) {
             }
         } catch {
             Write-Error "DeleteEntry failed for ${EntryName}: $($_.Exception.Message)"
+            exit 1
         }
     }
     'ResetWinlogonEntry' {
@@ -1541,6 +1544,7 @@ switch ($Action) {
             Write-Output "Reset: $targetName"
         } catch {
             Write-Error "ResetWinlogonEntry failed for ${EntryName}: $($_.Exception.Message)"
+            exit 1
         }
     }
     'UndoWinlogonEntry' {
@@ -1554,6 +1558,7 @@ switch ($Action) {
             Write-Output "Undo: $targetName"
         } catch {
             Write-Error "UndoWinlogonEntry failed for ${EntryName}: $($_.Exception.Message)"
+            exit 1
         }
     }
     'Enable' {
@@ -1719,6 +1724,7 @@ switch ($Action) {
             Write-Output "Started: $ServiceName"
         } catch {
             Write-Error (Get-ServiceActionFailure -Action 'StartService' -ServiceName $ServiceName -ErrorRecord $_)
+            exit 1
         }
     }
     'StopService' {
@@ -1739,6 +1745,7 @@ switch ($Action) {
             Write-Output "Stopped: $ServiceName"
         } catch {
             Write-Error (Get-ServiceActionFailure -Action 'StopService' -ServiceName $ServiceName -ErrorRecord $_)
+            exit 1
         }
     }
     'SetStartType' {
@@ -1763,6 +1770,7 @@ switch ($Action) {
             Write-Output "Set $ServiceName to $normalizedStartType"
         } catch {
             Write-Error (Get-ServiceActionFailure -Action 'SetStartType' -ServiceName $ServiceName -ErrorRecord $_)
+            exit 1
         }
     }
     'RestartService' {
@@ -1783,6 +1791,7 @@ switch ($Action) {
             Write-Output "Restarted: $ServiceName"
         } catch {
             Write-Error (Get-ServiceActionFailure -Action 'RestartService' -ServiceName $ServiceName -ErrorRecord $_)
+            exit 1
         }
     }
     'DeleteService' {
@@ -1843,6 +1852,7 @@ switch ($Action) {
             Write-Output "Deleted: $ServiceName"
         } catch {
             Write-Error (Get-ServiceActionFailure -Action 'DeleteService' -ServiceName $ServiceName -ErrorRecord $_)
+            exit 1
         }
     }
 }

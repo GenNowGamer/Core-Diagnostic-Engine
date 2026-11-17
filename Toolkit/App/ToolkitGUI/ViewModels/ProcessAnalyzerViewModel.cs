@@ -109,7 +109,13 @@ namespace ToolkitGUI.ViewModels
         public bool DeepScanEnabled
         {
             get => _deepScanEnabled;
-            set { _deepScanEnabled = value; OnPropertyChanged(); }
+            set
+            {
+                if (_deepScanEnabled == value) return;
+                _deepScanEnabled = value;
+                OnPropertyChanged();
+                _ = LoadAsync();
+            }
         }
 
         public bool IsLoading
@@ -251,6 +257,13 @@ namespace ToolkitGUI.ViewModels
 
         public async Task LoadAsync(bool silent = false)
         {
+            if (PowerShellService.IsWinPeEnvironment())
+            {
+                StatusText = "Not applicable in WinPE (live Windows process analysis only).";
+                IsLoading = false;
+                return;
+            }
+
             if (FreezeSnapshot && silent)
                 return;
 

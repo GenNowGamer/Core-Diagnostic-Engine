@@ -375,7 +375,8 @@ namespace ToolkitGUI.ViewModels
         {
             if (string.IsNullOrWhiteSpace(scriptName)) return;
 
-            if (!DestructiveActionDialog.Confirm(
+            var isReadOnlyScan = string.Equals(scriptName, "BootloaderScanOs.ps1", StringComparison.OrdinalIgnoreCase);
+            if (!isReadOnlyScan && !DestructiveActionDialog.Confirm(
                     "Disk & Boot Repair",
                     $"Run {scriptName}?",
                     "This may modify boot configuration on the selected installation.",
@@ -386,7 +387,7 @@ namespace ToolkitGUI.ViewModels
             }
 
             var parameters = string.Empty;
-            if (_selectedInstall != null)
+            if (!isReadOnlyScan && _selectedInstall != null)
                 parameters = $"-TargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(_selectedInstall.DriveRoot)} -Confirmed";
             await ExecuteWorkflowAsync(scriptName, parameters, scriptName);
         }

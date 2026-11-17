@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 param(
     [string]$Action = 'List',
     [int]$TargetPid = 0,
@@ -68,6 +68,8 @@ function Get-ProcessListPayload {
     catch { }
 
     $cpuMap = Get-ProcessCpuPercentMap -SampleMs $CpuSampleMs
+    $archCache = @{}
+    $sigCache = @{}
 
     $rows = [System.Collections.Generic.List[object]]::new()
     $seenPids = @{}
@@ -105,7 +107,16 @@ function Get-ProcessListPayload {
             $userName = '(unknown)'
         }
 
-        $arch = if ($path) { Get-PeMachineArch -Path $path } else { '' }
+        $arch = ''
+        if ($path) {
+            $pathKey = $path.ToLowerInvariant()
+            if ($archCache.ContainsKey($pathKey)) {
+                $arch = $archCache[$pathKey]
+            } else {
+                $arch = Get-PeMachineArch -Path $path
+                $archCache[$pathKey] = $arch
+            }
+        }
         if ([string]::IsNullOrWhiteSpace($arch)) { $arch = '?' }
 
         $cpuPercent = 0.0
@@ -124,7 +135,13 @@ function Get-ProcessListPayload {
 
         $signed = $null
         if ($IncludeDeepScan -and $path) {
-            $signed = Test-ProcessPathSigned -Path $path
+            $pathKey = $path.ToLowerInvariant()
+            if ($sigCache.ContainsKey($pathKey)) {
+                $signed = $sigCache[$pathKey]
+            } else {
+                $signed = Test-ProcessPathSigned -Path $path
+                $sigCache[$pathKey] = $signed
+            }
         }
 
         $risk = Get-ProcessRiskInfo -Name $p.ProcessName -FilePath $path -CommandLine $commandLine `
@@ -265,8 +282,13 @@ switch ($Action) {
         (Get-ProcessDetailPayload -ProcessId $TargetPid) | ConvertTo-Json -Depth 6
     }
     'Kill' {
-        Stop-Process -Id $TargetPid -Force -ErrorAction SilentlyContinue
-        Write-Output "Terminated PID $TargetPid"
+        try {
+            Stop-Process -Id $TargetPid -Force -ErrorAction Stop
+            Write-Output "Terminated PID $TargetPid"
+        } catch {
+            Write-Error "Failed to terminate PID ${TargetPid}: $($_.Exception.Message)"
+            exit 1
+        }
     }
     'MatchStartup' {
         $match = Test-ProcessPathInStartup -ExePath $TargetPath

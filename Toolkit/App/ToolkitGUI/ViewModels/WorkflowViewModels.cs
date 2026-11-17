@@ -129,9 +129,11 @@ namespace ToolkitGUI.ViewModels
 
         public ObservableCollection<ChuTestEntryViewModel> Entries { get; } = new();
 
-        public ChuResultsViewModel() => RefreshResults();
+        public ChuResultsViewModel() => _ = RefreshResultsAsync();
 
-        public void RefreshResults()
+        public void RefreshResults() => _ = RefreshResultsAsync();
+
+        public async Task RefreshResultsAsync()
         {
             Entries.Clear();
             HasData       = false;
@@ -141,13 +143,14 @@ namespace ToolkitGUI.ViewModels
             // Find the CDEDATA volume (look at all fixed/removable drives for an
             // \EFI\CoreDiag\Results\ directory — this works both in WinPE and
             // full Windows, regardless of drive letter assignment).
-            var resultFiles = DriveInfo.GetDrives()
-                .Where(d => { try { return d.IsReady; } catch { return false; } })
-                .Select(d => Path.Combine(d.RootDirectory.FullName, "EFI", "CoreDiag", "Results"))
-                .Where(Directory.Exists)
-                .SelectMany(dir => Directory.GetFiles(dir, "*.json"))
-                .OrderByDescending(File.GetLastWriteTime)
-                .ToList();
+            var resultFiles = await Task.Run(() =>
+                DriveInfo.GetDrives()
+                    .Where(d => { try { return d.IsReady; } catch { return false; } })
+                    .Select(d => Path.Combine(d.RootDirectory.FullName, "EFI", "CoreDiag", "Results"))
+                    .Where(Directory.Exists)
+                    .SelectMany(dir => Directory.GetFiles(dir, "*.json"))
+                    .OrderByDescending(File.GetLastWriteTime)
+                    .ToList());
 
             if (resultFiles.Count == 0)
             {
@@ -227,7 +230,7 @@ namespace ToolkitGUI.ViewModels
             }
 
             var systemRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? string.Empty;
-            if (systemRoot.StartsWith(@"X:\\", System.StringComparison.OrdinalIgnoreCase))
+            if (systemRoot.StartsWith(@"X:\", System.StringComparison.OrdinalIgnoreCase))
                 return true;
 
             return false;
@@ -1134,7 +1137,9 @@ namespace ToolkitGUI.ViewModels
             try
             {
                 await RunWorkflowAsync(scriptPath, parameters, item.Name, item.Description);
-                item.StatusText = "Done \u2713";
+                item.StatusText = StopRequested
+                    ? "Cancelled"
+                    : (HasResultErrors ? "Completed with errors" : "Done \u2713");
             }
             catch (Exception ex) { item.StatusText = $"Error: {ex.Message}"; }
             finally { item.IsRunning = false; }
@@ -1447,7 +1452,9 @@ namespace ToolkitGUI.ViewModels
             try
             {
                 await RunWorkflowAsync(scriptPath, parameters, item.Name, item.Description);
-                item.StatusText = "Done \u2713";
+                item.StatusText = StopRequested
+                    ? "Cancelled"
+                    : (HasResultErrors ? "Completed with errors" : "Done \u2713");
             }
             catch (Exception ex) { item.StatusText = $"Error: {ex.Message}"; }
             finally { item.IsRunning = false; }
@@ -1519,6 +1526,18 @@ namespace ToolkitGUI.ViewModels
             Tools.Add(new ToolItem("Restart Explorer",
                 "Restart Windows Explorer to apply shell and cache changes",
                 "RestartExplorer", item => RunPostOpToolAsync(item, script)));
+
+            if (PowerShellService.IsWinPeEnvironment())
+            {
+                foreach (var tool in Tools)
+                {
+                    if (!string.Equals(tool.ToolKey, "HostsFileRestore", StringComparison.OrdinalIgnoreCase))
+                    {
+                        tool.IsEnabled = false;
+                        tool.StatusText = "N/A in WinPE";
+                    }
+                }
+            }
         }
 
         private static bool IsDestructivePostOpTool(string toolKey) =>
@@ -1573,7 +1592,9 @@ namespace ToolkitGUI.ViewModels
                 if (!string.IsNullOrWhiteSpace(extraArgs))
                     args += $" {extraArgs}";
                 await RunWorkflowAsync(scriptPath, args, item.Name, item.Description);
-                item.StatusText = "Done \u2713";
+                item.StatusText = StopRequested
+                    ? "Cancelled"
+                    : (HasResultErrors ? "Completed with errors" : "Done \u2713");
             }
             catch (Exception ex) { item.StatusText = $"Error: {ex.Message}"; }
             finally { item.IsRunning = false; }
@@ -2711,6 +2732,8 @@ namespace ToolkitGUI.ViewModels
                     OnPropertyChanged(nameof(CanOpenReport));
                 }
 
+                WorkOrderService.TryRecordWorkflowReport(report, jsonPath, reportPdfPath: File.Exists(pdfPath) ? pdfPath : null);
+
                 StatusText = priorStatus;
             }
             catch
@@ -3089,7 +3112,7 @@ namespace ToolkitGUI.ViewModels
 
         private readonly Dictionary<string, HwTestItemViewModel> _testIndex =
             new(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, HwTestItemViewModel> _catalogIdIndex =
+        private readonly Dictionary<string, List<HwTestItemViewModel>> _catalogIdIndex =
             new(StringComparer.OrdinalIgnoreCase);
 
         public DiagAndRepairViewModel()
@@ -3146,8 +3169,21 @@ namespace ToolkitGUI.ViewModels
             if (string.IsNullOrWhiteSpace(catalogId))
                 return;
 
-            if (_catalogIdIndex.TryGetValue(catalogId, out var item))
-                item.IsHighlighted = true;
+            if (_catalogIdIndex.TryGetValue(catalogId, out var items))
+            {
+                foreach (var item in items)
+                    item.IsHighlighted = true;
+            }
+        }
+
+        private void AddCatalogIndexItem(string catalogId, HwTestItemViewModel item)
+        {
+            if (!_catalogIdIndex.TryGetValue(catalogId, out var list))
+            {
+                list = new List<HwTestItemViewModel>();
+                _catalogIdIndex[catalogId] = list;
+            }
+            list.Add(item);
         }
 
         private void ClearTestHighlights()
@@ -3238,7 +3274,7 @@ namespace ToolkitGUI.ViewModels
                     TestTree.Insert(at++, item);
                     _testIndex[lookupKey] = item;
                     if (!string.IsNullOrWhiteSpace(id))
-                        _catalogIdIndex[id] = item;
+                        AddCatalogIndexItem(id, item);
                 }
             }
         }
@@ -3258,7 +3294,7 @@ namespace ToolkitGUI.ViewModels
                 TestTree.Add(item);
                 _testIndex[displayName] = item;
                 if (!string.IsNullOrWhiteSpace(id))
-                    _catalogIdIndex[id] = item;
+                    AddCatalogIndexItem(id, item);
             }
         }
 

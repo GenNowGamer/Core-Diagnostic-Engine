@@ -40,8 +40,11 @@ function Invoke-FastFixElevationRelay {
     if (Test-ToolkitIsElevated) { return $false }
     if ($Script:FastFixesRequiringElevation -notcontains $Key) { return $false }
 
-    $relay = Invoke-ToolkitElevatedRelay -ScriptPath $Script:FastFixesScriptPath `
-        -ArgumentString (Get-FastFixesRelayArgumentString -Key $Key)
+    $relayOut = @{}
+    Invoke-ToolkitElevatedRelay -ScriptPath $Script:FastFixesScriptPath `
+        -ArgumentString (Get-FastFixesRelayArgumentString -Key $Key) `
+        -RelayOut $relayOut
+    $relay = $relayOut['Result']
     if ($null -eq $relay) { return $false }
     if ($relay.ExitCode -ne 0) {
         throw "Elevated fast fix failed (exit code $($relay.ExitCode))."
@@ -51,23 +54,23 @@ function Invoke-FastFixElevationRelay {
 
 $FixDefinitions = @(
     # Networking
-    @{ Key='ResetWinsock';    Category='Networking'; Name='Reset Winsock';              Risk='Caution'; Desc='Resets Winsock catalog — may require reboot' },
-    @{ Key='RenewIp';         Category='Networking'; Name='Release & Renew IP';         Risk='Safe';    Desc='ipconfig /release then /renew' },
-    @{ Key='DisableIPv6';     Category='Networking'; Name='Disable IPv6';               Risk='Caution'; Desc='Disables IPv6 on all adapters' },
+    @{ Key='ResetWinsock';    Category='Networking'; Name='Reset Winsock';              Risk='Caution'; Description='Resets Winsock catalog — may require reboot' },
+    @{ Key='RenewIp';         Category='Networking'; Name='Release & Renew IP';         Risk='Safe';    Description='ipconfig /release then /renew' },
+    @{ Key='DisableIPv6';     Category='Networking'; Name='Disable IPv6';               Risk='Caution'; Description='Disables IPv6 on all adapters' },
     # OS
-    @{ Key='ClearEventLogs';  Category='OS';         Name='Clear All Event Logs';       Risk='Caution'; Desc='Wipes Application, System, Security logs' },
+    @{ Key='ClearEventLogs';  Category='OS';         Name='Clear All Event Logs';       Risk='Caution'; Description='Wipes Application, System, Security logs' },
     # Services
-    @{ Key='EnableWuauserv';  Category='Services';   Name='Enable Windows Update Svc';  Risk='Safe';    Desc='Sets wuauserv to Automatic and starts it' },
-    @{ Key='EnableBits';      Category='Services';   Name='Enable BITS';                Risk='Safe';    Desc='Sets BITS to Automatic and starts it' },
-    @{ Key='EnableDefender';  Category='Services';   Name='Enable Windows Defender';    Risk='Safe';    Desc='Restores WinDefend service, real-time protection, and tamper protection (UAC/admin required)' },
+    @{ Key='EnableWuauserv';  Category='Services';   Name='Enable Windows Update Svc';  Risk='Safe';    Description='Sets wuauserv to Automatic and starts it' },
+    @{ Key='EnableBits';      Category='Services';   Name='Enable BITS';                Risk='Safe';    Description='Sets BITS to Automatic and starts it' },
+    @{ Key='EnableDefender';  Category='Services';   Name='Enable Windows Defender';    Risk='Safe';    Description='Restores WinDefend service, real-time protection, and tamper protection (UAC/admin required)' },
     # Browsers
-    @{ Key='ResetEdge';       Category='Browsers';   Name='Reset Microsoft Edge';       Risk='Caution'; Desc='Clears Edge cache, cookies, and local state' },
-    @{ Key='ResetChrome';     Category='Browsers';   Name='Reset Google Chrome';        Risk='Caution'; Desc='Clears Chrome cache and local state' },
-    @{ Key='FixBrowserAssoc'; Category='Browsers';   Name='Fix Browser File Associations'; Risk='Caution'; Desc='Resets .htm/.html/.url file associations' },
+    @{ Key='ResetEdge';       Category='Browsers';   Name='Reset Microsoft Edge';       Risk='Caution'; Description='Clears Edge cache, cookies, and local state' },
+    @{ Key='ResetChrome';     Category='Browsers';   Name='Reset Google Chrome';        Risk='Caution'; Description='Clears Chrome cache and local state' },
+    @{ Key='FixBrowserAssoc'; Category='Browsers';   Name='Fix Browser File Associations'; Risk='Caution'; Description='Resets .htm/.html/.url file associations' },
     # Performance
-    @{ Key='DisableAnimations'; Category='Performance'; Name='Disable UI Animations';  Risk='Safe';    Desc='Turns off window/menu animations for speed' },
-    @{ Key='CleanStartMenu';  Category='Performance'; Name='Clean Start Menu Cache';    Risk='Safe';    Desc='Removes broken start menu entries' },
-    @{ Key='SetHighPerf';     Category='Performance'; Name='Set High Performance Plan'; Risk='Safe';    Desc='Switches power plan to High Performance' }
+    @{ Key='DisableAnimations'; Category='Performance'; Name='Disable UI Animations';  Risk='Safe';    Description='Turns off window/menu animations for speed' },
+    @{ Key='CleanStartMenu';  Category='Performance'; Name='Clean Start Menu Cache';    Risk='Safe';    Description='Removes broken start menu entries' },
+    @{ Key='SetHighPerf';     Category='Performance'; Name='Set High Performance Plan'; Risk='Safe';    Description='Switches power plan to High Performance' }
 )
 
 function New-FixResult {
