@@ -474,28 +474,43 @@ function Invoke-HealthCheck_driver_signature_audit {
                 }
             }
 
-            # Shared allowlist with CST rules.json (stock Windows + known security products).
+            # Shared allowlist with CST rules.json (stock Windows + known security products),
+            # plus dynamic Authenticode verification for Microsoft-signed inbox/ADK minifilters.
             $allowFilters = @(Get-CdeDriverFilterAllowlistNames)
-            $unexpectedFilters = [System.Collections.Generic.List[string]]::new()
+            $unexpectedFilters = [System.Collections.Generic.List[object]]::new()
             try {
                 $fltOut = & fltmc.exe filters 2>&1 | Out-String
                 foreach ($line in ($fltOut -split "`r?`n")) {
                     if ($line -match '^\s*Filter\s+Name' -or $line -match '^-{3,}' -or [string]::IsNullOrWhiteSpace($line)) { continue }
                     if ($line -match '^\s*(\S+)\s+\d+') {
                         $fname = $Matches[1]
-                        if (-not (Test-CdeDriverFilterAllowlisted -FilterName $fname -Allowlist $allowFilters)) {
-                            $unexpectedFilters.Add($fname) | Out-Null
-                        }
+                        if (Test-CdeDriverFilterAllowlisted -FilterName $fname -Allowlist $allowFilters) { continue }
+                        $sigCheck = Test-CdeDriverFilterMicrosoftSigned -FilterName $fname
+                        if ($sigCheck.IsMicrosoftSigned) { continue }
+                        $unexpectedFilters.Add([PSCustomObject]@{
+                            Name     = $fname
+                            SigCheck = $sigCheck
+                        }) | Out-Null
                     }
                 }
             } catch { }
 
-            foreach ($fname in $unexpectedFilters) {
+            foreach ($uf in $unexpectedFilters) {
+                $ev = [System.Collections.Generic.List[string]]::new()
+                $ev.Add("fltmc filter: $($uf.Name)") | Out-Null
+                if (-not [string]::IsNullOrWhiteSpace($uf.SigCheck.ResolvedPath)) {
+                    $ev.Add("Path: $($uf.SigCheck.ResolvedPath)") | Out-Null
+                }
+                if (-not [string]::IsNullOrWhiteSpace($uf.SigCheck.SignerSubject)) {
+                    $ev.Add("Signer: $($uf.SigCheck.SignerSubject)") | Out-Null
+                } elseif ($uf.SigCheck.Exists) {
+                    $ev.Add('Signature: Not valid / unsigned') | Out-Null
+                }
                 $findings += New-HealthFinding -FindingId 'driver.filter.unexpected' -CheckId 'driver_signature_audit' `
-                    -Subject $fname -Finding 'Unexpected minifilter' `
+                    -Subject $uf.Name -Finding 'Unexpected minifilter' `
                     -Impact 'Unexpected filter drivers warrant review; wording is inventory, not confirmed rootkit.' `
                     -Severity 'Medium' -Confidence 60 -Status 'Warn' `
-                    -Evidence @("fltmc filter: $fname") `
+                    -Evidence @($ev) `
                     -Recommendations @('Verify the filter publisher and unload only if confirmed malicious.') `
                     -Actions @(@{ type = 'cde'; target = 'CoreSecurityTool'; label = 'Core Security Tool' })
             }
@@ -512,14 +527,16 @@ function Invoke-HealthCheck_driver_signature_audit {
                     foreach ($propName in @('UpperFilters', 'LowerFilters')) {
                         if (-not $item.PSObject.Properties[$propName]) { continue }
                         foreach ($val in @($item.$propName)) {
-                            if ([string]::IsNullOrWhiteSpace([string]$val)) { continue }
-                            if (-not (Test-CdeDriverFilterAllowlisted -FilterName ([string]$val) -Allowlist $allowFilters)) {
-                                $findings += New-HealthFinding -FindingId 'driver.filter.registry' -CheckId 'driver_signature_audit' `
-                                    -Subject ([string]$val) -Finding ("Unexpected $propName entry") `
-                                    -Impact 'Unexpected class filter registrations should be reviewed.' `
-                                    -Severity 'Medium' -Confidence 58 -Status 'Warn' `
-                                    -Evidence @("$key\$propName = $val")
-                            }
+                            $fval = [string]$val
+                            if ([string]::IsNullOrWhiteSpace($fval)) { continue }
+                            if (Test-CdeDriverFilterAllowlisted -FilterName $fval -Allowlist $allowFilters) { continue }
+                            $sigCheck = Test-CdeDriverFilterMicrosoftSigned -FilterName $fval
+                            if ($sigCheck.IsMicrosoftSigned) { continue }
+                            $findings += New-HealthFinding -FindingId 'driver.filter.registry' -CheckId 'driver_signature_audit' `
+                                -Subject $fval -Finding ("Unexpected $propName entry") `
+                                -Impact 'Unexpected class filter registrations should be reviewed.' `
+                                -Severity 'Medium' -Confidence 58 -Status 'Warn' `
+                                -Evidence @("$key\$propName = $fval")
                         }
                     }
                 } catch { }
@@ -1141,6 +1158,95 @@ Critical-trip-like messages: $criticalish
     Write-Log "Thermal: $($r.Steps[-1].Detail)"
 }
 
+function Group-ReliabilityFailureRecords {
+    <#
+    .SYNOPSIS
+      Group Win32_ReliabilityRecords by failure source/bugcheck and deduplicate paired same-process crash bursts.
+    #>
+    param(
+        [object[]]$Records = @(),
+        [int]$BurstWindowSeconds = 15
+    )
+
+    $parsed = [System.Collections.Generic.List[object]]::new()
+    foreach ($rec in @($Records)) {
+        if ($null -eq $rec) { continue }
+        $tg = $rec.TimeGenerated
+        if ($tg -is [string]) {
+            try { $tg = [System.Management.ManagementDateTimeConverter]::ToDateTime($tg) } catch { $tg = $null }
+        }
+        if (-not $tg) { continue }
+
+        $msg = [string]$rec.Message
+        $src = [string]$rec.SourceName
+        $prod = [string]$rec.ProductName
+        $label = ''
+        if ($msg -match '(?i)bugcheck was:\s*(0x[0-9a-fA-F]+)') {
+            $label = "Windows BugCheck $($Matches[1].ToLowerInvariant())"
+        } elseif ($src -match '(?i)BugCheck') {
+            $label = 'Windows BugCheck'
+        } elseif (-not [string]::IsNullOrWhiteSpace($prod)) {
+            $label = $prod.Trim()
+        } elseif (-not [string]::IsNullOrWhiteSpace($src)) {
+            $label = $src.Trim()
+        } else {
+            $label = "Event $([int]$rec.EventIdentifier)"
+        }
+
+        $parsed.Add([PSCustomObject]@{
+            TimeGenerated = [datetime]$tg
+            Label         = $label
+        }) | Out-Null
+    }
+
+    $sorted = @($parsed | Sort-Object TimeGenerated)
+    $lastSeenByLabel = @{}
+    $groups = @{}
+
+    foreach ($item in $sorted) {
+        $lbl = $item.Label
+        if (-not $groups.ContainsKey($lbl)) {
+            $groups[$lbl] = [PSCustomObject]@{
+                Label         = $lbl
+                DistinctCount = 0
+                RawCount      = 0
+                Latest        = $item.TimeGenerated
+            }
+        }
+
+        $g = $groups[$lbl]
+        $g.RawCount++
+        if ($item.TimeGenerated -gt $g.Latest) { $g.Latest = $item.TimeGenerated }
+
+        $isBurstDup = $false
+        if ($lastSeenByLabel.ContainsKey($lbl)) {
+            $delta = ($item.TimeGenerated - $lastSeenByLabel[$lbl]).TotalSeconds
+            if ($delta -ge 0 -and $delta -le $BurstWindowSeconds) {
+                $isBurstDup = $true
+            }
+        }
+
+        if (-not $isBurstDup) {
+            $g.DistinctCount++
+            $lastSeenByLabel[$lbl] = $item.TimeGenerated
+        }
+    }
+
+    $groupedList = @($groups.Values | Sort-Object @{ Expression = 'DistinctCount'; Descending = $true }, @{ Expression = 'Latest'; Descending = $true })
+    $distinctTotal = 0
+    $rawTotal = 0
+    foreach ($g in $groupedList) {
+        $distinctTotal += $g.DistinctCount
+        $rawTotal += $g.RawCount
+    }
+
+    return [PSCustomObject]@{
+        DistinctCount = $distinctTotal
+        RawCount      = $rawTotal
+        Groups        = $groupedList
+    }
+}
+
 function Invoke-HealthCheck_reliability_monitor {
     param($r)
     if ((Get-EnvironmentMode) -ne 'Windows') { return }
@@ -1171,23 +1277,43 @@ function Invoke-HealthCheck_reliability_monitor {
                 })
         } catch { }
 
-        $recCount = $records.Count
+        $grouped = Group-ReliabilityFailureRecords -Records $records
+        $recCount = $grouped.DistinctCount
+        $rawCount = $grouped.RawCount
+
         $detailParts = @()
         if ($null -ne $index) { $detailParts += "Stability index $index" }
-        $detailParts += "$recCount critical-ish reliability records (7d)"
+        $countText = if ($rawCount -gt $recCount) {
+            "$recCount failure(s) ($rawCount raw records) (7d)"
+        } else {
+            "$recCount failure(s) (7d)"
+        }
+        $detailParts += $countText
         $detail = $detailParts -join ' | '
 
-        $output = @"
-Reliability Monitor
--------------------
-Stability index: $(if ($null -ne $index) { $index } else { 'n/a' })
-Critical-ish records (7d): $recCount
-"@
+        $topLines = @($grouped.Groups | Select-Object -First 5 | ForEach-Object {
+            "$($_.DistinctCount)x $($_.Label) (latest $($_.Latest.ToString('yyyy-MM-dd HH:mm')))"
+        })
+
+        $outputLines = [System.Collections.Generic.List[string]]::new()
+        $outputLines.Add('Reliability Monitor') | Out-Null
+        $outputLines.Add('-------------------') | Out-Null
+        $outputLines.Add("Stability index: $(if ($null -ne $index) { $index } else { 'n/a' })") | Out-Null
+        $outputLines.Add("Distinct failures (7d): $recCount (raw records: $rawCount)") | Out-Null
+        if ($topLines.Count -gt 0) {
+            $outputLines.Add('Top failure sources (7d):') | Out-Null
+            foreach ($tl in $topLines) { $outputLines.Add("  - $tl") | Out-Null }
+        }
+        $output = $outputLines -join [Environment]::NewLine
+
+        $evidence = [System.Collections.Generic.List[string]]::new()
+        $evidence.Add($detail) | Out-Null
+        foreach ($tl in $topLines) { $evidence.Add($tl) | Out-Null }
 
         $findings = @()
         $status = 'Pass'
 
-        if ($null -eq $index -and $recCount -eq 0) {
+        if ($null -eq $index -and $rawCount -eq 0) {
             $status = 'Incomplete'
             $findings += New-HealthFinding -FindingId 'health.reliability.unavailable' -CheckId 'reliability_monitor' `
                 -Finding 'Reliability WMI data unavailable' `
@@ -1202,7 +1328,7 @@ Critical-ish records (7d): $recCount
                 -Finding 'Reliability Monitor indicates instability' `
                 -Impact 'Frequent failures reduce Stability Index; investigate crashes and application faults.' `
                 -Severity $sev -Confidence 78 -Status 'Warn' -Classification 'SingleSignal' `
-                -Evidence @($detail) `
+                -Evidence @($evidence) `
                 -Recommendations @('Open Reliability Monitor (perfmon /rel) for the failure timeline.', 'Cross-check Critical Events (7 days).') `
                 -Actions @(
                     @{ type = 'shell'; target = 'perfmon /rel'; label = 'Reliability Monitor' },
@@ -1213,7 +1339,7 @@ Critical-ish records (7d): $recCount
             $findings += New-HealthFinding -FindingId 'health.reliability.ok' -CheckId 'reliability_monitor' `
                 -Finding 'Reliability metrics look stable' `
                 -Impact 'No strong instability signal from RAC metrics in the last 7 days.' `
-                -Severity 'Info' -Confidence 75 -Status 'Pass' -Evidence @($detail)
+                -Severity 'Info' -Confidence 75 -Status 'Pass' -Evidence @($evidence)
         }
 
         $step = @{

@@ -203,8 +203,141 @@ function Resolve-ComHandlerServerPath {
         }
     }
 
+    $packaged = Resolve-PackagedComServerPath -ClassId $normalized
+    if ($packaged -and $packaged.Exists) {
+        return $packaged
+    }
+    if ($packaged -and -not [string]::IsNullOrWhiteSpace($packaged.Detail) -and [string]::IsNullOrWhiteSpace($result.Detail)) {
+        $result.ServerKind = $packaged.ServerKind
+        $result.ServerPath = $packaged.ServerPath
+        $result.Detail = $packaged.Detail
+    }
+
     if ([string]::IsNullOrWhiteSpace($result.Detail)) {
         $result.Detail = "COM ClassId not found in registry: $normalized"
+    }
+
+    return $result
+}
+
+function Get-PackagedComInstallLocation {
+    <#
+    .SYNOPSIS
+        Resolve and cache the InstallLocation for an Appx/MSIX PackageFullName.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$PackageFullName
+    )
+
+    if (-not $script:PackagedComInstallLocationCache) {
+        $script:PackagedComInstallLocationCache = @{}
+    }
+    if ($script:PackagedComInstallLocationCache.ContainsKey($PackageFullName)) {
+        return [string]$script:PackagedComInstallLocationCache[$PackageFullName]
+    }
+
+    $installLocation = ''
+    $pkgName = ($PackageFullName -split '_', 2)[0]
+    if (-not [string]::IsNullOrWhiteSpace($pkgName) -and (Get-Command -Name Get-AppxPackage -ErrorAction SilentlyContinue)) {
+        try {
+            $pkgs = @(Get-AppxPackage -Name $pkgName -ErrorAction SilentlyContinue)
+            $exact = $pkgs | Where-Object { $_.PackageFullName -eq $PackageFullName } | Select-Object -First 1
+            if ($exact -and -not [string]::IsNullOrWhiteSpace([string]$exact.InstallLocation)) {
+                $installLocation = [string]$exact.InstallLocation
+            }
+        } catch { }
+    }
+
+    $script:PackagedComInstallLocationCache[$PackageFullName] = $installLocation
+    return $installLocation
+}
+
+function Resolve-PackagedComServerPath {
+    <#
+    .SYNOPSIS
+        Resolve a PackagedCom CLSID (HKLM/HKCU\SOFTWARE\Classes\PackagedCom) to its DLL or EXE path.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ClassId
+    )
+
+    $result = [PSCustomObject]@{
+        ClassId    = $ClassId
+        ServerPath = ''
+        ServerKind = ''
+        Exists     = $false
+        Detail     = ''
+    }
+
+    $packagedRoots = @(
+        'HKLM:\SOFTWARE\Classes\PackagedCom',
+        'HKCU:\SOFTWARE\Classes\PackagedCom'
+    )
+
+    foreach ($pkgRoot in $packagedRoots) {
+        $indexKey = Join-Path $pkgRoot "ClassIndex\$ClassId"
+        if (-not (Test-Path -LiteralPath $indexKey -ErrorAction SilentlyContinue)) {
+            continue
+        }
+
+        $pkgKeys = @(Get-ChildItem -LiteralPath $indexKey -ErrorAction SilentlyContinue | Sort-Object PSChildName -Descending)
+        foreach ($pkgKey in $pkgKeys) {
+            $pkgFullName = [string]$pkgKey.PSChildName
+            if ([string]::IsNullOrWhiteSpace($pkgFullName)) { continue }
+
+            $installLocation = Get-PackagedComInstallLocation -PackageFullName $pkgFullName
+            if ([string]::IsNullOrWhiteSpace($installLocation) -or -not (Test-Path -LiteralPath $installLocation -PathType Container -ErrorAction SilentlyContinue)) {
+                continue
+            }
+
+            $classKey = Join-Path $pkgRoot "Package\$pkgFullName\Class\$ClassId"
+            if (-not (Test-Path -LiteralPath $classKey -ErrorAction SilentlyContinue)) {
+                continue
+            }
+
+            try {
+                $classProps = Get-ItemProperty -LiteralPath $classKey -ErrorAction Stop
+            } catch {
+                continue
+            }
+
+            $relTarget = ''
+            $kind = ''
+            if ($classProps.PSObject.Properties['DllPath'] -and -not [string]::IsNullOrWhiteSpace([string]$classProps.DllPath)) {
+                $relTarget = [string]$classProps.DllPath
+                $kind = 'PackagedCom (Inproc)'
+            }
+            elseif ($classProps.PSObject.Properties['ServerId'] -and $null -ne $classProps.ServerId -and -not [string]::IsNullOrWhiteSpace([string]$classProps.ServerId)) {
+                $serverKey = Join-Path $pkgRoot "Package\$pkgFullName\Server\$($classProps.ServerId)"
+                if (Test-Path -LiteralPath $serverKey -ErrorAction SilentlyContinue) {
+                    try {
+                        $serverProps = Get-ItemProperty -LiteralPath $serverKey -ErrorAction Stop
+                        if ($serverProps.PSObject.Properties['Executable'] -and -not [string]::IsNullOrWhiteSpace([string]$serverProps.Executable)) {
+                            $relTarget = [string]$serverProps.Executable
+                            $kind = 'PackagedCom (OutOfProc)'
+                        }
+                    } catch { }
+                }
+            }
+
+            if ([string]::IsNullOrWhiteSpace($relTarget)) { continue }
+
+            $expanded = Expand-WindowsImagePath -Path $relTarget.Trim().Trim('"')
+            $candidate = if ([System.IO.Path]::IsPathRooted($expanded)) { $expanded } else { Join-Path $installLocation $expanded }
+
+            $result.ServerKind = $kind
+            $result.ServerPath = $candidate
+            if (Test-Path -LiteralPath $candidate -PathType Leaf -ErrorAction SilentlyContinue) {
+                try {
+                    $result.ServerPath = (Get-Item -LiteralPath $candidate -ErrorAction Stop).FullName
+                } catch { }
+                $result.Exists = $true
+                $result.Detail = "PackagedCom ($pkgFullName)"
+                return $result
+            }
+
+            $result.Detail = "PackagedCom target missing: $candidate"
+        }
     }
 
     return $result

@@ -50,6 +50,20 @@ else {
     Write-Host 'SKIP live invoke (not Windows)'
 }
 
+# Grouping + paired crash-burst deduplication
+$t0 = Get-Date '2026-11-12 11:02:28'
+$mockRecs = @(
+    [PSCustomObject]@{ TimeGenerated = $t0; SourceName = 'Application Error'; EventIdentifier = 1000; ProductName = 'CropperKeeper.exe'; Message = '0xe0434352' },
+    [PSCustomObject]@{ TimeGenerated = $t0.AddSeconds(3); SourceName = 'Application Error'; EventIdentifier = 1000; ProductName = 'CropperKeeper.exe'; Message = '0xc000041d' },
+    [PSCustomObject]@{ TimeGenerated = $t0.AddHours(12); SourceName = 'Application Error'; EventIdentifier = 1000; ProductName = 'CropperKeeper.exe'; Message = '0xe0434352' },
+    [PSCustomObject]@{ TimeGenerated = $t0.AddHours(12).AddSeconds(3); SourceName = 'Application Error'; EventIdentifier = 1000; ProductName = 'CropperKeeper.exe'; Message = '0xc000041d' },
+    [PSCustomObject]@{ TimeGenerated = $t0.AddDays(4); SourceName = 'Microsoft-Windows-WER-SystemErrorReporting'; EventIdentifier = 1001; ProductName = 'Windows'; Message = 'The computer has rebooted from a bugcheck.  The bugcheck was: 0x0000009f (0x4).' }
+)
+$grouped = Group-ReliabilityFailureRecords -Records $mockRecs
+Assert-True -Name 'Grouped raw count is 5' -Condition ($grouped.RawCount -eq 5)
+Assert-True -Name 'Grouped distinct count deduplicates paired bursts to 3' -Condition ($grouped.DistinctCount -eq 3)
+Assert-True -Name 'BugCheck label extracted' -Condition (@($grouped.Groups | Where-Object { $_.Label -eq 'Windows BugCheck 0x0000009f' }).Count -eq 1)
+
 if ($failures.Count -gt 0) {
     Write-Host "Test-BatteryThermalReliabilityChecks: FAIL ($($failures.Count))"
     foreach ($f in $failures) { Write-Host "  - $f" }
