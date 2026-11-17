@@ -39,6 +39,7 @@ function Test-SystemHealthPreset {
         exit 1
     }
 
+    $global:LASTEXITCODE = 0
     $outputLines = @(& $scriptPath -Preset $PresetName 2>&1 | ForEach-Object { "$_" })
     if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         Write-Error "SystemHealthCheck -Preset $PresetName failed with exit code $LASTEXITCODE"

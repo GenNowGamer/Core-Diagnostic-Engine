@@ -24,7 +24,7 @@ $woDir = Join-Path $runtimeDir 'WorkOrders'
 New-Item -ItemType Directory -Force -Path $woDir | Out-Null
 
 try {
-    $caseId = 'CDE-TEST-00001'
+    $caseId = 'CDE-20261117-00001'
     $order = [PSCustomObject]@{
         CaseId             = $caseId
         Sequence           = 1

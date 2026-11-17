@@ -2,6 +2,8 @@
 $ErrorActionPreference = 'Stop'
 $toolkitRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 Import-Module (Join-Path $toolkitRoot 'Scripts\Core\Toolkit.Core.psm1') -Force -DisableNameChecking
+. (Join-Path $toolkitRoot 'Scripts\Core\HealthFindings.ps1')
+. (Join-Path $toolkitRoot 'Scripts\Core\EventFindingClusters.ps1')
 . (Join-Path $toolkitRoot 'Scripts\Core\HealthChecks.ps1')
 . (Join-Path $toolkitRoot 'Scripts\Core\SystemAuditChecks.ps1')
 . (Join-Path $toolkitRoot 'Scripts\Core\SecurityAuditChecks.ps1')

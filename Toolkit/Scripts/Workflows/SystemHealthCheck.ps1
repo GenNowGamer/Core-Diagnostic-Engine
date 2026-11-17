@@ -178,6 +178,7 @@ try {
     Normalize-WorkflowStepOutput -WorkflowResult $workflow
     $workflow | ConvertTo-Json -Depth 12
     Generate-Report -WorkflowResult $workflow | Out-Null
+    $global:LASTEXITCODE = 0
 } catch {
     Write-Error "SystemHealthCheck workflow failed: $($_.Exception.Message)"
     exit 1

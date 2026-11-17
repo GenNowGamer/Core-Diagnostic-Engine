@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 $testsRoot = Split-Path $MyInvocation.MyCommand.Path
 $coreDir = Join-Path $testsRoot '..\Core'
 Import-Module (Join-Path $coreDir 'Toolkit.Core.psm1') -Force -DisableNameChecking
+. (Join-Path $coreDir 'HealthFindings.ps1')
 . (Join-Path $coreDir 'HealthChecks.ps1')
 
 function Test-HealthStepOutput {

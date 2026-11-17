@@ -266,8 +266,15 @@ function Invoke-CoreSecurityTool {
             Write-Log ("WinPE CST scan root: {0}" -f $winPeScanRoot)
         }
 
+        if (-not (Get-Command Test-ToolkitIsElevated -ErrorAction SilentlyContinue)) {
+            $elevMod = Join-Path $PSScriptRoot 'Toolkit.Elevation.psm1'
+            if (Test-Path -LiteralPath $elevMod -PathType Leaf) {
+                Import-Module $elevMod -Force -DisableNameChecking -ErrorAction SilentlyContinue
+            }
+        }
+
         $result = $null
-        if (-not (Test-ToolkitIsElevated) -and (Get-Command Invoke-ToolkitElevatedRelay -ErrorAction SilentlyContinue)) {
+        if ((Get-Command Test-ToolkitIsElevated -ErrorAction SilentlyContinue) -and (-not (Test-ToolkitIsElevated)) -and (Get-Command Invoke-ToolkitElevatedRelay -ErrorAction SilentlyContinue)) {
             $relayParts = [System.Collections.Generic.List[string]]::new()
             $relayParts.Add("-Mode '$($CstMode.Replace("'", "''"))'") | Out-Null
             $relayParts.Add("-DetectionScope '$($CstDetectionScope.Replace("'", "''"))'") | Out-Null

@@ -313,11 +313,12 @@ function Resolve-OneDriveStaleInstallPath {
 
     # C:\Program Files\Microsoft OneDrive\<version>\OneDriveLauncher.exe
     # C:\Users\...\AppData\Local\Microsoft\OneDrive\<version>\...
-    if ($Path -notmatch '(?i)^(.*?\\Microsoft OneDrive)\\([^\\]+)\\(.+)$') {
+    $cleanPath = $Path.Trim().Trim('"')
+    if ($cleanPath -notmatch '(?i)^(.*?\\Microsoft OneDrive)\\([^\\]+)\\(.+)$') {
         return $null
     }
 
-    $root = $Matches[1]
+    $root = $Matches[1].Trim().Trim('"')
     $relative = $Matches[3]
     $leaf = Split-Path -Path $relative -Leaf
 
@@ -328,7 +329,14 @@ function Resolve-OneDriveStaleInstallPath {
             (Join-Path ${env:ProgramFiles(x86)} 'Microsoft OneDrive'),
             (Join-Path $env:LOCALAPPDATA 'Microsoft OneDrive')
         )) {
-        if (-not [string]::IsNullOrWhiteSpace($candidateRoot) -and (Test-Path -LiteralPath $candidateRoot -PathType Container -ErrorAction SilentlyContinue)) {
+        if ([string]::IsNullOrWhiteSpace($candidateRoot)) { continue }
+        $isContainer = $false
+        try {
+            $isContainer = Test-Path -LiteralPath $candidateRoot -PathType Container -ErrorAction SilentlyContinue
+        } catch {
+            $isContainer = $false
+        }
+        if ($isContainer) {
             if ($roots -notcontains $candidateRoot) {
                 $roots.Add($candidateRoot) | Out-Null
             }
