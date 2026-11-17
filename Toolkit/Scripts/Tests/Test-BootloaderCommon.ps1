@@ -79,6 +79,26 @@ try {
 
     $selected = Resolve-BcdBackupSelection -Inventory $inventory -Kind 'EFI' -PreselectedPath $efiBackup
     Assert-True -Name 'Resolve EFI backup path' -Condition ($selected.FullName -eq $efiBackup)
+
+    # Regression: Merge-BootloaderChildWorkflow must lazy-load HealthCheckOrchestrator.ps1 without $MyInvocation.MyCommand.Path being null
+    $childScript = Join-Path $tempRoot 'DummyChild.ps1'
+    Set-Content -LiteralPath $childScript -Value @'
+[PSCustomObject]@{
+    WorkflowName = 'DummyChild'
+    Steps        = @([PSCustomObject]@{ Name = 'ChildStep'; Status = 'Pass'; Output = 'ok' })
+} | ConvertTo-Json -Depth 4
+'@ -Encoding UTF8
+    $lazyCmd = @"
+`$ErrorActionPreference = 'Stop'
+Import-Module '$coreModule' -Force -DisableNameChecking
+. '$commonScript'
+`$r = [PSCustomObject]@{ Steps = [System.Collections.Generic.List[object]]::new() }
+Merge-BootloaderChildWorkflow -Result `$r -ScriptPath '$childScript' -GroupName 'DummyGroup'
+if (`$r.Steps.Count -ne 1 -or `$r.Steps[0].Name -ne 'ChildStep') { throw 'Merge failed' }
+Write-Output 'LAZY_MERGE_OK'
+"@
+    $lazyOut = & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $lazyCmd 2>&1
+    Assert-True -Name 'Merge-BootloaderChildWorkflow lazy-loads orchestrator' -Condition ($LASTEXITCODE -eq 0 -and (($lazyOut -join "`n") -match 'LAZY_MERGE_OK')) -Detail ($lazyOut -join ' ')
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

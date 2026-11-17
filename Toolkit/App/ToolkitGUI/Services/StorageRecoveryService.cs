@@ -348,5 +348,186 @@ namespace ToolkitGUI.Services
 
             WorkOrderService.TryRecordWorkflowReport(wfReport, jsonPath, File.Exists(pdfPath) ? pdfPath : null);
         }
+
+        public sealed class BitLockerStatusInfo
+        {
+            public bool ToolAvailable { get; init; }
+            public string DriveLetter { get; init; } = string.Empty;
+            public string KeyProtectorId { get; init; } = string.Empty;
+            public bool IsUnlocked { get; init; }
+            public string StatusMessage { get; init; } = string.Empty;
+        }
+
+        public sealed class BitLockerUnlockResult
+        {
+            public bool Succeeded { get; init; }
+            public string DriveLetter { get; init; } = string.Empty;
+            public string Message { get; init; } = string.Empty;
+        }
+
+        public static string? NormalizeBitLockerRecoveryKey(string? rawInput)
+        {
+            if (string.IsNullOrWhiteSpace(rawInput)) return null;
+            var digits = new string(rawInput.Where(char.IsDigit).ToArray());
+            if (digits.Length != 48) return null;
+
+            var groups = new string[8];
+            for (int i = 0; i < 8; i++)
+                groups[i] = digits.Substring(i * 6, 6);
+            return string.Join("-", groups);
+        }
+
+        public static async Task<BitLockerStatusInfo> QueryBitLockerStatusAsync(int diskNumber, int partitionNumber)
+        {
+            string manageBde = Path.Combine(Environment.SystemDirectory, "manage-bde.exe");
+            if (!File.Exists(manageBde))
+            {
+                return new BitLockerStatusInfo
+                {
+                    ToolAvailable = false,
+                    StatusMessage = "BitLocker unlock tool (manage-bde.exe) is not present in this WinPE image."
+                };
+            }
+
+            string letter = await GetPartitionDriveLetterAsync(diskNumber, partitionNumber).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(letter))
+            {
+                return new BitLockerStatusInfo
+                {
+                    ToolAvailable = true,
+                    StatusMessage = "No drive letter assigned yet. Enter your 48-digit recovery key and click Unlock Drive — CDE will assign a drive letter automatically."
+                };
+            }
+
+            string keyId = await GetBitLockerRecoveryKeyIdAsync(manageBde, letter).ConfigureAwait(false);
+            var (_, statusOut, _) = await RunProcessCaptureAsync(manageBde, $"-status {letter}:").ConfigureAwait(false);
+            bool unlocked = statusOut.Contains("Lock Status:", StringComparison.OrdinalIgnoreCase)
+                && statusOut.Contains("Unlocked", StringComparison.OrdinalIgnoreCase);
+
+            string msg = unlocked
+                ? $"Drive {letter}: is already unlocked and accessible."
+                : $"Drive {letter}: is locked. Enter the 48-digit recovery key to unlock it.";
+
+            return new BitLockerStatusInfo
+            {
+                ToolAvailable = true,
+                DriveLetter = letter,
+                KeyProtectorId = keyId,
+                IsUnlocked = unlocked,
+                StatusMessage = msg
+            };
+        }
+
+        public static async Task<BitLockerUnlockResult> UnlockBitLockerPartitionAsync(
+            int diskNumber,
+            int partitionNumber,
+            string rawRecoveryKey)
+        {
+            string manageBde = Path.Combine(Environment.SystemDirectory, "manage-bde.exe");
+            if (!File.Exists(manageBde))
+            {
+                return new BitLockerUnlockResult
+                {
+                    Succeeded = false,
+                    Message = "BitLocker unlock tool (manage-bde.exe) is not available in this WinPE environment."
+                };
+            }
+
+            string? formattedKey = NormalizeBitLockerRecoveryKey(rawRecoveryKey);
+            if (formattedKey == null)
+            {
+                return new BitLockerUnlockResult
+                {
+                    Succeeded = false,
+                    Message = "Please enter a valid 48-digit BitLocker recovery key (with or without dashes)."
+                };
+            }
+
+            string letter = await GetPartitionDriveLetterAsync(diskNumber, partitionNumber).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(letter))
+            {
+                letter = await AssignDriveLetterToPartitionAsync(diskNumber, partitionNumber).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(letter))
+                {
+                    return new BitLockerUnlockResult
+                    {
+                        Succeeded = false,
+                        Message = $"Could not assign a drive letter to Disk {diskNumber}, Partition {partitionNumber}."
+                    };
+                }
+            }
+
+            var (exitCode, stdout, stderr) = await RunProcessCaptureAsync(
+                manageBde,
+                $"-unlock {letter}: -RecoveryPassword {formattedKey}").ConfigureAwait(false);
+
+            string combined = string.Join(Environment.NewLine, new[] { stdout, stderr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
+            if (exitCode == 0)
+            {
+                return new BitLockerUnlockResult
+                {
+                    Succeeded = true,
+                    DriveLetter = letter,
+                    Message = $"Drive {letter}: unlocked successfully! You can now browse or copy files from {letter}:\\."
+                };
+            }
+
+            return new BitLockerUnlockResult
+            {
+                Succeeded = false,
+                DriveLetter = letter,
+                Message = string.IsNullOrWhiteSpace(combined)
+                    ? $"manage-bde exited with code {exitCode} while unlocking {letter}:."
+                    : combined
+            };
+        }
+
+        private static async Task<string> GetPartitionDriveLetterAsync(int diskNumber, int partitionNumber)
+        {
+            string script = $"$p = Get-Partition -DiskNumber {diskNumber} -PartitionNumber {partitionNumber} -ErrorAction SilentlyContinue; if ($p -and $p.DriveLetter) {{ $p.DriveLetter }}";
+            var (_, stdout, _) = await RunProcessCaptureAsync("powershell.exe", $"-NoProfile -ExecutionPolicy Bypass -Command \"{script}\"").ConfigureAwait(false);
+            string trimmed = stdout.Trim();
+            return trimmed.Length == 1 && char.IsLetter(trimmed[0]) ? trimmed.ToUpperInvariant() : string.Empty;
+        }
+
+        private static async Task<string> AssignDriveLetterToPartitionAsync(int diskNumber, int partitionNumber)
+        {
+            string script = $"$p = Get-Partition -DiskNumber {diskNumber} -PartitionNumber {partitionNumber} -ErrorAction Stop; $p | Add-PartitionAccessPath -AssignDriveLetter -ErrorAction Stop; $p2 = Get-Partition -DiskNumber {diskNumber} -PartitionNumber {partitionNumber}; if ($p2.DriveLetter) {{ $p2.DriveLetter }}";
+            var (code, stdout, _) = await RunProcessCaptureAsync("powershell.exe", $"-NoProfile -ExecutionPolicy Bypass -Command \"{script}\"").ConfigureAwait(false);
+            if (code != 0) return string.Empty;
+            string trimmed = stdout.Trim();
+            return trimmed.Length == 1 && char.IsLetter(trimmed[0]) ? trimmed.ToUpperInvariant() : string.Empty;
+        }
+
+        private static async Task<string> GetBitLockerRecoveryKeyIdAsync(string manageBdePath, string driveLetter)
+        {
+            var (_, stdout, _) = await RunProcessCaptureAsync(manageBdePath, $"-protectors -get {driveLetter}: -Type RecoveryPassword").ConfigureAwait(false);
+            var match = System.Text.RegularExpressions.Regex.Match(stdout, @"\{[0-9A-Fa-f\-]{36}\}");
+            return match.Success ? match.Value : string.Empty;
+        }
+
+        private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessCaptureAsync(string fileName, string arguments)
+        {
+            return await Task.Run(() =>
+            {
+                using var proc = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = fileName,
+                        Arguments = arguments,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true
+                    }
+                };
+                proc.Start();
+                string stdout = proc.StandardOutput.ReadToEnd();
+                string stderr = proc.StandardError.ReadToEnd();
+                proc.WaitForExit();
+                return (proc.ExitCode, stdout, stderr);
+            }).ConfigureAwait(false);
+        }
     }
 }

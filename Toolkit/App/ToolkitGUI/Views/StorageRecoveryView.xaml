@@ -32,16 +32,16 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="🗄  Storage Recovery — Partition &amp; File System Diagnostics" FontSize="21" FontWeight="Bold"/>
-                        <Border CornerRadius="4" Padding="10,4" Margin="14,0,0,0" VerticalAlignment="Center"
+                <StackPanel Grid.Column="0" Margin="0,0,14,0">
+                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="🗄  Storage Recovery — Partition &amp; File System Diagnostics" FontSize="20" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+                        <Border CornerRadius="4" Padding="10,4" Margin="12,2,0,2" VerticalAlignment="Center"
                                 Background="{Binding OverallVerdictBrush}">
                             <TextBlock Text="{Binding OverallVerdict}" FontSize="11" FontWeight="Bold" Foreground="White"/>
                         </Border>
-                    </StackPanel>
+                    </WrapPanel>
                     <TextBlock Text="Read-only physical disk and image sector inspection, Primary/Backup GPT &amp; NTFS VBR validation, binary metadata snapshots, and guided repairs."
-                               FontSize="12.5" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                               FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Content="💿 S.M.A.R.T. Analyzer" Style="{StaticResource ActionButtonStyle}"
@@ -279,12 +279,13 @@
 
             <!-- TAB 4: METADATA & IMAGING -->
             <TabItem Header="  4. Metadata &amp; Disk Imaging  ">
-                <Grid Margin="14">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*" MinHeight="150"/>
                     </Grid.RowDefinitions>
 
                     <Border Grid.Row="0" Background="#FFF8E6" BorderBrush="#E6C36A" BorderThickness="1" CornerRadius="5" Padding="12" Margin="0,0,0,10">
@@ -353,13 +354,14 @@
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
+                </ScrollViewer>
             </TabItem>
 
             <!-- TAB 5: RECOVERY OPTIONS (GUIDED REPAIR ENGINE) -->
             <TabItem Header="  5. Recovery Options (Guided Repair Engine)  ">
                 <Grid Margin="14">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="380"/>
+                        <ColumnDefinition Width="310"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
@@ -391,14 +393,16 @@
                     </Border>
 
                     <!-- Right: Selected Plan Evidence, Byte Preview & Execution -->
-                    <Grid Grid.Column="1">
+                    <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="*" MinHeight="100"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <Border Grid.Row="0" Background="#F0F6FF" BorderBrush="#B4D2F5" BorderThickness="1" CornerRadius="5" Padding="14" Margin="0,0,0,10">
+                        <StackPanel Grid.Row="0">
+                        <Border Background="#F0F6FF" BorderBrush="#B4D2F5" BorderThickness="1" CornerRadius="5" Padding="14" Margin="0,0,0,10">
                             <StackPanel>
                                 <TextBlock Text="WHY THIS OPERATION IS OFFERED (EVIDENCE EXPLANATION)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AccentBlueBrush}"/>
                                 <TextBlock Text="{Binding SelectedRepairPlan.Title, FallbackValue='No repair plan selected'}" FontSize="15" FontWeight="Bold" Margin="0,4,0,4"/>
@@ -406,6 +410,39 @@
                                 <TextBlock Text="{Binding SelectedRepairPlan.RecommendedNextStep}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AccentGreenBrush}" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
+
+                        <!-- BitLocker Guided Unlock Card (shown when a BitLocker partition is detected) -->
+                        <Border Background="#FFF8E6" BorderBrush="#E6C36A" BorderThickness="1" CornerRadius="5" Padding="12" Margin="0,0,0,10"
+                                Visibility="{Binding HasBitLockerPartition, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <TextBlock Text="🔐 UNLOCK BITLOCKER PARTITION" FontSize="11" FontWeight="Bold" Foreground="#926800"/>
+                                <TextBlock Text="This disk has a BitLocker-encrypted partition. Enter the 48-digit recovery key below to unlock it so you can access or copy files."
+                                           FontSize="12" TextWrapping="Wrap" Margin="0,4,0,8"/>
+                                <WrapPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="Drive Letter:" FontSize="12" FontWeight="SemiBold" Margin="0,0,4,0"/>
+                                    <TextBlock Text="{Binding BitLockerDriveDisplay}" FontSize="12" Margin="0,0,16,0"/>
+                                    <StackPanel Orientation="Horizontal" Visibility="{Binding HasBitLockerKeyId, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="Recovery Key ID:" FontSize="12" FontWeight="SemiBold" Margin="0,0,4,0"/>
+                                        <TextBlock Text="{Binding BitLockerKeyProtectorId}" FontSize="12"/>
+                                    </StackPanel>
+                                </WrapPanel>
+                                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBox Text="{Binding BitLockerRecoveryKey, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="330" Height="28" VerticalContentAlignment="Center" Margin="0,0,10,4"
+                                             ToolTip="Enter the 48-digit BitLocker recovery key (with or without dashes)">
+                                        <TextBox.InputBindings>
+                                            <KeyBinding Key="Return" Command="{Binding UnlockBitLockerCommand}"/>
+                                        </TextBox.InputBindings>
+                                    </TextBox>
+                                    <Button Content="🔓 Unlock Drive" Style="{StaticResource ActionButtonStyle}"
+                                            Command="{Binding UnlockBitLockerCommand}"
+                                            IsEnabled="{Binding CanUnlockBitLocker}"
+                                            Padding="14,6" Margin="0,0,0,4"/>
+                                </WrapPanel>
+                                <TextBlock Text="{Binding BitLockerStatusMessage}" FontSize="11.5" FontWeight="SemiBold" Foreground="#6B4D00" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        </StackPanel>
 
                         <!-- Exact Byte Range Patches & Hex Preview -->
                         <DataGrid Grid.Row="1" ItemsSource="{Binding SelectedPlanPatches}" AutoGenerateColumns="False" IsReadOnly="True"
@@ -425,48 +462,49 @@
                         </DataGrid>
 
                         <!-- Execution Controls (Image Repair + Authorized In-Place Physical Disk Repair) -->
-                        <Border Grid.Row="2" Background="#F8FAFC" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="5" Padding="12">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <Button Grid.Column="0" Content="🛠  Apply Repair to Disk Image (.img)"
+                        <Border Grid.Row="2" Background="#F8FAFC" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="5" Padding="10">
+                            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="🛠  Apply Repair to Disk Image (.img)"
                                         Style="{StaticResource ActionButtonStyle}"
                                         Command="{Binding ApplyRepairToImageCommand}"
                                         IsEnabled="{Binding CanApplySelectedPlanToImage}"
-                                        Padding="16,9" VerticalAlignment="Center" Margin="0,0,18,0"/>
+                                        Padding="14,8" VerticalAlignment="Bottom" Margin="0,4,14,4"/>
 
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <StackPanel Margin="0,0,10,0" VerticalAlignment="Center">
+                                <WrapPanel Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,4,0,4">
+                                    <StackPanel Margin="0,0,10,0" VerticalAlignment="Bottom">
                                         <TextBlock Text="{Binding RequiredConfirmationPhraseHint}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBox Text="{Binding InPlaceConfirmPhrase, UpdateSourceTrigger=PropertyChanged}" Width="220" Height="28" VerticalContentAlignment="Center" Margin="0,2,0,0"
-                                                 ToolTip="Type 'REPAIR DISK N' to authorize in-place metadata write when no clone drive is available"/>
+                                        <TextBox Text="{Binding InPlaceConfirmPhrase, UpdateSourceTrigger=PropertyChanged}" Width="190" Height="28" VerticalContentAlignment="Center" Margin="0,2,0,0"
+                                                 ToolTip="Type 'REPAIR DISK N' to authorize in-place metadata write when no clone drive is available">
+                                            <TextBox.InputBindings>
+                                                <KeyBinding Key="Return" Command="{Binding ApplyRepairInPlacePhysicalCommand}"/>
+                                            </TextBox.InputBindings>
+                                        </TextBox>
                                     </StackPanel>
                                     <Button Content="⚡ Apply In-Place to Physical Disk (With Mandatory Snapshot)"
                                             Style="{StaticResource ActionButtonStyle}"
                                             Command="{Binding ApplyRepairInPlacePhysicalCommand}"
                                             IsEnabled="{Binding CanApplySelectedPlanToPhysicalDisk}"
-                                            Padding="14,9" VerticalAlignment="Bottom"/>
-                                </StackPanel>
-                            </Grid>
+                                            Padding="12,8" VerticalAlignment="Bottom" Margin="0,4,0,0"/>
+                                </WrapPanel>
+                            </WrapPanel>
                         </Border>
                     </Grid>
+                    </ScrollViewer>
                 </Grid>
             </TabItem>
 
             <!-- TAB 6: FILE RECOVERY & EXPORT (NTFS RAW $MFT READER) -->
             <TabItem Header="  6. File Recovery &amp; Export  ">
-                <Grid Margin="14">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*" MinHeight="180"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- Top Scan & Filter Bar -->
-                    <Border Grid.Row="0" Background="#F8FAFC" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="5" Padding="12" Margin="0,0,0,10">
+                    <Border Grid.Row="0" Background="#F8FAFC" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="5" Padding="8" Margin="0,0,0,8">
                         <StackPanel>
                             <TextBlock Text="READ-ONLY FILE BROWSER &amp; EXTRACTOR (NTFS $MFT, FAT32 &amp; exFAT — WORKS ON UNMOUNTED / RAW VOLUMES)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,6"/>
                             <controls:ResponsiveToolbar>
@@ -491,6 +529,15 @@
                                 <Button Content="Clear" Style="{StaticResource ActionButtonStyle}" Command="{Binding ClearSelectedFilesCommand}" Padding="10,6" Margin="0,0,0,6"/>
                             </controls:ResponsiveToolbar>
                             <TextBlock Text="{Binding FileRecoveryStatusText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AccentBlueBrush}" Margin="0,4,0,0"/>
+                            <Border Background="#FFF8E6" BorderBrush="#E6C36A" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,6,0,0"
+                                    Visibility="{Binding HasBitLockerPartition, Converter={StaticResource BoolToVis}}">
+                                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="🔐 This disk has a BitLocker-encrypted partition. Unlock it first with your 48-digit recovery key."
+                                               FontSize="12" FontWeight="SemiBold" Foreground="#926800" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                    <Button Content="Unlock BitLocker..." Style="{StaticResource ActionButtonStyle}"
+                                            Command="{Binding GoToBitLockerUnlockCommand}" Padding="10,4"/>
+                                </WrapPanel>
+                            </Border>
                         </StackPanel>
                     </Border>
 
@@ -512,7 +559,7 @@
                     </DataGrid>
 
                     <!-- Bottom Export Destination Bar -->
-                    <Border Grid.Row="2" Background="#F0F6FF" BorderBrush="#B4D2F5" BorderThickness="1" CornerRadius="5" Padding="12">
+                    <Border Grid.Row="2" Background="#F0F6FF" BorderBrush="#B4D2F5" BorderThickness="1" CornerRadius="5" Padding="8">
                         <controls:ResponsiveToolbar>
                             <TextBlock Text="Export Destination Folder (Separate Healthy Drive):" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,6"/>
                             <TextBox Text="{Binding FileExportDestination, UpdateSourceTrigger=PropertyChanged}" Width="420" Height="28" VerticalContentAlignment="Center" Margin="0,0,8,6"/>
@@ -525,6 +572,7 @@
                         </controls:ResponsiveToolbar>
                     </Border>
                 </Grid>
+                </ScrollViewer>
             </TabItem>
 
             <!-- TAB 7: SESSION REPORT & AUDIT TRAIL -->

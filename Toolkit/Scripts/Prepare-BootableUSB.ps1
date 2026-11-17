@@ -616,12 +616,14 @@ Write-OK "rEFInd source artifacts present"
 # ---------------------------------------------------------------
 Write-Step "Checking available space..."
 
-$excludedFolders = @("Deploy", "Mount", "Logs", "App", ".git", ".venv", ".vscode", "Tools\Deploy", "Tools\.staging")
+$excludedFolders = @("Deploy", "dist", "Mount", "Logs", "App", "WinPE", "Docs", ".agents", ".git", ".venv", ".vscode", "Scripts\Tests", "Scripts\BenchLab", "CDE\Runtime", "Tools\Deploy", "Tools\.staging", "Security\CST\rules\baselines\baselines", 'CDE\ToolkitGUI\bin\Release\net8.0-windows\$TOOLKIT_ROOT')
 # Files not needed on the USB (dev tools, repo metadata, docs already handled by *.md)
-$excludedFiles   = @("*.md", "CreateISO.vbs", "Run-CustomizeWinPE.vbs", "PrepareUSB.vbs", "SyncUSB.bat", ".gitignore",
+$excludedFiles   = @("*.md", "CreateISO.vbs", "Run-CustomizeWinPE.vbs", "PrepareUSB.vbs", "SyncUSB.bat", "SyncUSB_Debug.bat", "Build-WinPE.bat", "Create-ISO.bat", "Prepare-USB.bat", "Publish-ToolkitGUI.ps1", "ToolkitGUI.sln", ".gitignore",
                      "script_output.txt",
                      "CreateISO.ps1", "Customize-WinPE.ps1", "Prepare-BootableUSB.ps1",
-                     "update_script.ps1", "do_update.ps1")
+                     "update_script.ps1", "do_update.ps1",
+                     "goodware.db", "goodware.db-wal", "goodware.db-shm",
+                     "*.bak_*", "*.lock", "*.tmp.png", "*.rtf")
 
 # Calculate source size excluding the folders that won't be copied
 $sourceBytes = 0

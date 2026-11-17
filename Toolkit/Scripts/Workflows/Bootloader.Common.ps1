@@ -744,7 +744,8 @@ function global:Merge-BootloaderChildWorkflow {
     )
 
     if (-not (Get-Command Merge-ChildWorkflowJson -ErrorAction SilentlyContinue)) {
-        $coreDir = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) '..\Core'
+        $workflowDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.ScriptBlock.File }
+        $coreDir = Join-Path $workflowDir '..\Core'
         . (Join-Path $coreDir 'HealthCheckOrchestrator.ps1')
     }
 

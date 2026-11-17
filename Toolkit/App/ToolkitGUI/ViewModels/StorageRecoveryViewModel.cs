@@ -58,6 +58,12 @@ namespace ToolkitGUI.ViewModels
         private bool _includeDeletedFiles = true;
         private bool _fullMftScan;
         private string _fileSearchFilter = string.Empty;
+        private bool _hasBitLockerPartition;
+        private int _bitLockerPartitionIndex = 1;
+        private string _bitLockerDriveLetter = string.Empty;
+        private string _bitLockerKeyProtectorId = string.Empty;
+        private string _bitLockerRecoveryKey = string.Empty;
+        private string _bitLockerStatusMessage = string.Empty;
         private string _fileExportDestination;
         private string _fileRecoveryStatusText = "Select an NTFS partition and click 'Scan $MFT for Recoverable Files'.";
         private readonly List<RecoverableFileRowViewModel> _allRecoverableFiles = new();
@@ -111,6 +117,8 @@ namespace ToolkitGUI.ViewModels
         public RelayCommand ClearSelectedFilesCommand { get; }
         public RelayCommand BrowseExportDestCommand { get; }
         public RelayCommand ExportSelectedFilesCommand { get; }
+        public RelayCommand UnlockBitLockerCommand { get; }
+        public RelayCommand GoToBitLockerUnlockCommand { get; }
 
         public StorageRecoveryViewModel()
         {
@@ -179,6 +187,8 @@ namespace ToolkitGUI.ViewModels
             BrowseExportDestCommand = new RelayCommand(BrowseExportDestAsync);
             ExportSelectedFilesCommand = new RelayCommand(ExportSelectedFilesAsync);
             CancelFileExportCommand = new RelayCommand(() => { _fileExportCts?.Cancel(); return Task.CompletedTask; });
+            UnlockBitLockerCommand = new RelayCommand(UnlockBitLockerAsync);
+            GoToBitLockerUnlockCommand = new RelayCommand(() => { SelectedTabIndex = 4; return Task.CompletedTask; });
 
             ImagingScopes.Add(new ImagingScopeOption { Label = "Whole Disk", StartOffset = 0, LengthBytes = 0, FileTag = "WholeDisk" });
             _selectedImagingScope = ImagingScopes[0];
@@ -216,7 +226,12 @@ namespace ToolkitGUI.ViewModels
         public bool IsBusy
         {
             get => _isBusy;
-            set { _isBusy = value; OnPropertyChanged(); }
+            set
+            {
+                _isBusy = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanUnlockBitLocker));
+            }
         }
 
         public int SelectedTabIndex
@@ -283,6 +298,58 @@ namespace ToolkitGUI.ViewModels
             get => _inPlaceConfirmPhrase;
             set { _inPlaceConfirmPhrase = value; OnPropertyChanged(); }
         }
+
+        public bool HasBitLockerPartition
+        {
+            get => _hasBitLockerPartition;
+            set
+            {
+                _hasBitLockerPartition = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanUnlockBitLocker));
+            }
+        }
+
+        public string BitLockerDriveLetter
+        {
+            get => _bitLockerDriveLetter;
+            set
+            {
+                _bitLockerDriveLetter = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(BitLockerDriveDisplay));
+            }
+        }
+
+        public string BitLockerDriveDisplay =>
+            string.IsNullOrWhiteSpace(_bitLockerDriveLetter) ? "(Not assigned yet)" : $"{_bitLockerDriveLetter}:";
+
+        public string BitLockerKeyProtectorId
+        {
+            get => _bitLockerKeyProtectorId;
+            set
+            {
+                _bitLockerKeyProtectorId = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasBitLockerKeyId));
+            }
+        }
+
+        public bool HasBitLockerKeyId => !string.IsNullOrWhiteSpace(_bitLockerKeyProtectorId);
+
+        public string BitLockerRecoveryKey
+        {
+            get => _bitLockerRecoveryKey;
+            set { _bitLockerRecoveryKey = value; OnPropertyChanged(); }
+        }
+
+        public string BitLockerStatusMessage
+        {
+            get => _bitLockerStatusMessage;
+            set { _bitLockerStatusMessage = value; OnPropertyChanged(); }
+        }
+
+        public bool CanUnlockBitLocker => _hasBitLockerPartition && IsPhysicalTargetSelected && !IsBusy;
 
         // Internal developer toggle to show/hide the BenchLab Test Fixture generator on the toolbar.
         // Set EnableTestFixtureToolbar = true (or env CDE_SHOW_STORAGE_FIXTURES=1) when needed.
@@ -633,6 +700,30 @@ namespace ToolkitGUI.ViewModels
 
             SelectedRepairPlan = ProposedRepairs.FirstOrDefault();
             OnPropertyChanged(nameof(GptComparisonSummary));
+
+            var bitLockerFs = FileSystems.FirstOrDefault(f => f.IsEncryptedBitLocker);
+            HasBitLockerPartition = bitLockerFs != null;
+            if (bitLockerFs != null)
+            {
+                _bitLockerPartitionIndex = bitLockerFs.PartitionIndex;
+                BitLockerDriveLetter = string.Empty;
+                BitLockerKeyProtectorId = string.Empty;
+                if (IsPhysicalTargetSelected && SelectedTarget != null)
+                {
+                    BitLockerStatusMessage = "Checking BitLocker lock status and Recovery Key ID...";
+                    _ = RefreshBitLockerStatusAsync(SelectedTarget.Device.DiskNumber, _bitLockerPartitionIndex);
+                }
+                else
+                {
+                    BitLockerStatusMessage = "BitLocker unlock requires a physical disk (not a .img file).";
+                }
+            }
+            else
+            {
+                BitLockerDriveLetter = string.Empty;
+                BitLockerKeyProtectorId = string.Empty;
+                BitLockerStatusMessage = string.Empty;
+            }
 
             // Update workflow stages
             WorkflowStages[0].State = "Completed";
@@ -1213,6 +1304,65 @@ namespace ToolkitGUI.ViewModels
                 ? $"{diskTag}_RecoveryImage.img"
                 : $"{diskTag}_{SelectedImagingScope.FileTag}.img";
             ImagingOutputPath = Path.Combine(dir, fileName);
+        }
+
+        private async Task RefreshBitLockerStatusAsync(int diskNumber, int partitionNumber)
+        {
+            try
+            {
+                var info = await StorageRecoveryService.QueryBitLockerStatusAsync(diskNumber, partitionNumber);
+                BitLockerDriveLetter = info.DriveLetter;
+                BitLockerKeyProtectorId = info.KeyProtectorId;
+                BitLockerStatusMessage = info.StatusMessage;
+            }
+            catch (Exception ex)
+            {
+                BitLockerStatusMessage = $"Could not query BitLocker status: {ex.Message}";
+            }
+        }
+
+        private async Task UnlockBitLockerAsync()
+        {
+            if (IsBusy || SelectedTarget == null || SelectedTarget.IsDiskImage || !HasBitLockerPartition)
+                return;
+
+            IsBusy = true;
+            BitLockerStatusMessage = "Unlocking BitLocker partition...";
+            StatusText = "Running manage-bde to unlock BitLocker partition...";
+            try
+            {
+                var res = await StorageRecoveryService.UnlockBitLockerPartitionAsync(
+                    SelectedTarget.Device.DiskNumber,
+                    _bitLockerPartitionIndex,
+                    BitLockerRecoveryKey);
+
+                if (!string.IsNullOrWhiteSpace(res.DriveLetter))
+                    BitLockerDriveLetter = res.DriveLetter;
+
+                BitLockerStatusMessage = res.Message;
+                AppendAudit($"BitLocker unlock attempt on Disk {SelectedTarget.Device.DiskNumber} Partition {_bitLockerPartitionIndex}: {res.Message}");
+
+                if (res.Succeeded)
+                {
+                    BitLockerRecoveryKey = string.Empty;
+                    StatusText = res.Message;
+                    MessageBox.Show(res.Message, "BitLocker Unlocked", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    StatusText = "BitLocker unlock failed.";
+                    MessageBox.Show(res.Message, "BitLocker Unlock", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                BitLockerStatusMessage = $"BitLocker unlock error: {ex.Message}";
+                MessageBox.Show($"BitLocker unlock failed:\n{ex.Message}", "BitLocker Unlock", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                IsBusy = false;
+            }
         }
 
         private void AppendAudit(string message)
