@@ -176,6 +176,7 @@
                     <ListBox Grid.Row="1"
                              ItemsSource="{Binding Findings}"
                              SelectedItem="{Binding SelectedFinding, Mode=TwoWay}"
+                             Foreground="{DynamicResource TextPrimaryBrush}"
                              BorderThickness="0" Background="Transparent"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto">
@@ -184,6 +185,7 @@
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                     <Setter Property="Padding" Value="0"/>
                                     <Setter Property="Margin" Value="0,0,0,8"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                                     <Setter Property="Background" Value="Transparent"/>
                                     <Setter Property="BorderThickness" Value="0"/>
                                     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -248,7 +250,7 @@
                                     <DataTemplate.Triggers>
                                         <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
                                                      Value="True">
-                                            <Setter TargetName="Card" Property="Background" Value="#EAF3FF"/>
+                                            <Setter TargetName="Card" Property="Background" Value="{DynamicResource SurfaceGridSelectedBrush}"/>
                                             <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
                                             <Setter TargetName="Card" Property="BorderThickness" Value="2"/>
                                             <Setter TargetName="SelectionIndicator" Property="Visibility" Value="Visible"/>
@@ -367,8 +369,8 @@
                                     </ItemsControl.Style>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Background="#FBFCFE"
-                                                    BorderBrush="#E8EDF3"
+                                            <Border Background="{DynamicResource BackgroundDarkBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
                                                     BorderThickness="1"
                                                     CornerRadius="4"
                                                     Padding="12"

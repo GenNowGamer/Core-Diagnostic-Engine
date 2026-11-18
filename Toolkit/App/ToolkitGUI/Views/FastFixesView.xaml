@@ -74,10 +74,10 @@
                                                 <Border Margin="8,0,0,0" Padding="6,2" CornerRadius="3">
                                                     <Border.Style>
                                                         <Style TargetType="Border">
-                                                            <Setter Property="Background" Value="#E8F5E9"/>
+                                                            <Setter Property="Background" Value="{DynamicResource SurfaceSuccessRowBrush}"/>
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding Risk}" Value="Caution">
-                                                                    <Setter Property="Background" Value="#FFF8E1"/>
+                                                                    <Setter Property="Background" Value="{DynamicResource SurfaceWarnBannerBrush}"/>
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>

@@ -8,7 +8,8 @@
         MinWidth="900"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize"
-        Background="{DynamicResource BackgroundDarkBrush}">
+        Background="{DynamicResource BackgroundDarkBrush}"
+        TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <Style x:Key="MetricLabelStyle" TargetType="TextBlock">

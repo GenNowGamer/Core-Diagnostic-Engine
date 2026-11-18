@@ -8,7 +8,8 @@
         MinHeight="680"
         MinWidth="920"
         WindowStartupLocation="CenterOwner"
-        Background="{DynamicResource BackgroundDarkBrush}">
+        Background="{DynamicResource BackgroundDarkBrush}"
+        TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
     <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -138,8 +139,8 @@
                                 <Border Margin="0,6,0,0"
                                         Padding="10,8"
                                         CornerRadius="4"
-                                        Background="#FFF4F2"
-                                        BorderBrush="#F1B5AE"
+                                        Background="{DynamicResource SurfaceDangerRowBrush}"
+                                        BorderBrush="{DynamicResource AccentRedBrush}"
                                         BorderThickness="1">
                                     <TextBlock Text="{Binding}"
                                                TextWrapping="Wrap"

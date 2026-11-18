@@ -65,6 +65,7 @@
             <SolidColorBrush x:Key="SurfaceHoverBrush"        Color="#EEF3F8"/>
             <SolidColorBrush x:Key="SurfaceWarningBrush"      Color="#FFF4E5"/>
             <SolidColorBrush x:Key="SurfaceDangerRowBrush"    Color="#FEE2E2"/>
+            <SolidColorBrush x:Key="SurfaceSuccessRowBrush"   Color="#E8F5E9"/>
             <SolidColorBrush x:Key="SurfaceInfoBannerBrush"   Color="#F0F6FF"/>
             <SolidColorBrush x:Key="SurfaceInfoBannerBorderBrush" Color="#B4D2F5"/>
             <SolidColorBrush x:Key="SurfaceWarnBannerBrush"   Color="#FFF8E6"/>
@@ -440,6 +441,16 @@
                 </Style.Triggers>
             </Style>
 
+            <Style TargetType="DataGridColumnHeader">
+                <Setter Property="Background" Value="{DynamicResource BackgroundLightBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="FontSize" Value="11"/>
+                <Setter Property="Padding" Value="10,6"/>
+            </Style>
+
             <Style TargetType="ListView">
                 <Setter Property="Background" Value="{DynamicResource SurfaceGridRowBrush}"/>
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
@@ -466,6 +477,26 @@
             </Style>
 
             <Style TargetType="TreeViewItem">
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            </Style>
+
+            <Style TargetType="ListBox">
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            </Style>
+
+            <Style TargetType="Expander">
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            </Style>
+
+            <Style TargetType="ContextMenu">
+                <Setter Property="Background" Value="{DynamicResource BackgroundMidBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+            </Style>
+
+            <Style TargetType="MenuItem">
+                <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
             </Style>
 

@@ -1,4 +1,4 @@
-{
+﻿{
     "tests":  [
                   {
                       "id":  "cpu_level2_cache",
@@ -417,7 +417,7 @@
                                    "fpuLoops":  75000,
                                    "memoryPatternPasses":  2,
                                    "memoryBlockCount":  2,
-                                   "memorySizeCapMb":  1024,
+                                   "memorySizeCapMb":  192,
                                    "memorySizeFloorMb":  96,
                                    "memoryFreePercent":  0.12,
                                    "memoryWinPeMb":  192,
@@ -440,7 +440,7 @@
                                       "fpuLoops":  500000,
                                       "memoryPatternPasses":  4,
                                       "memoryBlockCount":  6,
-                                      "memorySizeCapMb":  4096,
+                                      "memorySizeCapMb":  1536,
                                       "memorySizeFloorMb":  512,
                                       "memoryFreePercent":  0.35,
                                       "memoryWinPeMb":  512,
@@ -457,5 +457,5 @@
                  },
     "version":  1,
     "source":  "..\\Core Hardware Utility\\Core_Hardware_Utility.json",
-    "syncedAt":  "2026-11-17T16:34:59.6006881-06:00"
+    "syncedAt":  "2026-11-18T13:54:15.4897911-06:00"
 }

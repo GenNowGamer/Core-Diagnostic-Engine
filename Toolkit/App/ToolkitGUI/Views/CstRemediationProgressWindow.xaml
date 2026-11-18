@@ -9,7 +9,8 @@
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        Background="{DynamicResource BackgroundDarkBrush}">
+        Background="{DynamicResource BackgroundDarkBrush}"
+        TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>

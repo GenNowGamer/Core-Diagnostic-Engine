@@ -138,7 +138,7 @@
                                 <Border Margin="{Binding RowMargin}"
                                         Padding="12,5"
                                         Background="{Binding RowBackground}"
-                                        BorderBrush="#E8E8E8" BorderThickness="0,0,0,1">
+                                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>

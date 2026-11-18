@@ -7,7 +7,9 @@
         MinHeight="480"
         MinWidth="760"
         WindowStartupLocation="CenterOwner"
-        ResizeMode="CanResize">
+        ResizeMode="CanResize"
+        Background="{DynamicResource BackgroundDarkBrush}"
+        TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
     <Grid Margin="14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>

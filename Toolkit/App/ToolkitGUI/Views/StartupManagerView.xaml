@@ -94,7 +94,7 @@
                     <Setter Property="FontWeight" Value="SemiBold"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding SignedDisplay}" Value="N/A (COM)">
-                    <Setter Property="Foreground" Value="#5A6B80"/>
+                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding SignedDisplay}" Value="Windows COM">
                     <Setter Property="Foreground" Value="{DynamicResource TextSuccessBrush}"/>
