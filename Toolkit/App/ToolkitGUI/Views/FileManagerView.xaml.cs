@@ -29,16 +29,19 @@ namespace ToolkitGUI.Views
         private bool _suppressTreeSelection;
         private CancellationTokenSource? _topFolderSizeCts;
         private CancellationTokenSource? _bottomFolderSizeCts;
+        private CancellationTokenSource? _topLoadCts;
+        private CancellationTokenSource? _bottomLoadCts;
         private static readonly SemaphoreSlim FolderSizeConcurrency = new(3, 3);
         private readonly Dictionary<Pane, PaneSortState> _sortStates = new();
         private List<string>? _clipboardPaths;
         private bool _clipboardIsCut;
         private bool _cstScanInProgress;
+        private bool _fileOpInProgress;
 
         public FileManagerView()
         {
             InitializeComponent();
-            Unloaded += (_, _) => CancelAllFolderSizeEnumeration();
+            Unloaded += (_, _) => CancelAllBackgroundWork();
             TopItemsListView.View = CreateFileGridView(Pane.Top);
             BottomItemsListView.View = CreateFileGridView(Pane.Bottom);
             AttachColumnHeaderSorting(TopItemsListView, Pane.Top);
@@ -616,7 +619,10 @@ namespace ToolkitGUI.Views
             menu.Items.Add(CreateMenuItem("Copy folder path", () =>
             {
                 if (!string.IsNullOrWhiteSpace(folderPath))
-                    Clipboard.SetText(folderPath);
+                {
+                    if (!TrySetClipboardText(folderPath))
+                        SetStatus("Unable to access the Windows clipboard.");
+                }
             }, !string.IsNullOrWhiteSpace(folderPath)));
             menu.Items.Add(CreateMenuItem(
                 "Scan this folder with CST",
@@ -672,6 +678,12 @@ namespace ToolkitGUI.Views
 
         private async void PasteIntoPane(Pane pane)
         {
+            if (_fileOpInProgress)
+            {
+                SetStatus("Another file operation is already in progress.");
+                return;
+            }
+
             if (_clipboardPaths == null || _clipboardPaths.Count == 0)
             {
                 SetStatus("Nothing to paste.");
@@ -697,7 +709,7 @@ namespace ToolkitGUI.Views
                 if (!DestructiveActionDialog.Confirm(
                         "File Manager — Move (paste)",
                         $"Move {_clipboardPaths.Count} cut item(s) into:\n{targetPath}\n\n{pathPreview}",
-                        "Sources will be permanently deleted after paste (folders recursively).",
+                        "Sources will be moved or permanently deleted after copy (folders recursively).",
                         defaultNo: true))
                 {
                     SetStatus("Paste/move cancelled.");
@@ -705,50 +717,35 @@ namespace ToolkitGUI.Views
                 }
             }
 
+            _fileOpInProgress = true;
             try
             {
                 var wasCut = _clipboardIsCut;
                 var sources = _clipboardPaths.ToList();
                 SetStatus(wasCut ? "Moving items..." : "Copying items...");
-                await System.Threading.Tasks.Task.Run(() =>
+                await Task.Run(() =>
                 {
                     foreach (var source in sources)
-                    {
-                        if (!File.Exists(source) && !Directory.Exists(source))
-                            continue;
-
-                        var name = Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                        if (string.IsNullOrEmpty(name))
-                            continue;
-
-                        var dest = GetUniquePath(Path.Combine(targetPath, name));
-                        if (Directory.Exists(source))
-                        {
-                            CopyDirectory(source, dest);
-                            if (wasCut)
-                                Directory.Delete(source, recursive: true);
-                        }
-                        else
-                        {
-                            File.Copy(source, dest);
-                            if (wasCut)
-                                File.Delete(source);
-                        }
-                    }
+                        TransferItem(source, targetPath, isMove: wasCut);
                 });
 
-                if (_clipboardIsCut)
+                if (wasCut)
                 {
                     _clipboardPaths = null;
                     _clipboardIsCut = false;
                 }
 
-                RefreshPane(pane);
+                if (string.Equals(GetPanePath(pane), targetPath, StringComparison.OrdinalIgnoreCase))
+                    RefreshPane(pane);
                 SetStatus(wasCut ? "Move complete." : "Paste complete.");
             }
             catch (Exception ex)
             {
                 SetStatus($"Paste failed: {ex.Message}");
+            }
+            finally
+            {
+                _fileOpInProgress = false;
             }
         }
 
@@ -814,12 +811,31 @@ namespace ToolkitGUI.Views
             NewFolder_Click(this, new RoutedEventArgs());
         }
 
-        private static void CopyPathsToClipboard(IReadOnlyList<FileItem> items)
+        private void CopyPathsToClipboard(IReadOnlyList<FileItem> items)
         {
             if (items.Count == 0)
                 return;
 
-            Clipboard.SetText(string.Join(Environment.NewLine, items.Select(i => i.FullPath)));
+            if (!TrySetClipboardText(string.Join(Environment.NewLine, items.Select(i => i.FullPath))))
+                SetStatus("Unable to access the Windows clipboard.");
+        }
+
+        private static bool TrySetClipboardText(string text)
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    Clipboard.SetText(text);
+                    return true;
+                }
+                catch
+                {
+                    Thread.Sleep(25);
+                }
+            }
+
+            return false;
         }
 
         private static void ShowProperties(IReadOnlyList<FileItem> items)
@@ -1084,14 +1100,22 @@ namespace ToolkitGUI.Views
 
         private async void DeleteSelected_Click(object sender, RoutedEventArgs e)
         {
+            if (_fileOpInProgress)
+            {
+                SetStatus("Another file operation is already in progress.");
+                return;
+            }
+
             SyncActivePaneFromFocus();
-            if (IsReadOnlyBrowsePath(GetPanePath(_activePane)))
+            var targetPane = _activePane;
+            var targetPanePath = GetPanePath(targetPane);
+            if (IsReadOnlyBrowsePath(targetPanePath))
             {
                 SetStatus("Shadow copy folders are read-only.");
                 return;
             }
 
-            var selected = GetSelectedItems(_activePane).ToList();
+            var selected = GetSelectedItems(targetPane).ToList();
             if (!selected.Any())
             {
                 SetStatus("Select items to delete.");
@@ -1113,25 +1137,26 @@ namespace ToolkitGUI.Views
                 return;
             }
 
+            _fileOpInProgress = true;
             try
             {
                 SetStatus("Deleting selected item(s)...");
-                await System.Threading.Tasks.Task.Run(() =>
+                await Task.Run(() =>
                 {
                     foreach (var item in selected)
-                    {
-                        if (item.IsDirectory)
-                            Directory.Delete(item.FullPath, recursive: true);
-                        else
-                            File.Delete(item.FullPath);
-                    }
+                        DeleteFileOrDirectory(item.FullPath, item.IsDirectory);
                 });
-                RefreshPane(_activePane);
+                if (string.Equals(GetPanePath(targetPane), targetPanePath, StringComparison.OrdinalIgnoreCase))
+                    RefreshPane(targetPane);
                 SetStatus("Deleted selected item(s).");
             }
             catch (Exception ex)
             {
                 SetStatus($"Delete failed: {ex.Message}");
+            }
+            finally
+            {
+                _fileOpInProgress = false;
             }
         }
 
@@ -1154,7 +1179,7 @@ namespace ToolkitGUI.Views
             try
             {
                 var newFolder = Path.Combine(targetPath, "New Folder");
-                newFolder = GetUniquePath(newFolder);
+                newFolder = GetUniquePath(newFolder, isDirectory: true);
                 Directory.CreateDirectory(newFolder);
                 RefreshPane(_activePane);
                 SetStatus("Created new folder.");
@@ -1223,26 +1248,35 @@ namespace ToolkitGUI.Views
 
         private async void CopyOrMoveSelected(bool copyOnly)
         {
+            if (_fileOpInProgress)
+            {
+                SetStatus("Another file operation is already in progress.");
+                return;
+            }
+
             if (!_splitViewEnabled)
             {
                 SetStatus("Enable Split View to copy or move to another folder.");
                 return;
             }
 
-            if (!copyOnly && IsReadOnlyBrowsePath(GetPanePath(_activePane)))
+            var source = _activePane;
+            var destination = source == Pane.Top ? Pane.Bottom : Pane.Top;
+            var sourceFolder = GetPanePath(source);
+            var targetFolder = GetPanePath(destination);
+
+            if (!copyOnly && IsReadOnlyBrowsePath(sourceFolder))
             {
                 SetStatus("Items in a shadow copy cannot be moved.");
                 return;
             }
 
-            if (IsReadOnlyBrowsePath(GetPanePath(_activePane == Pane.Top ? Pane.Bottom : Pane.Top)))
+            if (IsReadOnlyBrowsePath(targetFolder))
             {
                 SetStatus("Cannot copy or move items into a shadow copy folder.");
                 return;
             }
 
-            var source = _activePane;
-            var destination = source == Pane.Top ? Pane.Bottom : Pane.Top;
             var selected = GetSelectedItems(source).ToList();
             if (!selected.Any())
             {
@@ -1250,7 +1284,6 @@ namespace ToolkitGUI.Views
                 return;
             }
 
-            var targetFolder = GetPanePath(destination);
             if (!Directory.Exists(targetFolder))
             {
                 SetStatus("Target folder is invalid.");
@@ -1263,7 +1296,7 @@ namespace ToolkitGUI.Views
                 if (!DestructiveActionDialog.Confirm(
                         "File Manager — Move",
                         $"Move {selected.Count} item(s) to:\n{targetFolder}\n\n{pathPreview}",
-                        "Source files/folders will be permanently removed after a successful copy (folders recursively).",
+                        "Source files/folders will be moved or permanently removed after copy (folders recursively).",
                         defaultNo: true))
                 {
                     SetStatus("Move cancelled.");
@@ -1271,54 +1304,259 @@ namespace ToolkitGUI.Views
                 }
             }
 
+            _fileOpInProgress = true;
             try
             {
                 SetStatus(copyOnly ? "Copying items..." : "Moving items...");
-                await System.Threading.Tasks.Task.Run(() =>
+                await Task.Run(() =>
                 {
                     foreach (var item in selected)
-                    {
-                        var dest = Path.Combine(targetFolder, item.Name);
-                        dest = GetUniquePath(dest);
-
-                        if (item.IsDirectory)
-                        {
-                            CopyDirectory(item.FullPath, dest);
-                            if (!copyOnly)
-                                Directory.Delete(item.FullPath, recursive: true);
-                        }
-                        else
-                        {
-                            File.Copy(item.FullPath, dest);
-                            if (!copyOnly)
-                                File.Delete(item.FullPath);
-                        }
-                    }
+                        TransferItem(item.FullPath, targetFolder, isMove: !copyOnly);
                 });
 
-                RefreshPane(destination);
-                RefreshPane(source);
+                if (string.Equals(GetPanePath(destination), targetFolder, StringComparison.OrdinalIgnoreCase))
+                    RefreshPane(destination);
+                if (string.Equals(GetPanePath(source), sourceFolder, StringComparison.OrdinalIgnoreCase))
+                    RefreshPane(source);
                 SetStatus(copyOnly ? "Copy complete." : "Move complete.");
             }
             catch (Exception ex)
             {
                 SetStatus($"Operation failed: {ex.Message}");
             }
+            finally
+            {
+                _fileOpInProgress = false;
+            }
+        }
+
+        private static void TransferItem(string source, string targetFolder, bool isMove)
+        {
+            var isDirectory = Directory.Exists(source);
+            if (!isDirectory && !File.Exists(source))
+                return;
+
+            var name = Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrEmpty(name))
+                return;
+
+            if (isDirectory && IsSameOrSubdirectory(source, targetFolder))
+                throw new InvalidOperationException($"Cannot copy or move '{name}' into itself or a subfolder.");
+
+            if (isMove && IsSameParentDirectory(source, targetFolder))
+                return;
+
+            var dest = GetUniquePath(Path.Combine(targetFolder, name), isDirectory);
+            if (isMove && IsSameVolume(source, dest))
+            {
+                if (isDirectory)
+                    Directory.Move(source, dest);
+                else
+                    File.Move(source, dest);
+                return;
+            }
+
+            if (isDirectory)
+            {
+                CopyDirectory(source, dest);
+                if (isMove)
+                    DeleteFileOrDirectory(source, isDirectory: true);
+            }
+            else
+            {
+                File.Copy(source, dest);
+                if (isMove)
+                    DeleteFileOrDirectory(source, isDirectory: false);
+            }
+        }
+
+        private static bool IsSameOrSubdirectory(string sourceDir, string targetDir)
+        {
+            try
+            {
+                var sourceFull = Path.GetFullPath(sourceDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var targetFull = Path.GetFullPath(targetDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (string.Equals(sourceFull, targetFull, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                var prefix = sourceFull + Path.DirectorySeparatorChar;
+                return targetFull.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsSameParentDirectory(string sourcePath, string targetDir)
+        {
+            try
+            {
+                var sourceFull = Path.GetFullPath(sourcePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var parent = Path.GetDirectoryName(sourceFull)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var targetFull = Path.GetFullPath(targetDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                return !string.IsNullOrEmpty(parent) &&
+                       string.Equals(parent, targetFull, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsSameVolume(string pathA, string pathB)
+        {
+            try
+            {
+                var rootA = Path.GetPathRoot(Path.GetFullPath(pathA));
+                var rootB = Path.GetPathRoot(Path.GetFullPath(pathB));
+                return !string.IsNullOrEmpty(rootA) &&
+                       string.Equals(rootA, rootB, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void DeleteFileOrDirectory(string path, bool isDirectory)
+        {
+            if (!isDirectory)
+            {
+                if (!File.Exists(path))
+                    return;
+                try
+                {
+                    var attrs = File.GetAttributes(path);
+                    if ((attrs & FileAttributes.ReadOnly) != 0)
+                        File.SetAttributes(path, attrs & ~FileAttributes.ReadOnly);
+                }
+                catch
+                {
+                    // Best-effort attribute clear before delete.
+                }
+                File.Delete(path);
+                return;
+            }
+
+            if (!Directory.Exists(path))
+                return;
+
+            var stack = new Stack<DirectoryInfo>();
+            stack.Push(new DirectoryInfo(path));
+            while (stack.Count > 0)
+            {
+                var dir = stack.Pop();
+                try
+                {
+                    if ((dir.Attributes & FileAttributes.ReadOnly) != 0)
+                        dir.Attributes &= ~FileAttributes.ReadOnly;
+
+                    if ((dir.Attributes & FileAttributes.ReparsePoint) != 0)
+                        continue;
+
+                    foreach (var file in dir.GetFiles())
+                    {
+                        try
+                        {
+                            if ((file.Attributes & FileAttributes.ReadOnly) != 0)
+                                file.Attributes &= ~FileAttributes.ReadOnly;
+                        }
+                        catch
+                        {
+                            // Best-effort attribute clear.
+                        }
+                    }
+
+                    foreach (var sub in dir.GetDirectories())
+                    {
+                        if ((sub.Attributes & FileAttributes.ReparsePoint) == 0)
+                            stack.Push(sub);
+                    }
+                }
+                catch
+                {
+                    // Let Directory.Delete report any fatal permission/lock error.
+                }
+            }
+
+            Directory.Delete(path, recursive: true);
         }
 
         private static void CopyDirectory(string sourceDir, string targetDir)
         {
+            if (IsSameOrSubdirectory(sourceDir, targetDir))
+                throw new InvalidOperationException($"Cannot copy '{sourceDir}' into itself or a subfolder.");
+
             var dirInfo = new DirectoryInfo(sourceDir);
             Directory.CreateDirectory(targetDir);
 
             foreach (var file in dirInfo.GetFiles())
-                file.CopyTo(Path.Combine(targetDir, file.Name));
+            {
+                try
+                {
+                    file.CopyTo(Path.Combine(targetDir, file.Name));
+                }
+                catch (Exception ex)
+                {
+                    throw new IOException($"Failed to copy '{file.FullName}': {ex.Message}", ex);
+                }
+            }
 
             foreach (var subDir in dirInfo.GetDirectories())
             {
                 if (subDir.Attributes.HasFlag(FileAttributes.ReparsePoint))
                     continue;
                 CopyDirectory(subDir.FullName, Path.Combine(targetDir, subDir.Name));
+            }
+        }
+
+        private void TopItemsListView_KeyDown(object sender, KeyEventArgs e)
+            => HandleListViewKeyDown(Pane.Top, e);
+
+        private void BottomItemsListView_KeyDown(object sender, KeyEventArgs e)
+            => HandleListViewKeyDown(Pane.Bottom, e);
+
+        private void HandleListViewKeyDown(Pane pane, KeyEventArgs e)
+        {
+            _activePane = pane;
+            if (e.Key == Key.Enter)
+            {
+                OpenOrNavigateSelected(pane, GetItemsListView(pane));
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Delete)
+            {
+                DeleteSelected_Click(this, new RoutedEventArgs());
+                e.Handled = true;
+            }
+            else if (e.Key == Key.F2)
+            {
+                RenameSelected(pane);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.F5)
+            {
+                RefreshPane(pane);
+                e.Handled = true;
+            }
+            else if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                if (e.Key == Key.C)
+                {
+                    CopySelectedToClipboard(pane);
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.X)
+                {
+                    CutSelectedToClipboard(pane);
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.V)
+                {
+                    PasteIntoPane(pane);
+                    e.Handled = true;
+                }
             }
         }
 
@@ -1467,8 +1705,22 @@ namespace ToolkitGUI.Views
 
         private void LoadDirectory(string path, Pane pane)
         {
+            _ = LoadDirectoryAsync(path, pane);
+        }
+
+        private sealed record RawFileEntry(
+            string Name,
+            string FullPath,
+            bool IsDirectory,
+            string TypeText,
+            DateTime ModifiedUtc,
+            long Length);
+
+        private async Task LoadDirectoryAsync(string path, Pane pane)
+        {
             if (string.IsNullOrWhiteSpace(path))
             {
+                CancelDirectoryLoad(pane);
                 ClearPane(pane);
                 return;
             }
@@ -1479,94 +1731,174 @@ namespace ToolkitGUI.Views
                 return;
             }
 
-            var directories = new List<FileItem>();
-            var files = new List<FileItem>();
-            var skippedCount = 0;
+            CancelDirectoryLoad(pane);
+            var cts = new CancellationTokenSource();
+            if (pane == Pane.Top)
+                _topLoadCts = cts;
+            else
+                _bottomLoadCts = cts;
+            var token = cts.Token;
+
+            SetStatus($"Loading {path}...");
+
+            List<RawFileEntry> rawDirs;
+            List<RawFileEntry> rawFiles;
+            int skippedCount;
+            string? enumWarning;
 
             try
             {
-                foreach (var dirPath in Directory.EnumerateDirectories(path))
+                (rawDirs, rawFiles, skippedCount, enumWarning) = await Task.Run(() =>
                 {
-                    DirectoryInfo dirInfo;
+                    var dirs = new List<RawFileEntry>();
+                    var fls = new List<RawFileEntry>();
+                    var skipped = 0;
+                    string? warning = null;
+
                     try
                     {
-                        dirInfo = new DirectoryInfo(dirPath);
-                        _ = dirInfo.Attributes;
+                        foreach (var dirPath in Directory.EnumerateDirectories(path))
+                        {
+                            token.ThrowIfCancellationRequested();
+                            DirectoryInfo dirInfo;
+                            try
+                            {
+                                dirInfo = new DirectoryInfo(dirPath);
+                                _ = dirInfo.Attributes;
+                            }
+                            catch
+                            {
+                                skipped++;
+                                continue;
+                            }
+
+                            if (dirInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                            {
+                                skipped++;
+                                continue;
+                            }
+
+                            dirs.Add(new RawFileEntry(
+                                dirInfo.Name,
+                                dirInfo.FullName,
+                                true,
+                                "File folder",
+                                TryGetLastWriteUtc(dirInfo.FullName),
+                                FileItem.PendingFolderSizeBytes));
+                        }
                     }
-                    catch
+                    catch (OperationCanceledException)
                     {
-                        skippedCount++;
-                        continue;
+                        throw;
                     }
-
-                    if (dirInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    catch (Exception ex)
                     {
-                        skippedCount++;
-                        continue;
+                        skipped++;
+                        warning = $"Directory enumeration warning: {ex.Message}";
                     }
 
-                    var modifiedAt = TryGetLastWriteUtc(dirInfo.FullName);
-                    directories.Add(new FileItem(
-                        dirInfo.Name,
-                        dirInfo.FullName,
-                        true,
-                        "File folder",
-                        FormatLastWriteText(modifiedAt),
-                        modifiedAt,
-                        "...",
-                        FileItem.PendingFolderSizeBytes,
-                        FileItem.GroupDirectories,
-                        ShellIconHelper.GetIcon(dirInfo.FullName, isDirectory: true)));
-                }
-            }
-            catch (Exception ex)
-            {
-                skippedCount++;
-                SetStatus($"Directory enumeration warning: {ex.Message}");
-            }
-
-            try
-            {
-                foreach (var filePath in Directory.EnumerateFiles(path))
-                {
-                    FileInfo fileInfo;
                     try
                     {
-                        fileInfo = new FileInfo(filePath);
-                        _ = fileInfo.Attributes;
+                        foreach (var filePath in Directory.EnumerateFiles(path))
+                        {
+                            token.ThrowIfCancellationRequested();
+                            FileInfo fileInfo;
+                            try
+                            {
+                                fileInfo = new FileInfo(filePath);
+                                _ = fileInfo.Attributes;
+                            }
+                            catch
+                            {
+                                skipped++;
+                                continue;
+                            }
+
+                            fls.Add(new RawFileEntry(
+                                fileInfo.Name,
+                                fileInfo.FullName,
+                                false,
+                                FormatFileType(fileInfo),
+                                TryGetLastWriteUtc(fileInfo.FullName),
+                                fileInfo.Length));
+                        }
                     }
-                    catch
+                    catch (OperationCanceledException)
                     {
-                        skippedCount++;
-                        continue;
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        skipped++;
+                        warning ??= $"File enumeration warning: {ex.Message}";
                     }
 
-                    var modifiedAt = TryGetLastWriteUtc(fileInfo.FullName);
-                    var typeText = FormatFileType(fileInfo);
-                    files.Add(new FileItem(
-                        fileInfo.Name,
-                        fileInfo.FullName,
-                        false,
-                        typeText,
-                        FormatLastWriteText(modifiedAt),
-                        modifiedAt,
-                        SizeDisplayFormatter.FormatBytes(fileInfo.Length),
-                        fileInfo.Length,
-                        FileItem.GroupFiles,
-                        ShellIconHelper.GetIcon(fileInfo.FullName, isDirectory: false)));
-                }
+                    return (dirs, fls, skipped, warning);
+                }, token);
             }
-            catch (Exception ex)
+            catch (OperationCanceledException)
             {
-                skippedCount++;
-                SetStatus($"File enumeration warning: {ex.Message}");
+                return;
+            }
+
+            if (token.IsCancellationRequested)
+                return;
+
+            var directories = new List<FileItem>(rawDirs.Count);
+            foreach (var d in rawDirs)
+            {
+                directories.Add(new FileItem(
+                    d.Name,
+                    d.FullPath,
+                    true,
+                    d.TypeText,
+                    FormatLastWriteText(d.ModifiedUtc),
+                    d.ModifiedUtc,
+                    "...",
+                    FileItem.PendingFolderSizeBytes,
+                    FileItem.GroupDirectories,
+                    ShellIconHelper.GetIcon(d.FullPath, isDirectory: true)));
+            }
+
+            var files = new List<FileItem>(rawFiles.Count);
+            foreach (var f in rawFiles)
+            {
+                files.Add(new FileItem(
+                    f.Name,
+                    f.FullPath,
+                    false,
+                    f.TypeText,
+                    FormatLastWriteText(f.ModifiedUtc),
+                    f.ModifiedUtc,
+                    SizeDisplayFormatter.FormatBytes(f.Length),
+                    f.Length,
+                    FileItem.GroupFiles,
+                    ShellIconHelper.GetIcon(f.FullPath, isDirectory: false)));
             }
 
             SetPaneState(pane, path, directories, files);
 
-            SetStatus(skippedCount > 0
-                ? $"Loaded {directories.Count + files.Count} item(s) from {path} ({skippedCount} skipped)."
-                : $"Loaded {directories.Count + files.Count} item(s) from {path}.");
+            if (!string.IsNullOrEmpty(enumWarning))
+                SetStatus(enumWarning);
+            else
+                SetStatus(skippedCount > 0
+                    ? $"Loaded {directories.Count + files.Count} item(s) from {path} ({skippedCount} skipped)."
+                    : $"Loaded {directories.Count + files.Count} item(s) from {path}.");
+        }
+
+        private void CancelDirectoryLoad(Pane pane)
+        {
+            ref var cts = ref (pane == Pane.Top ? ref _topLoadCts : ref _bottomLoadCts);
+            cts?.Cancel();
+            cts?.Dispose();
+            cts = null;
+        }
+
+        private void CancelAllBackgroundWork()
+        {
+            CancelDirectoryLoad(Pane.Top);
+            CancelDirectoryLoad(Pane.Bottom);
+            CancelAllFolderSizeEnumeration();
         }
 
         private static string FormatFileType(FileInfo fileInfo)
@@ -1841,13 +2173,13 @@ namespace ToolkitGUI.Views
             return current;
         }
 
-        private static void SelectTreeViewItem(ItemsControl parent, FolderTreeNode target)
+        private static bool SelectTreeViewItem(ItemsControl parent, FolderTreeNode target)
         {
             if (parent.ItemContainerGenerator.ContainerFromItem(target) is TreeViewItem container)
             {
                 container.IsSelected = true;
                 container.BringIntoView();
-                return;
+                return true;
             }
 
             foreach (var item in parent.Items)
@@ -1860,11 +2192,14 @@ namespace ToolkitGUI.Views
                 {
                     childContainer.IsSelected = true;
                     childContainer.BringIntoView();
-                    return;
+                    return true;
                 }
 
-                SelectTreeViewItem(childContainer, target);
+                if (SelectTreeViewItem(childContainer, target))
+                    return true;
             }
+
+            return false;
         }
 
         private static string TryGetFullPath(string path)
@@ -1928,14 +2263,15 @@ namespace ToolkitGUI.Views
             LoadDirectory(path, pane);
         }
 
-        private static string GetUniquePath(string path)
+        private static string GetUniquePath(string path, bool isDirectory = false)
         {
             if (!File.Exists(path) && !Directory.Exists(path))
                 return path;
 
-            var directory = Path.GetDirectoryName(path) ?? string.Empty;
-            var filename = Path.GetFileNameWithoutExtension(path);
-            var extension = Path.GetExtension(path);
+            var trimmed = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var directory = Path.GetDirectoryName(trimmed) ?? string.Empty;
+            var filename = isDirectory ? Path.GetFileName(trimmed) : Path.GetFileNameWithoutExtension(trimmed);
+            var extension = isDirectory ? string.Empty : Path.GetExtension(trimmed);
             var counter = 1;
 
             string candidate;
@@ -2086,9 +2422,19 @@ namespace ToolkitGUI.Views
 
         public static FolderTreeNode FromDrive(DriveInfo drive)
         {
-            var label = string.IsNullOrWhiteSpace(drive.VolumeLabel) ? string.Empty : $" [{drive.VolumeLabel}]";
+            var volumeLabel = string.Empty;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(drive.VolumeLabel))
+                    volumeLabel = $" [{drive.VolumeLabel}]";
+            }
+            catch
+            {
+                // Locked or unready drives can throw when reading VolumeLabel.
+            }
+
             var root = drive.RootDirectory.FullName.TrimEnd('\\');
-            return new FolderTreeNode($"{root}{label}", drive.RootDirectory.FullName)
+            return new FolderTreeNode($"{root}{volumeLabel}", drive.RootDirectory.FullName)
             {
                 OpensPaneOnSelect = true
             };

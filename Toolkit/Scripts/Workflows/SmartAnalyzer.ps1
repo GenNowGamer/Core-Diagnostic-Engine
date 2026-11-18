@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Core Diagnostic Engine - native S.M.A.R.T. Attribute Analyzer.
@@ -18,11 +18,13 @@
 #>
 param(
     [ValidateSet('Query', 'Report')]
-    [string]$Mode = 'Report'
+    [string]$Mode = 'Report',
+    [switch]$ElevatedRelay
 )
 
 $ErrorActionPreference = 'Stop'
-$ScriptDir = Split-Path $MyInvocation.MyCommand.Path
+$Script:SmartAnalyzerScriptPath = $MyInvocation.MyCommand.Path
+$ScriptDir = Split-Path $Script:SmartAnalyzerScriptPath
 $CoreDir = Join-Path $ScriptDir '..\Core'
 
 . (Join-Path $CoreDir 'HardwareSmartEngine.ps1')
@@ -35,8 +37,18 @@ if ($Mode -eq 'Query') {
 
 # --- Report mode: full workflow with JSON + HTML report ---
 $CoreModule = Join-Path $ScriptDir '..\Core\Toolkit.Core.psm1'
+$ElevationModule = Join-Path $ScriptDir '..\Core\Toolkit.Elevation.psm1'
 Import-Module $CoreModule -Force -DisableNameChecking
+Import-Module $ElevationModule -Force -DisableNameChecking
 . (Join-Path $CoreDir 'MachineBaseline.ps1')
+
+if (-not $ElevatedRelay -and (Get-EnvironmentMode) -eq 'Windows') {
+    $relayArgs = "-Mode 'Report' -ElevatedRelay"
+    if (Invoke-ToolkitWorkflowElevationRelay -ScriptPath $Script:SmartAnalyzerScriptPath `
+            -ArgumentString $relayArgs -ElevatedRelay:$ElevatedRelay) {
+        exit 0
+    }
+}
 
 $workflow = Start-Workflow -WorkflowName 'SmartAnalyzer' -ScriptBlock {
     param($r)
@@ -53,9 +65,11 @@ $workflow = Start-Workflow -WorkflowName 'SmartAnalyzer' -ScriptBlock {
         return
     }
 
+    $supportedCount = 0
     foreach ($d in $drives) {
+        if ($d.Supported) { $supportedCount++ }
         $status = if (-not $d.Supported) {
-            'Skip'
+            if ($d.Note -match 'Access denied') { 'Warn' } else { 'Skip' }
         } else {
             switch ($d.Overall) {
                 'Fail'  { 'Fail' }
@@ -73,6 +87,15 @@ $workflow = Start-Workflow -WorkflowName 'SmartAnalyzer' -ScriptBlock {
             Status = $status
             Detail = $detail
             Data   = $d
+        })
+    }
+
+    if ($supportedCount -eq 0) {
+        $r.Steps.Add([PSCustomObject]@{
+            Name   = 'SMART Summary'
+            Status = 'Warn'
+            Detail = 'No drives returned readable SMART attributes (check elevation or controller pass-through support).'
+            Data   = $null
         })
     }
 }

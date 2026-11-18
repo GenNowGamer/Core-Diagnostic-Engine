@@ -4,8 +4,8 @@
              xmlns:views="clr-namespace:ToolkitGUI.Views">
     <Border Margin="12,10,12,12"
             Padding="12"
-            Background="{StaticResource BackgroundDarkBrush}"
-            BorderBrush="{StaticResource BorderBrush}"
+            Background="{DynamicResource BackgroundDarkBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="1"
             CornerRadius="6">
         <StackPanel>
@@ -17,7 +17,7 @@
             <StackPanel x:Name="ExpandedPanel" Visibility="Collapsed" Margin="0,12,0,0">
                 <TextBlock x:Name="MetadataText"
                            FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            TextWrapping="Wrap"
                            Margin="0,0,0,10"/>
                 <DataGrid x:Name="FindingsGrid"

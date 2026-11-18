@@ -8,7 +8,7 @@
         MinHeight="680"
         MinWidth="920"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource BackgroundDarkBrush}">
+        Background="{DynamicResource BackgroundDarkBrush}">
     <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -31,11 +31,11 @@
                     <TextBlock Text="{Binding OperationTitle}"
                                FontSize="24"
                                FontWeight="Bold"
-                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
                     <TextBlock Text="{Binding OperationDescription}"
                                Margin="0,6,0,0"
                                FontSize="13"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                TextWrapping="Wrap"/>
                 </StackPanel>
 
@@ -60,14 +60,14 @@
                 <DockPanel LastChildFill="True">
                     <TextBlock Text="{Binding StatusText}"
                                FontSize="12"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                VerticalAlignment="Center"
                                Margin="12,0,0,0"
                                DockPanel.Dock="Right"/>
                     <TextBlock Text="{Binding PhaseText}"
                                FontSize="15"
                                FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                TextTrimming="CharacterEllipsis"
                                TextWrapping="NoWrap"/>
                 </DockPanel>
@@ -80,8 +80,8 @@
                                  Value="{Binding Progress}"
                                  Maximum="100"
                                  Height="12"
-                                 Background="{StaticResource BackgroundLightBrush}"
-                                 Foreground="{StaticResource AccentBlueBrush}"
+                                 Background="{DynamicResource BackgroundLightBrush}"
+                                 Foreground="{DynamicResource AccentBlueBrush}"
                                  BorderThickness="0"/>
                     <TextBlock Grid.Column="1"
                                Text="{Binding ProgressPercentText}"
@@ -89,11 +89,11 @@
                                VerticalAlignment="Center"
                                FontSize="12"
                                FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
                 </Grid>
                 <TextBlock Text="{Binding ProgressCaption}"
                            FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
@@ -114,16 +114,16 @@
                     <TextBlock Text="Summary"
                                FontSize="11"
                                FontWeight="Bold"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBlock Text="{Binding ResultSummary}"
                                Margin="0,6,0,0"
                                FontSize="18"
                                FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding ResultDetails}"
                                Margin="0,8,0,0"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                TextWrapping="Wrap"/>
                 </StackPanel>
 
@@ -131,7 +131,7 @@
                     <TextBlock Text="Errors"
                                FontSize="11"
                                FontWeight="Bold"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <ItemsControl ItemsSource="{Binding ResultErrors}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -143,14 +143,14 @@
                                         BorderThickness="1">
                                     <TextBlock Text="{Binding}"
                                                TextWrapping="Wrap"
-                                               Foreground="{StaticResource AccentRedBrush}"/>
+                                               Foreground="{DynamicResource AccentRedBrush}"/>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <TextBlock Text="No reported errors."
                                Margin="0,6,0,0"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                Visibility="{Binding HasResultErrors, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                 </StackPanel>
 
@@ -158,7 +158,7 @@
                     <TextBlock Text="Artifacts"
                                FontSize="11"
                                FontWeight="Bold"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <Button Content="Open Report"
                             Margin="0,8,0,0"
                             Padding="12,8"
@@ -189,20 +189,20 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <Border Grid.Row="0"
-                            Background="{StaticResource BackgroundLightBrush}"
-                            BorderBrush="{StaticResource BorderBrush}"
+                            Background="{DynamicResource BackgroundLightBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="0,0,0,1"
                             Padding="16,12">
                         <TextBlock Text="Structured Results"
                                    FontSize="14"
                                    FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
                     </Border>
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                         <StackPanel>
                             <TextBlock Margin="12,12,12,0"
                                        Text="Items found by the scan appear below in a compact (read-only) list."
-                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
                                        TextWrapping="Wrap"/>
                             <ItemsControl ItemsSource="{Binding StructuredResultItems}"
                                           Margin="12,10,12,0"
@@ -223,14 +223,14 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <Border Grid.Row="0"
-                            Background="{StaticResource BackgroundLightBrush}"
-                            BorderBrush="{StaticResource BorderBrush}"
+                            Background="{DynamicResource BackgroundLightBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="0,0,0,1"
                             Padding="16,12">
                         <TextBlock Text="Live Execution Stream"
                                    FontSize="14"
                                    FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
                     </Border>
                     <Grid Grid.Row="1" Background="{StaticResource LogBgBrush}">
                         <TextBox x:Name="LiveLogTextBox"
@@ -260,7 +260,7 @@
             <TextBlock Grid.Column="0"
                        Text="{Binding FooterText}"
                        VerticalAlignment="Center"
-                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                       Foreground="{DynamicResource TextSecondaryBrush}"/>
 
                 <Button Grid.Column="1"
                     Content="Stop Scan"

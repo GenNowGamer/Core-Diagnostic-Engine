@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 param()
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 param([string]$TargetDrive = '', [switch]$Confirmed)
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

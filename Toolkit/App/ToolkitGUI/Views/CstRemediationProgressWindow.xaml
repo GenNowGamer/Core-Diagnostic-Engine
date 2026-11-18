@@ -9,7 +9,7 @@
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        Background="{StaticResource BackgroundDarkBrush}">
+        Background="{DynamicResource BackgroundDarkBrush}">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -23,21 +23,21 @@
                    Grid.Row="0"
                    FontSize="18"
                    FontWeight="SemiBold"
-                   Foreground="{StaticResource TextPrimaryBrush}"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
                    Text="Remediating selected findings"/>
 
         <TextBlock x:Name="StatusText"
                    Grid.Row="1"
                    Margin="0,6,0,10"
                    FontSize="13"
-                   Foreground="{StaticResource TextSecondaryBrush}"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
                    Text="Preparing..."
                    TextWrapping="Wrap"/>
 
         <Border Grid.Row="2"
                 Style="{StaticResource CardStyle}"
                 Padding="0"
-                BorderBrush="{StaticResource BorderBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="1">
             <ListBox x:Name="ItemsList"
                      BorderThickness="0"
@@ -59,12 +59,12 @@
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="{Binding DisplayName}"
                                            FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
                                            TextTrimming="CharacterEllipsis"/>
                                 <TextBlock Text="{Binding Location}"
                                            Margin="0,2,0,0"
                                            FontSize="11"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
                                            TextTrimming="CharacterEllipsis"
                                            ToolTip="{Binding Location}"/>
                             </StackPanel>
@@ -89,7 +89,7 @@
                        Grid.Row="1"
                        Margin="0,6,0,0"
                        FontSize="12"
-                       Foreground="{StaticResource TextSecondaryBrush}"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
                        Text="0%"/>
         </Grid>
     </Grid>

@@ -8,23 +8,23 @@
         MinWidth="900"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize"
-        Background="{StaticResource BackgroundDarkBrush}">
+        Background="{DynamicResource BackgroundDarkBrush}">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <Style x:Key="MetricLabelStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
         </Style>
         <Style x:Key="MetricValueStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="22"/>
             <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         </Style>
         <Style x:Key="SecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
-            <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource BackgroundLightBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="14,8"/>
         </Style>
@@ -63,26 +63,26 @@
                                Text="CST Scan"
                                FontSize="24"
                                FontWeight="Bold"
-                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
                     <TextBlock x:Name="ScanKindSubtitle"
                                Text="CustomScan"
                                Margin="0,2,0,0"
                                FontSize="12"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBlock x:Name="ProcessNameText"
                                Margin="0,6,0,0"
                                FontSize="14"
                                FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
                     <TextBlock x:Name="TargetPathText"
                                Margin="0,4,0,0"
                                FontSize="12"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                TextWrapping="Wrap"/>
                     <TextBlock x:Name="VerdictDetailText"
                                Margin="0,10,0,0"
                                FontSize="13"
-                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                TextWrapping="Wrap"
                                MaxHeight="52"
                                TextTrimming="CharacterEllipsis"/>
@@ -93,7 +93,7 @@
                         Padding="14,8"
                         CornerRadius="16"
                         VerticalAlignment="Top"
-                        Background="{StaticResource AccentBlueBrush}">
+                        Background="{DynamicResource AccentBlueBrush}">
                     <TextBlock x:Name="VerdictText"
                                Text="Scanning..."
                                Foreground="White"
@@ -119,14 +119,14 @@
                                Text="Preparing scan..."
                                FontSize="14"
                                FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                TextWrapping="Wrap"/>
                     <TextBlock x:Name="ProgressPercentText"
                                Grid.Column="1"
                                Text="0%"
                                FontSize="14"
                                FontWeight="Bold"
-                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                VerticalAlignment="Top"/>
                 </Grid>
                 <ProgressBar x:Name="ScanProgressBar"
@@ -138,13 +138,13 @@
                 <TextBlock x:Name="ProgressDetailText"
                            Margin="0,10,0,0"
                            FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            TextWrapping="Wrap"
                            Text="Starting Core Security Tool..."/>
                 <TextBlock x:Name="ProgressPathText"
                            Margin="0,6,0,0"
                            FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
@@ -190,7 +190,7 @@
                     <TextBlock Text="FILE" Style="{StaticResource MetricLabelStyle}"/>
                     <TextBlock x:Name="FileVerdictText" Style="{StaticResource MetricValueStyle}" FontSize="18" Margin="0,4,0,0"/>
                     <TextBlock x:Name="FileVerdictDetailText" FontSize="11" TextWrapping="Wrap"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
             <Border Style="{StaticResource CardStyle}" Padding="16,14" Margin="0,0,8,0">
@@ -198,7 +198,7 @@
                     <TextBlock Text="COMMAND LINE" Style="{StaticResource MetricLabelStyle}"/>
                     <TextBlock x:Name="CommandLineVerdictText" Style="{StaticResource MetricValueStyle}" FontSize="18" Margin="0,4,0,0"/>
                     <TextBlock x:Name="CommandLineVerdictDetailText" FontSize="11" TextWrapping="Wrap"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
             <Border Style="{StaticResource CardStyle}" Padding="16,14">
@@ -206,7 +206,7 @@
                     <TextBlock Text="PERSISTENCE" Style="{StaticResource MetricLabelStyle}"/>
                     <TextBlock x:Name="PersistenceVerdictText" Style="{StaticResource MetricValueStyle}" FontSize="18" Margin="0,4,0,0"/>
                     <TextBlock x:Name="PersistenceVerdictDetailText" FontSize="11" TextWrapping="Wrap"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
         </UniformGrid>
@@ -227,8 +227,8 @@
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0"
-                        Background="{StaticResource BackgroundLightBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
+                        Background="{DynamicResource BackgroundLightBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="16,12">
                     <Grid>
@@ -241,12 +241,12 @@
                                        Text="Findings"
                                        FontSize="14"
                                        FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
                             <TextBlock x:Name="FindingsSubtitleText"
                                        Text="Select actionable file traces to quarantine or remove."
                                        Margin="0,2,0,0"
                                        FontSize="12"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
                                        TextWrapping="NoWrap"
                                        TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
@@ -254,15 +254,15 @@
                                    Grid.Column="1"
                                    VerticalAlignment="Center"
                                    FontSize="12"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                    Text="Selected: 0"/>
                     </Grid>
                 </Border>
 
                 <Border Grid.Row="1"
                         x:Name="RemediationToolbar"
-                        Background="{StaticResource BackgroundLightBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
+                        Background="{DynamicResource BackgroundLightBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="16,10"
                         Visibility="Collapsed">
@@ -334,8 +334,8 @@
                           Grid.Row="3"
                           Visibility="Collapsed"
                           IsExpanded="False"
-                          Background="{StaticResource BackgroundLightBrush}"
-                          BorderBrush="{StaticResource BorderBrush}"
+                          Background="{DynamicResource BackgroundLightBrush}"
+                          BorderBrush="{DynamicResource BorderBrush}"
                           BorderThickness="0,1,0,0">
                     <Expander.Header>
                         <TextBlock x:Name="SuppressedExpanderHeaderText"
@@ -343,7 +343,7 @@
                                    Margin="8,8,0,8"
                                    FontSize="12"
                                    FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
                     </Expander.Header>
                     <Border x:Name="SuppressedGridHost"
                             Height="210"
@@ -402,11 +402,11 @@
                 <TextBlock Text="Scan in progress"
                            FontSize="16"
                            FontWeight="SemiBold"
-                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                           Foreground="{DynamicResource TextPrimaryBrush}"/>
                 <TextBlock x:Name="ScanningPlaceholderDetailText"
                            Margin="0,8,0,0"
                            FontSize="13"
-                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            TextWrapping="Wrap"
                            Text="Pre-scan checks (targets, known-good baselines, path discovery) and file analysis both report above. This panel is replaced when the scan finishes."/>
             </StackPanel>
@@ -422,7 +422,7 @@
                 <DataTemplate>
                     <TextBlock Text="{Binding}"
                                FontSize="12"
-                               Foreground="#B45309"
+                               Foreground="{DynamicResource TextWarningBrush}"
                                TextWrapping="Wrap"
                                Margin="0,0,0,4"/>
                 </DataTemplate>

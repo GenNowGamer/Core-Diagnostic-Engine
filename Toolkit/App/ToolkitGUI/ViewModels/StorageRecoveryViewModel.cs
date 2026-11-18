@@ -162,7 +162,7 @@ namespace ToolkitGUI.ViewModels
                 State = "Pending"
             });
 
-            RefreshDisksCommand = new RelayCommand(() => { RefreshPhysicalDisks(); return Task.CompletedTask; });
+            RefreshDisksCommand = new RelayCommand(RefreshPhysicalDisksAsync);
             OpenImageFileCommand = new RelayCommand(OpenImageFileAsync);
             CreateTestFixtureCommand = new RelayCommand(CreateTestFixtureAsync);
             InspectTargetCommand = new RelayCommand(InspectSelectedTargetAsync);
@@ -194,7 +194,7 @@ namespace ToolkitGUI.ViewModels
             _selectedImagingScope = ImagingScopes[0];
 
             AppendAudit("Storage Recovery module initialized in read-only diagnostic mode.");
-            RefreshPhysicalDisks();
+            _ = RefreshPhysicalDisksAsync();
         }
 
         public StorageTargetChoice? SelectedTarget
@@ -501,12 +501,12 @@ namespace ToolkitGUI.ViewModels
             set { _fileRecoveryStatusText = value; OnPropertyChanged(); }
         }
 
-        public void RefreshPhysicalDisks()
+        public async Task RefreshPhysicalDisksAsync()
         {
             try
             {
                 var existingImages = Targets.Where(t => t.IsDiskImage).ToList();
-                var physical = StorageRecoveryService.DiscoverPhysicalDiskTargets();
+                var physical = await Task.Run(() => StorageRecoveryService.DiscoverPhysicalDiskTargets());
                 Targets.Clear();
                 foreach (var p in physical)
                     Targets.Add(p);

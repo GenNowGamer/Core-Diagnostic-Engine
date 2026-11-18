@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# SAM offline account recovery — layouts per chntpw sam.h (pwdump/Samba reference).
+# SAM offline account recovery - layouts per chntpw sam.h (pwdump/Samba reference).
 # NT OWF per Microsoft: MD4(UTF-16LE password). SAM stores DES-obfuscated hash keyed by RID.
 
 # user_F offsets (chntpw sam.h)
@@ -479,8 +479,11 @@ function Backup-OfflineSamHiveFile {
     param(
         [Parameter(Mandatory)][string]$OfflineWindowsRoot,
         [string]$SamRegistryRoot = 'HKLM:\Offline_SAM',
-        [string]$BackupRoot = $(Join-Path $env:ProgramData 'CDE\AccountRecovery\Backups')
+        [string]$BackupRoot = ''
     )
+    if ([string]::IsNullOrWhiteSpace($BackupRoot)) {
+        $BackupRoot = Join-Path $OfflineWindowsRoot 'CDE_AccountRecovery_Backups'
+    }
     if (-not (Test-Path -LiteralPath $BackupRoot)) {
         New-Item -ItemType Directory -Path $BackupRoot -Force | Out-Null
     }
@@ -490,8 +493,9 @@ function Backup-OfflineSamHiveFile {
     if (Test-Path -LiteralPath $SamRegistryRoot) {
         $regPath = $SamRegistryRoot -replace '^HKLM:\\', 'HKLM\'
         $regExe = Join-Path $env:SystemRoot 'System32\reg.exe'
+        $quotedDest = '"' + $dest.Replace('"', '\"') + '"'
         $proc = Start-Process -FilePath $regExe `
-            -ArgumentList @('save', $regPath, $dest, '/y') `
+            -ArgumentList @('save', $regPath, $quotedDest, '/y') `
             -Wait -PassThru -NoNewWindow
         if ($proc.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $dest)) {
             throw "reg save failed to back up loaded SAM hive (exit $($proc.ExitCode))."
@@ -508,6 +512,55 @@ function Backup-OfflineSamHiveFile {
     return $dest
 }
 
+function Test-OfflineSamRecoveryReady {
+    if ((Get-EnvironmentMode) -ne 'WinPE') {
+        throw 'This tool must run in WinPE with the target Windows installation offline (not booted).'
+    }
+    $root = Resolve-OfflineWindowsRoot
+    if ([string]::IsNullOrWhiteSpace($root)) {
+        $raw = $env:OFFLINE_WINDOWS_ROOT
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            $raw = Read-OfflineEnvValue -Key 'OFFLINE_WINDOWS_ROOT'
+        }
+        throw "OFFLINE_WINDOWS_ROOT is not set or invalid (raw='$raw'). Boot WinPE option 2 to attach the offline install, then retry."
+    }
+    if (-not (Test-Path -LiteralPath 'HKLM:\Offline_SAM')) {
+        if ($env:OFFLINE_REGISTRY_LOADED -ne '1') {
+            Write-Log 'OFFLINE_REGISTRY_LOADED is not set; attempting to load Offline_SAM from attached Windows root.' -Level Warning
+        }
+        $samHive = Join-Path $root 'Windows\System32\config\SAM'
+        if (Test-Path -LiteralPath $samHive -PathType Leaf) {
+            $quotedSam = '"' + $samHive.Replace('"', '\"') + '"'
+            $load = Start-Process -FilePath "$env:SystemRoot\System32\reg.exe" -ArgumentList @('load', 'HKLM\Offline_SAM', $quotedSam) -Wait -PassThru -NoNewWindow
+            if ($load.ExitCode -ne 0 -or -not (Test-Path -LiteralPath 'HKLM:\Offline_SAM')) {
+                throw 'Offline_SAM is not loaded and could not be reloaded. Re-run offline Windows attachment from WinPE startup.'
+            }
+        } else {
+            throw 'Offline_SAM is not loaded. Re-run offline Windows attachment from WinPE startup.'
+        }
+    }
+    return $root
+}
+
+function Sync-OfflineSamHiveToDisk {
+    param([Parameter(Mandatory)][string]$OfflineWindowsRoot)
+
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
+    $regExe = Join-Path $env:SystemRoot 'System32\reg.exe'
+    $unload = Start-Process -FilePath $regExe -ArgumentList @('unload', 'HKLM\Offline_SAM') -Wait -PassThru -NoNewWindow
+    if ($unload.ExitCode -eq 0) {
+        Write-Log 'Offline_SAM hive flushed to disk.' -Level Success
+        $samHive = Join-Path $OfflineWindowsRoot 'Windows\System32\config\SAM'
+        if (Test-Path -LiteralPath $samHive -PathType Leaf) {
+            $quotedSam = '"' + $samHive.Replace('"', '\"') + '"'
+            Start-Process -FilePath $regExe -ArgumentList @('load', 'HKLM\Offline_SAM', $quotedSam) -Wait -PassThru -NoNewWindow | Out-Null
+        }
+    } else {
+        Write-Log 'Could not unload Offline_SAM; reboot from WinPE only after changes are saved.' -Level Warning
+    }
+}
+
 Export-ModuleMember -Function @(
     'Get-OfflineSamUserKeyPath',
     'Get-NtOwfPasswordHash',
@@ -517,5 +570,7 @@ Export-ModuleMember -Function @(
     'Test-OfflineSamCryptoValidation',
     'Enable-OfflineBuiltInAdministrator',
     'Disable-OfflineBuiltInAdministrator',
-    'Backup-OfflineSamHiveFile'
+    'Backup-OfflineSamHiveFile',
+    'Test-OfflineSamRecoveryReady',
+    'Sync-OfflineSamHiveToDisk'
 )

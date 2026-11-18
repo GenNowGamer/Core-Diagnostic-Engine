@@ -162,13 +162,21 @@ namespace ToolkitGUI.Services
                         cancellationToken).ConfigureAwait(false);
                 }
 
-                return await NtfsFileRecoveryEngine.ScanRecoverableFilesAsync(
-                    source,
-                    partition,
-                    includeDeleted,
-                    maxRecords,
-                    progress,
-                    cancellationToken).ConfigureAwait(false);
+                if (string.Equals(partition.DetectedFileSystem, "NTFS", StringComparison.OrdinalIgnoreCase))
+                {
+                    return await NtfsFileRecoveryEngine.ScanRecoverableFilesAsync(
+                        source,
+                        partition,
+                        includeDeleted,
+                        maxRecords,
+                        progress,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                if (partition.DetectedFileSystem?.Contains("BitLocker", StringComparison.OrdinalIgnoreCase) == true)
+                    throw new InvalidOperationException("Partition is BitLocker-encrypted. Unlock the BitLocker volume before scanning for recoverable files.");
+
+                throw new NotSupportedException($"File recovery scan is not supported for filesystem '{partition.DetectedFileSystem ?? "Unknown"}'. Supported filesystems: NTFS, FAT32, exFAT.");
             }, cancellationToken).ConfigureAwait(false);
         }
 

@@ -834,12 +834,23 @@ function Invoke-HijackSingleFindingRepair {
             }
         }
         'browser.chromium.prefs' {
+            $procName = if ([string]$data.label -match '(?i)edge') { 'msedge' } else { 'chrome' }
+            $running = @(Get-Process -Name $procName -ErrorAction SilentlyContinue).Count -gt 0
             $work = Repair-HijackChromiumPreferences -PrefsPath ([string]$data.prefsPath) -Label ([string]$data.label) -OnlyIfHijacked
-            return @{ Status = if ($work.Changed) { 'Pass' } else { 'Warn' }; Details = $work.Details }
+            $outDetails = @($work.Details)
+            if ($running) {
+                $outDetails += "Note: $($data.label) ($procName.exe) is currently running; close it so in-memory preferences do not overwrite the repaired file."
+            }
+            return @{ Status = if ($work.Changed -and -not $running) { 'Pass' } else { 'Warn' }; Details = $outDetails }
         }
         'browser.firefox.prefs' {
+            $running = @(Get-Process -Name 'firefox' -ErrorAction SilentlyContinue).Count -gt 0
             $work = Repair-HijackFirefoxPrefs -PrefsPath ([string]$data.prefsPath) -Label ([string]$data.label)
-            return @{ Status = if ($work.Changed) { 'Pass' } else { 'Warn' }; Details = $work.Details }
+            $outDetails = @($work.Details)
+            if ($running) {
+                $outDetails += 'Note: Firefox (firefox.exe) is currently running; close it so in-memory preferences do not overwrite prefs.js.'
+            }
+            return @{ Status = if ($work.Changed -and -not $running) { 'Pass' } else { 'Warn' }; Details = $outDetails }
         }
         'browser.firefox.userjs' {
             $userJs = [string]$data.userJsPath
@@ -938,12 +949,24 @@ function Invoke-HijackSingleFindingRepair {
             }
 
             try {
-                Set-Service -Name 'WinDefend' -StartupType Automatic -ErrorAction Stop
-                Start-Service -Name 'WinDefend' -ErrorAction SilentlyContinue
-                $details.Add('WinDefend service set to Automatic.') | Out-Null
+                $winDefSvc = Get-Service -Name 'WinDefend' -ErrorAction Stop
+                if ($winDefSvc.StartType.ToString() -ne 'Automatic') {
+                    Set-Service -Name 'WinDefend' -StartupType Automatic -ErrorAction Stop
+                    $details.Add('WinDefend service set to Automatic.') | Out-Null
+                } else {
+                    $details.Add('WinDefend service is already Automatic.') | Out-Null
+                }
+                if ($winDefSvc.Status -ne 'Running') {
+                    Start-Service -Name 'WinDefend' -ErrorAction SilentlyContinue
+                }
             } catch {
-                $details.Add("WinDefend service: $($_.Exception.Message)") | Out-Null
-                $warn = $true
+                $errMsg = $_.Exception.Message
+                if ($_.CategoryInfo.Category -eq 'PermissionDenied' -or $errMsg -match 'Access is denied|protected') {
+                    $details.Add("WinDefend service startup type is protected by Windows: $errMsg") | Out-Null
+                } else {
+                    $details.Add("WinDefend service: $errMsg") | Out-Null
+                    $warn = $true
+                }
             }
 
             try {

@@ -11,14 +11,15 @@ $workflow = Start-Workflow -WorkflowName 'Bootloader_RebuildBCD' -ScriptBlock {
     Assert-WinPeOrThrow -Result $r
     $target = Select-BootloaderTargetWithConfirmation -Targets (Get-BootloaderTargets) -ActionName 'Rebuild BCD' -PreSelectedDrive $TargetDrive
 
-    if (-not (Confirm-BootloaderWriteAction -Message "Run bcdboot to rebuild BCD for target $($target.WindowsDir)?`n`nSystem partition: $($target.DriveRoot)" -Force:$Confirmed)) {
+    $bootTargetRoot = if ($target.EfiDriveRoot) { $target.EfiDriveRoot } else { $target.DriveRoot }
+    if (-not (Confirm-BootloaderWriteAction -Message "Run bcdboot to rebuild BCD for target $($target.WindowsDir)?`n`nSystem partition: $bootTargetRoot" -Force:$Confirmed)) {
         throw 'Operation cancelled by operator at write confirmation.'
     }
 
     # bootrec /rebuildbcd is not available in ADK WinPE (WinRE-only).
     # bcdboot.exe is the WinPE-native equivalent: it creates/repairs the BCD store and copies
     # boot files for the specified Windows installation. /f ALL covers both BIOS and UEFI.
-    $step = Invoke-BootloaderCommandCaptured -FilePath 'bcdboot.exe' -ArgumentList @($target.WindowsDir, '/s', $target.DriveRoot, '/f', 'ALL') -StepName 'BcdBootRebuildBCD'
+    $step = Invoke-BootloaderCommandCaptured -FilePath 'bcdboot.exe' -ArgumentList @($target.WindowsDir, '/s', $bootTargetRoot, '/f', 'ALL') -StepName 'BcdBootRebuildBCD'
     Add-BootloaderStep -Result $r -Step $step
 }
 

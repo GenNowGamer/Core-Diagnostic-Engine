@@ -8,18 +8,18 @@
         MinWidth="560"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize"
-        Background="{StaticResource BackgroundDarkBrush}">
+        Background="{DynamicResource BackgroundDarkBrush}">
     <Window.Resources>
         <Style x:Key="SectionLabelStyle" TargetType="TextBlock">
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
         <Style x:Key="SecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
-            <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource BackgroundLightBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="14,8"/>
             <Setter Property="Template">
@@ -40,7 +40,7 @@
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="border" Property="Background" Value="#E1E6EF"/>
                                 <Setter TargetName="border" Property="BorderBrush" Value="#CCD4E0"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -69,18 +69,18 @@
                     <TextBlock Text="Core Security Tool"
                                FontSize="24"
                                FontWeight="Bold"
-                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
                     <TextBlock Margin="0,6,0,0"
                                Text="Configure scan mode and detection scope. Remediation is selected after scan results load."
                                FontSize="13"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <Border Grid.Column="1"
                         Padding="12,8"
                         CornerRadius="16"
-                        Background="{StaticResource AccentBlueBrush}"
+                        Background="{DynamicResource AccentBlueBrush}"
                         VerticalAlignment="Top">
                     <TextBlock Text="Ready"
                                Foreground="White"
@@ -129,7 +129,7 @@
                             <TextBlock Grid.Row="2"
                                        Grid.Column="1"
                                        Margin="12,2,0,0"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
                                        Text="Scan only first. Choose Quarantine or Remove from the post-scan findings dialog."/>
                         </Grid>
                     </Border>
@@ -146,7 +146,7 @@
                                            Style="{StaticResource SectionLabelStyle}"/>
                                 <TextBlock Margin="0,6,0,0"
                                            Text="Download the latest malware hash IOCs from the CDE threat rules feed before scanning."
-                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
                                            TextWrapping="Wrap"/>
                             </StackPanel>
 
@@ -174,7 +174,7 @@
                                 <TextBlock x:Name="TargetHintText"
                                            Text="(used only when Scan Type = Custom Scan)"
                                            DockPanel.Dock="Right"
-                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
                             </DockPanel>
 
                             <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
@@ -204,14 +204,14 @@
                                      x:Name="TargetsListBox"
                                      SelectionChanged="TargetsListBox_SelectionChanged"
                                      MaxHeight="130"
-                                     BorderBrush="{StaticResource BorderBrush}"
+                                     BorderBrush="{DynamicResource BorderBrush}"
                                      BorderThickness="1"
-                                     Background="White"
+                                     Background="{DynamicResource SurfaceGridRowBrush}"
                                      Margin="0,0,0,10"/>
 
                             <TextBlock Grid.Row="3"
                                        x:Name="TargetsValidationText"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
                                        TextWrapping="Wrap"/>
                         </Grid>
                     </Border>
@@ -231,7 +231,7 @@
 
                 <TextBlock Grid.Column="0"
                            VerticalAlignment="Center"
-                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            Text="Open and Run performs scan-only. After results load, select findings and choose Quarantine or Remove."/>
 
                 <Button Grid.Column="1"

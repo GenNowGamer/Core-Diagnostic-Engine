@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    CDE Storage Recovery — Read-only partition & file system diagnostic workflow.
+    CDE Storage Recovery - Read-only partition & file system diagnostic workflow.
 .PARAMETER ToolName
     Workflow action: Inspect, Snapshot, or ValidateRules.
 .PARAMETER ImagePath

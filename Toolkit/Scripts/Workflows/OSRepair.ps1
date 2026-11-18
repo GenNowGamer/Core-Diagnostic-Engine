@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     OSRepair.ps1 - Individual OS repair tools dispatcher.
@@ -522,10 +522,10 @@ function Invoke-SFC {
         Write-Log "SFC Result: $($step.Status) (ExitCode $($step.ExitCode))"
         if ($step.Output) { Write-Log $step.Output }
     } else {
-        # SFC offline mode requires VSS and CBS stack — both unavailable in WinPE.
+        # SFC offline mode requires VSS and CBS stack - both unavailable in WinPE.
         # Use DISM offline CheckHealth + RestoreHealth instead.
         $imageDrive = ($WindowsDir | Split-Path -Qualifier) + '\'
-        Write-Log "SFC unavailable in WinPE — running DISM offline repair on $imageDrive"
+        Write-Log "SFC unavailable in WinPE - running DISM offline repair on $imageDrive"
 
         $checkStep = Invoke-ProcessStreamed -FilePath 'dism.exe' `
             -ArgumentList @("/Image:$imageDrive", '/Cleanup-Image', '/CheckHealth') `
@@ -542,6 +542,130 @@ function Invoke-SFC {
     }
 }
 
+function Get-DismCbsSummary {
+    <#
+    .SYNOPSIS
+        Reads the CBS.log Detect and Repair summary block within a run's timestamp window.
+    #>
+    param(
+        [Parameter(Mandatory)][datetime]$StartTime,
+        [Parameter(Mandatory)][datetime]$EndTime,
+        [string]$LogPath = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace($LogPath)) {
+        $winRoot = if (-not [string]::IsNullOrWhiteSpace($WindowsDir)) {
+            $WindowsDir
+        } elseif (-not [string]::IsNullOrWhiteSpace($env:SystemRoot)) {
+            $env:SystemRoot
+        } else {
+            'C:\Windows'
+        }
+        $LogPath = Join-Path $winRoot 'Logs\CBS\CBS.log'
+    }
+
+    if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+        return $null
+    }
+
+    $windowStart = $StartTime.AddSeconds(-2)
+    $windowEnd   = $EndTime.AddSeconds(2)
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    try {
+        $fs = [System.IO.File]::Open($LogPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+            $tailBytes = 524288L
+            if ($fs.Length -gt $tailBytes) {
+                $null = $fs.Seek(-$tailBytes, [System.IO.SeekOrigin]::End)
+            }
+            $reader = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8, $true)
+            try {
+                if ($fs.Position -gt 0) {
+                    $null = $reader.ReadLine()
+                }
+                while ($null -ne ($line = $reader.ReadLine())) {
+                    if ($line -match '^(?<ts>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}),') {
+                        $lineTime = [datetime]::MinValue
+                        if ([datetime]::TryParseExact(
+                                $Matches['ts'],
+                                'yyyy-MM-dd HH:mm:ss',
+                                [System.Globalization.CultureInfo]::InvariantCulture,
+                                [System.Globalization.DateTimeStyles]::None,
+                                [ref]$lineTime)) {
+                            if ($lineTime -ge $windowStart -and $lineTime -le $windowEnd) {
+                                $lines.Add($line) | Out-Null
+                            }
+                        }
+                    }
+                }
+            } finally {
+                $reader.Dispose()
+            }
+        } finally {
+            $fs.Dispose()
+        }
+    } catch {
+        Write-Log "Could not read CBS.log summary: $($_.Exception.Message)" -Level Warning
+        return $null
+    }
+
+    if ($lines.Count -eq 0) {
+        return $null
+    }
+
+    $summaryStart = -1
+    for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+        if ($lines[$i] -match 'CBS\s+Summary:\s*$') {
+            $summaryStart = $i
+            break
+        }
+    }
+
+    if ($summaryStart -lt 0) {
+        return $null
+    }
+
+    $detected = $null
+    $repaired = $null
+    $rebootRequired = $null
+    $detectedBreakdown = [System.Collections.Generic.List[string]]::new()
+    $repairedBreakdown = [System.Collections.Generic.List[string]]::new()
+
+    for ($i = $summaryStart; $i -lt $lines.Count; $i++) {
+        $entry = $lines[$i]
+        if ($entry -match 'Total Detected Corruption:\s*(?<count>\d+)') {
+            $detected = [int]$Matches['count']
+        } elseif ($entry -match 'Total Repaired Corruption:\s*(?<count>\d+)') {
+            $repaired = [int]$Matches['count']
+        } elseif ($entry -match 'CBS\s+(?<label>(?:CBS|CSI)\s+[^:\r\n]+?(?:Corruption|Corrupt)):\s*(?<count>\d+)') {
+            $count = [int]$Matches['count']
+            if ($count -gt 0) {
+                $detectedBreakdown.Add("$($Matches['label'].Trim()): $count") | Out-Null
+            }
+        } elseif ($entry -match 'CBS\s+(?<label>(?:CBS|CSI)\s+[^:\r\n]+?Repaired):\s*(?<count>\d+)') {
+            $count = [int]$Matches['count']
+            if ($count -gt 0) {
+                $repairedBreakdown.Add("$($Matches['label'].Trim()): $count") | Out-Null
+            }
+        } elseif ($entry -match 'Session:\s+\S+\s+finalized\.\s+Reboot required:\s*(?<reboot>[^,\s]+)') {
+            $rebootRequired = $Matches['reboot'].Trim()
+        }
+    }
+
+    if ($null -eq $detected -and $null -eq $repaired -and [string]::IsNullOrWhiteSpace($rebootRequired)) {
+        return $null
+    }
+
+    return [PSCustomObject]@{
+        TotalDetectedCorruption = $detected
+        TotalRepairedCorruption = $repaired
+        DetectedBreakdown       = @($detectedBreakdown)
+        RepairedBreakdown       = @($repairedBreakdown)
+        RebootRequired          = $rebootRequired
+    }
+}
+
 function Invoke-DISM {
     param($r)
 
@@ -549,6 +673,7 @@ function Invoke-DISM {
     Write-Log 'Running DISM /RestoreHealth...'
     Write-CdeEvent -Payload @{ type = 'progress'; tool = 'OSRepair'; step = 'DISM'; pct = 0; message = 'Starting DISM RestoreHealth' }
 
+    $runStart = Get-Date
     if ($envMode -eq 'Windows') {
         $step = Invoke-DismRestoreHealthStep -Mode Online -StepName 'DISM_Online' `
             -SourcePath $DismSource -SourceIndex $DismSourceIndex
@@ -556,6 +681,42 @@ function Invoke-DISM {
         $imageDrive = ($WindowsDir | Split-Path -Qualifier) + '\'
         $step = Invoke-DismRestoreHealthStep -Mode Offline -StepName 'DISM_Offline' `
             -ImageDrive $imageDrive -SourcePath $DismSource -SourceIndex $DismSourceIndex
+    }
+    $runEnd = Get-Date
+
+    $cbsLogPath = if ($envMode -eq 'Windows') {
+        $winRoot = if (-not [string]::IsNullOrWhiteSpace($env:SystemRoot)) { $env:SystemRoot } else { 'C:\Windows' }
+        Join-Path $winRoot 'Logs\CBS\CBS.log'
+    } else {
+        Join-Path $WindowsDir 'Logs\CBS\CBS.log'
+    }
+
+    $cbsSummary = Get-DismCbsSummary -StartTime $runStart -EndTime $runEnd -LogPath $cbsLogPath
+    if ($cbsSummary) {
+        $summaryLines = [System.Collections.Generic.List[string]]::new()
+        if ($null -ne $cbsSummary.TotalDetectedCorruption) {
+            $summaryLines.Add("Total Detected Corruption: $($cbsSummary.TotalDetectedCorruption)") | Out-Null
+        }
+        foreach ($item in $cbsSummary.DetectedBreakdown) {
+            $summaryLines.Add($item) | Out-Null
+        }
+        if ($null -ne $cbsSummary.TotalRepairedCorruption) {
+            $summaryLines.Add("Total Repaired Corruption: $($cbsSummary.TotalRepairedCorruption)") | Out-Null
+        }
+        foreach ($item in $cbsSummary.RepairedBreakdown) {
+            $summaryLines.Add($item) | Out-Null
+        }
+        if (-not [string]::IsNullOrWhiteSpace($cbsSummary.RebootRequired)) {
+            $summaryLines.Add("Reboot Required: $($cbsSummary.RebootRequired)") | Out-Null
+        }
+        if ($summaryLines.Count -gt 0) {
+            $summaryText = $summaryLines -join "`r`n"
+            $step.Output = if ([string]::IsNullOrWhiteSpace($step.Output)) {
+                $summaryText
+            } else {
+                "$($step.Output)`r`n$summaryText"
+            }
+        }
     }
 
     $r.Steps.Add($step)

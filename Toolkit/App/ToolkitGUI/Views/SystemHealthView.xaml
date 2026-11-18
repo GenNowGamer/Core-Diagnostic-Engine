@@ -5,7 +5,7 @@
              xmlns:views="clr-namespace:ToolkitGUI.Views"
              xmlns:models="clr-namespace:ToolkitGUI.Models"
              xmlns:controls="clr-namespace:ToolkitGUI.Controls"
-             Background="{StaticResource BackgroundDarkBrush}">
+             Background="{DynamicResource BackgroundDarkBrush}">
     <views:WorkflowViewBase.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <models:InverseBooleanConverter x:Key="InverseBool"/>
@@ -24,13 +24,13 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
-                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+            <Border Grid.Row="0" Background="{DynamicResource BackgroundMidBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
                 <Grid>
                     <StackPanel>
                         <TextBlock Text="System Health Check" FontSize="22" FontWeight="Bold"/>
                         <TextBlock Text="Select diagnostic checks to run. Use presets or pick individual items."
-                                   FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                                   FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0"/>
                     </StackPanel>
                     <Button Content="Run Health Check" Style="{StaticResource ActionButtonStyle}"
                             HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -38,8 +38,8 @@
                 </Grid>
             </Border>
 
-            <Border Grid.Row="1" Background="{StaticResource BackgroundMidBrush}"
-                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+            <Border Grid.Row="1" Background="{DynamicResource BackgroundMidBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
                 <controls:ResponsiveToolbar VerticalAlignment="Center">
                     <Button Content="Recommended" Command="{Binding SelectRecommendedCommand}"
                             Margin="0,0,8,6" Padding="12,6" Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
@@ -54,7 +54,7 @@
                     <Button Content="Clear All" Command="{Binding ClearAllCommand}"
                             Margin="0,0,8,6" Padding="12,6" Style="{StaticResource ActionButtonStyle}" FontSize="12"/>
                     <TextBlock Text="{Binding EstimatedMinutesDisplay}" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
-                               Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,6"/>
+                               Foreground="{DynamicResource AccentBlueBrush}" Margin="0,0,0,6"/>
                 </controls:ResponsiveToolbar>
             </Border>
 
@@ -64,11 +64,11 @@
                         <DataTemplate>
                             <StackPanel Margin="0,0,0,16">
                                 <TextBlock Text="{Binding Label}" FontSize="11" FontWeight="Bold"
-                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
                                 <ItemsControl ItemsSource="{Binding Checks}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Background="White" BorderBrush="{StaticResource BorderBrush}"
+                                            <Border Background="{DynamicResource SurfaceGridRowBrush}" BorderBrush="{DynamicResource BorderBrush}"
                                                     BorderThickness="1" CornerRadius="5" Padding="12,10" Margin="0,0,0,6">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
@@ -80,10 +80,10 @@
                                                     <StackPanel Grid.Column="1">
                                                         <TextBlock Text="{Binding Label}" FontSize="14" FontWeight="SemiBold"/>
                                                         <TextBlock Text="{Binding Description}" FontSize="12"
-                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                                                    TextWrapping="Wrap" Margin="0,2,0,0"/>
                                                         <TextBlock Text="{Binding UnavailableReason}" FontSize="11"
-                                                                   Foreground="{StaticResource AccentYellowBrush}"
+                                                                   Foreground="{DynamicResource AccentYellowBrush}"
                                                                    Visibility="{Binding IsUnavailable, Converter={StaticResource BoolToVis}}"
                                                                    Margin="0,4,0,0"/>
                                                     </StackPanel>
@@ -106,21 +106,21 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-            <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
-                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+            <Border Grid.Row="0" Background="{DynamicResource BackgroundMidBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
                 <StackPanel>
                     <TextBlock Text="Running Health Check..." FontSize="22" FontWeight="Bold"/>
                     <TextBlock Text="{Binding PhaseLabel}" FontSize="13"
-                               Foreground="{StaticResource AccentBlueBrush}" Margin="0,4,0,0"/>
+                               Foreground="{DynamicResource AccentBlueBrush}" Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
-            <Border Grid.Row="1" Background="{StaticResource BackgroundMidBrush}"
-                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+            <Border Grid.Row="1" Background="{DynamicResource BackgroundMidBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
                 <StackPanel>
                     <TextBlock Text="{Binding ProgressCaption}" FontSize="13" Margin="0,0,0,8"/>
                     <ProgressBar Value="{Binding Progress}" Maximum="100" Height="8"
-                                 Background="{StaticResource BackgroundLightBrush}"
-                                 Foreground="{StaticResource AccentBlueBrush}" BorderThickness="0"/>
+                                 Background="{DynamicResource BackgroundLightBrush}"
+                                 Foreground="{DynamicResource AccentBlueBrush}" BorderThickness="0"/>
                 </StackPanel>
             </Border>
             <Grid Grid.Row="2" Background="{StaticResource LogBgBrush}">
@@ -138,8 +138,8 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
-                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+            <Border Grid.Row="0" Background="{DynamicResource BackgroundMidBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
                 <Grid>
                     <StackPanel>
                         <TextBlock Text="Health Check Results" FontSize="22" FontWeight="Bold"/>
@@ -172,7 +172,7 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Text="FINDINGS" FontSize="10" FontWeight="Bold"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
                     <ListBox Grid.Row="1"
                              ItemsSource="{Binding Findings}"
                              SelectedItem="{Binding SelectedFinding, Mode=TwoWay}"
@@ -204,8 +204,8 @@
                                                 Padding="16,12,12,12">
                                             <Border.Style>
                                                 <Style TargetType="Border">
-                                                    <Setter Property="Background" Value="White"/>
-                                                    <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource SurfaceGridRowBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
                                                     <Setter Property="BorderThickness" Value="1"/>
                                                 </Style>
                                             </Border.Style>
@@ -223,7 +223,7 @@
                                                         </Border>
                                                     </StackPanel>
                                                     <Border x:Name="ViewingBadge" Grid.Column="1"
-                                                            Background="{StaticResource AccentBlueBrush}"
+                                                            Background="{DynamicResource AccentBlueBrush}"
                                                             CornerRadius="3" Padding="6,2"
                                                             Margin="8,0,0,0"
                                                             Visibility="Collapsed">
@@ -232,7 +232,7 @@
                                                     </Border>
                                                 </Grid>
                                                 <TextBlock Text="{Binding CategoryLabel}" FontSize="10"
-                                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                                                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0"/>
                                                 <TextBlock Text="{Binding DetailOverview}" FontSize="12" TextWrapping="Wrap"
                                                            Margin="0,6,0,0" MaxHeight="72" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
@@ -241,7 +241,7 @@
                                                 Width="5"
                                                 Margin="1,7,0,7"
                                                 HorizontalAlignment="Left"
-                                                Background="{StaticResource AccentBlueBrush}"
+                                                Background="{DynamicResource AccentBlueBrush}"
                                                 CornerRadius="0,3,3,0"
                                                 Visibility="Collapsed"/>
                                     </Grid>
@@ -249,7 +249,7 @@
                                         <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
                                                      Value="True">
                                             <Setter TargetName="Card" Property="Background" Value="#EAF3FF"/>
-                                            <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
+                                            <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
                                             <Setter TargetName="Card" Property="BorderThickness" Value="2"/>
                                             <Setter TargetName="SelectionIndicator" Property="Visibility" Value="Visible"/>
                                             <Setter TargetName="ViewingBadge" Property="Visibility" Value="Visible"/>
@@ -260,26 +260,26 @@
                     </ListBox>
                 </Grid>
 
-                <Border Grid.Column="1" Background="{StaticResource BackgroundMidBrush}"
-                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0"
+                <Border Grid.Column="1" Background="{DynamicResource BackgroundMidBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0"
                         Margin="0,0,0,0">
                     <Grid>
                         <StackPanel Margin="20" VerticalAlignment="Center"
                                     Visibility="{Binding HasSelectedFinding, Converter={StaticResource InverseBoolToVis}}">
                             <TextBlock Text="REVIEW" FontSize="10" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,12"/>
                             <TextBlock Text="Select a finding"
                                        FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
                             <TextBlock Text="Click a result card on the left to see the full scan summary and recommended actions for that check."
                                        FontSize="13" TextWrapping="Wrap"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
                         </StackPanel>
 
                         <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20"
                                       Visibility="{Binding HasSelectedFinding, Converter={StaticResource BoolToVis}}">
                             <StackPanel>
                                 <TextBlock Text="REVIEW" FontSize="10" FontWeight="Bold"
-                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,12"/>
 
                                 <StackPanel DataContext="{Binding SelectedFinding}">
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
@@ -294,20 +294,20 @@
                                     <TextBox Text="{Binding CategoryLabel, Mode=OneWay}"
                                              Style="{StaticResource SelectableTextStyle}"
                                              FontSize="11"
-                                             Foreground="{StaticResource TextSecondaryBrush}"
+                                             Foreground="{DynamicResource TextSecondaryBrush}"
                                              Margin="0,0,0,12"/>
                                 </StackPanel>
 
                                 <TextBlock Text="OVERVIEW" FontSize="10" FontWeight="Bold"
-                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
                                 <TextBox Text="{Binding SelectedFindingHeadline, Mode=OneWay}"
                                          Style="{StaticResource SelectableTextStyle}"
                                          FontSize="13" Margin="0,0,0,16"/>
 
                                 <Border Margin="0,0,0,16"
                                         Padding="12"
-                                        Background="White"
-                                        BorderBrush="{StaticResource BorderBrush}"
+                                        Background="{DynamicResource SurfaceGridRowBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="6"
                                         Visibility="{Binding HasSelectedFindingPlainText, Converter={StaticResource BoolToVis}}">
@@ -319,7 +319,7 @@
                                 </Border>
 
                                 <TextBlock Text="ITEMS TO ADDRESS" FontSize="10" FontWeight="Bold"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
                                            Margin="0,0,0,8"
                                            Visibility="{Binding HasSelectedAttentionItems, Converter={StaticResource BoolToVis}}"/>
                                 <ItemsControl ItemsSource="{Binding SelectedAttentionItems}" Margin="0,0,0,16"
@@ -337,7 +337,7 @@
                                 </ItemsControl>
 
                                 <TextBlock Text="DETAILED RESULTS" FontSize="10" FontWeight="Bold"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
                                            Margin="0,0,0,8">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
@@ -380,7 +380,7 @@
                                                               Visibility="{Binding ShowAsExpander, Converter={StaticResource BoolToVis}}">
                                                         <Expander.Header>
                                                             <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
-                                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
                                                         </Expander.Header>
                                                         <StackPanel Margin="0,8,0,0">
                                                             <ItemsControl ItemsSource="{Binding Items}"
@@ -397,7 +397,7 @@
                                                                                        Text="{Binding Label}"
                                                                                        FontSize="12"
                                                                                        FontWeight="SemiBold"
-                                                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
                                                                             <TextBox Grid.Column="1"
                                                                                      Text="{Binding Value, Mode=OneWay}"
                                                                                      Style="{StaticResource SelectableTextStyle}"
@@ -412,7 +412,7 @@
                                                     <!-- Plain section (Needs review, or Verified when alone) -->
                                                     <StackPanel Visibility="{Binding ShowAsPlainSection, Converter={StaticResource BoolToVis}}">
                                                         <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
-                                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                                   Foreground="{DynamicResource TextPrimaryBrush}"
                                                                    Margin="0,0,0,8"
                                                                    Visibility="{Binding HasTitle, Converter={StaticResource BoolToVis}}"/>
                                                         <ItemsControl ItemsSource="{Binding Items}"
@@ -429,7 +429,7 @@
                                                                                    Text="{Binding Label}"
                                                                                    FontSize="12"
                                                                                    FontWeight="SemiBold"
-                                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
                                                                         <TextBox Grid.Column="1"
                                                                                  Text="{Binding Value, Mode=OneWay}"
                                                                                  Style="{StaticResource SelectableTextStyle}"
@@ -446,7 +446,7 @@
                                 </ItemsControl>
 
                                 <TextBlock Text="RECOMMENDED ACTIONS" FontSize="10" FontWeight="Bold"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
                                            Margin="0,0,0,8"
                                            Visibility="{Binding HasSelectedFindingActions, Converter={StaticResource BoolToVis}}"/>
                                 <ItemsControl ItemsSource="{Binding SelectedFindingActions}" Margin="0,0,0,8">
@@ -471,7 +471,7 @@
 
                                 <TextBox Text="{Binding SelectedFindingGuidance, Mode=OneWay}"
                                          FontSize="13"
-                                         Foreground="{StaticResource TextSecondaryBrush}"
+                                         Foreground="{DynamicResource TextSecondaryBrush}"
                                          Margin="0,8,0,0">
                                     <TextBox.Style>
                                         <Style TargetType="TextBox" BasedOn="{StaticResource SelectableTextStyle}">

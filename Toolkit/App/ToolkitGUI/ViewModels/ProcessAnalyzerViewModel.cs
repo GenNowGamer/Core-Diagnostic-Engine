@@ -56,9 +56,13 @@ namespace ToolkitGUI.ViewModels
         private string _detailStatusText = "Select a process for details.";
         private System.Timers.Timer? _autoRefreshTimer;
         private readonly SemaphoreSlim _autoRefreshGate = new(1, 1);
+        private readonly SemaphoreSlim _reportGate = new(1, 1);
         private HashSet<int> _knownPids = new();
         private int? _preserveSelectedPid;
         private int _detailLoadSerial;
+        private int _loadGeneration;
+        private bool _isKilling;
+        private bool _isCstScanning;
         private string? _snapshotReportBaseName;
         private TabularScanReportPaths? _snapshotReportPaths;
         private string _snapshotPdfPath = string.Empty;
@@ -267,6 +271,7 @@ namespace ToolkitGUI.ViewModels
             if (FreezeSnapshot && silent)
                 return;
 
+            var gen = Interlocked.Increment(ref _loadGeneration);
             if (!silent) IsLoading = true;
             if (!silent) StatusText = "Loading processes...";
 
@@ -276,6 +281,9 @@ namespace ToolkitGUI.ViewModels
                 var deep = DeepScanEnabled ? "-DeepScan" : string.Empty;
                 var (json, psErr) = await PowerShellService.QueryAsync(
                     $"& '{ScriptPath}' -Action List -SampleMs {sampleMs} {deep}");
+
+                if (gen != Volatile.Read(ref _loadGeneration))
+                    return;
 
                 if (!string.IsNullOrWhiteSpace(psErr) && string.IsNullOrWhiteSpace(json))
                 {
@@ -296,9 +304,13 @@ namespace ToolkitGUI.ViewModels
                     }
                 }
 
-                if (procs != null && procs.Length > 0)
+                if (procs != null && procs.Length > 0 &&
+                    procs.Any(p => string.IsNullOrWhiteSpace(p.CommandLine) || string.IsNullOrWhiteSpace(p.UserName) || p.UserName == "(unknown)"))
                 {
                     var wmiMap = await Task.Run(ProcessWmiEnricher.QueryAll);
+                    if (gen != Volatile.Read(ref _loadGeneration))
+                        return;
+
                     foreach (var p in procs)
                     {
                         if (wmiMap.TryGetValue(p.Pid, out var wmi))
@@ -310,6 +322,9 @@ namespace ToolkitGUI.ViewModels
 
                 Application.Current.Dispatcher.Invoke(() =>
                 {
+                    if (gen != Volatile.Read(ref _loadGeneration))
+                        return;
+
                     Processes.Clear();
                     if (procs != null)
                     {
@@ -334,7 +349,17 @@ namespace ToolkitGUI.ViewModels
                         var restored = FilteredProcesses.FirstOrDefault(p => p.Pid == selectedPid.Value)
                                          ?? Processes.FirstOrDefault(p => p.Pid == selectedPid.Value);
                         if (restored != null)
-                            SelectedProcess = restored;
+                        {
+                            if (silent && _selectedProcess?.Pid == restored.Pid)
+                            {
+                                _selectedProcess = restored;
+                                OnPropertyChanged(nameof(SelectedProcess));
+                            }
+                            else
+                            {
+                                SelectedProcess = restored;
+                            }
+                        }
                     }
 
                     if (InvestigationMode && _knownPids.Count == 0)
@@ -346,12 +371,12 @@ namespace ToolkitGUI.ViewModels
 
                 _preserveSelectedPid = null;
 
-                if (Processes.Count > 0)
+                if (!silent && Processes.Count > 0)
                     _ = AutoSaveSnapshotReportAsync();
             }
             catch (Exception ex)
             {
-                if (!silent)
+                if (!silent && gen == Volatile.Read(ref _loadGeneration))
                 {
                     Application.Current.Dispatcher.Invoke(() =>
                         StatusText = $"Error: {ex.Message}");
@@ -359,7 +384,8 @@ namespace ToolkitGUI.ViewModels
             }
             finally
             {
-                if (!silent) IsLoading = false;
+                if (!silent && gen == Volatile.Read(ref _loadGeneration))
+                    IsLoading = false;
             }
         }
 
@@ -383,6 +409,9 @@ namespace ToolkitGUI.ViewModels
             var loadId = Interlocked.Increment(ref _detailLoadSerial);
 
             var wmi = await Task.Run(() => ProcessWmiEnricher.QueryOne(entry.Pid));
+            if (loadId != _detailLoadSerial)
+                return;
+
             if (wmi != null)
                 ProcessWmiEnricher.ApplyToEntry(entry, wmi);
 
@@ -657,6 +686,11 @@ namespace ToolkitGUI.ViewModels
         private async Task KillAsync(ProcessEntry? p)
         {
             if (p == null) return;
+            if (_isKilling)
+            {
+                StatusText = "A process termination is already in progress.";
+                return;
+            }
 
             if (ProtectedProcessNames.Contains(p.Name) || p.Pid <= 4)
             {
@@ -676,22 +710,31 @@ namespace ToolkitGUI.ViewModels
             if (confirm != MessageBoxResult.Yes)
                 return;
 
-            _preserveSelectedPid = null;
-            StatusText = $"Terminating PID {p.Pid}...";
-            var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' -Action Kill -TargetPid {p.Pid}");
-            if (!result.Success)
+            _isKilling = true;
+            try
             {
-                StatusText = $"Terminate failed: {FormatExecError(result)}";
-                return;
-            }
+                _preserveSelectedPid = null;
+                StatusText = $"Terminating PID {p.Pid}...";
+                var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' -Action Kill -TargetPid {p.Pid}");
+                if (!result.Success)
+                {
+                    StatusText = $"Terminate failed: {FormatExecError(result)}";
+                    return;
+                }
 
-            Processes.Remove(p);
-            FilteredProcesses.Remove(p);
-            SelectedProcess = null;
-            SelectedDetail = null;
-            StatusText = $"Terminated: {p.Name} (PID {p.Pid})";
-            if (TreeViewMode)
-                BuildProcessTree();
+                Processes.Remove(p);
+                FilteredProcesses.Remove(p);
+                SelectedProcess = null;
+                SelectedDetail = null;
+                OnPropertyChanged(nameof(CanViewSnapshotReport));
+                StatusText = $"Terminated: {p.Name} (PID {p.Pid})";
+                if (TreeViewMode)
+                    BuildProcessTree();
+            }
+            finally
+            {
+                _isKilling = false;
+            }
         }
 
         private async Task OpenSnapshotReportAsync()
@@ -735,12 +778,20 @@ namespace ToolkitGUI.ViewModels
 
         private async Task EnsureSnapshotReportsAsync()
         {
-            var document = BuildProcessSnapshotDocument();
-            _snapshotReportPaths = await Task.Run(() =>
-                TabularScanReportService.EnsureReports(document, _snapshotReportBaseName));
-            _snapshotReportBaseName = _snapshotReportPaths.BaseName;
-            _snapshotJsonPath = _snapshotReportPaths.JsonPath;
-            _snapshotPdfPath = _snapshotReportPaths.PdfPath;
+            await _reportGate.WaitAsync();
+            try
+            {
+                var document = BuildProcessSnapshotDocument();
+                _snapshotReportPaths = await Task.Run(() =>
+                    TabularScanReportService.EnsureReports(document, _snapshotReportBaseName));
+                _snapshotReportBaseName = _snapshotReportPaths.BaseName;
+                _snapshotJsonPath = _snapshotReportPaths.JsonPath;
+                _snapshotPdfPath = _snapshotReportPaths.PdfPath;
+            }
+            finally
+            {
+                _reportGate.Release();
+            }
         }
 
         private async Task EnsureSnapshotPdfAsync()
@@ -749,12 +800,23 @@ namespace ToolkitGUI.ViewModels
             if (File.Exists(_snapshotPdfPath))
                 return;
 
-            var document = BuildProcessSnapshotDocument();
-            string? error = null;
-            var generated = await Task.Run(() =>
-                TabularScanReportService.TryGeneratePdf(document, _snapshotPdfPath, out error));
-            if (!generated)
-                throw new InvalidOperationException(error ?? "Unknown PDF generation error.");
+            await _reportGate.WaitAsync();
+            try
+            {
+                if (File.Exists(_snapshotPdfPath))
+                    return;
+
+                var document = BuildProcessSnapshotDocument();
+                string? error = null;
+                var generated = await Task.Run(() =>
+                    TabularScanReportService.TryGeneratePdf(document, _snapshotPdfPath, out error));
+                if (!generated)
+                    throw new InvalidOperationException(error ?? "Unknown PDF generation error.");
+            }
+            finally
+            {
+                _reportGate.Release();
+            }
         }
 
         private TabularScanReportDocument BuildProcessSnapshotDocument()
@@ -801,18 +863,27 @@ namespace ToolkitGUI.ViewModels
             };
         }
 
+        private static string EscapePsSingleQuoted(string value)
+            => (value ?? string.Empty).Replace("'", "''");
+
         private async Task ExportSnapshotCsvAsync(string path)
         {
             var sampleMs = InvestigationMode ? InvestigationSampleMs : NormalSampleMs;
             var deep = DeepScanEnabled ? "-DeepScan" : string.Empty;
             var result = await PowerShellService.ExecuteAsync(
-                $"& '{ScriptPath}' -Action Export -SampleMs {sampleMs} {deep} -OutputPath \"{path}\" -Format Csv");
+                $"& '{ScriptPath}' -Action Export -SampleMs {sampleMs} {deep} -OutputPath '{EscapePsSingleQuoted(path)}' -Format Csv");
             if (!result.Success)
                 throw new InvalidOperationException(FormatExecError(result));
         }
 
         private async Task CstScanSelectedAsync()
         {
+            if (_isCstScanning)
+            {
+                StatusText = "A CST scan is already in progress.";
+                return;
+            }
+
             var path = ResolveSelectedImagePath(SelectedDetail, SelectedProcess);
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -821,29 +892,37 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
-            StatusText = "Running CST custom scan on selected file...";
-            var result = await PowerShellService.ExecuteAsync(
-                $"& '{ScriptPath}' -Action CstScan -TargetPath \"{path}\"");
-
-            if (!result.Success)
+            _isCstScanning = true;
+            try
             {
-                StatusText = $"CST scan failed: {FormatExecError(result)}";
-                MessageBox.Show(FormatExecError(result), "CST Scan", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+                StatusText = "Running CST custom scan on selected file...";
+                var result = await PowerShellService.ExecuteAsync(
+                    $"& '{ScriptPath}' -Action CstScan -TargetPath '{EscapePsSingleQuoted(path)}'");
 
-            StatusText = "CST scan completed.";
-            var processName = SelectedProcess?.Name ?? SelectedDetail?.Name ?? "Selected process";
-            var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive);
-            if (ProcessAnalyzerCstResultService.TryBuildPresentation(result.Output, path, processName, out var presentation, out _))
+                if (!result.Success)
+                {
+                    StatusText = $"CST scan failed: {FormatExecError(result)}";
+                    MessageBox.Show(FormatExecError(result), "CST Scan", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                StatusText = "CST scan completed.";
+                var processName = SelectedProcess?.Name ?? SelectedDetail?.Name ?? "Selected process";
+                var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive);
+                if (ProcessAnalyzerCstResultService.TryBuildPresentation(result.Output, path, processName, out var presentation, out _))
+                {
+                    var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(result.Output)
+                        ?? FindLatestCstArtifactPath();
+                    WorkOrderService.TryRecordCstScanRun(
+                        artifactPath, path, presentation.Verdict, presentation.ReportPdfPath);
+                }
+
+                ProcessAnalyzerCstResultService.TryShowResults(result.Output, path, processName, owner);
+            }
+            finally
             {
-                var artifactPath = CstStructuredResultsService.ResolveArtifactPathFromStepOutput(result.Output)
-                    ?? FindLatestCstArtifactPath();
-                WorkOrderService.TryRecordCstScanRun(
-                    artifactPath, path, presentation.Verdict, presentation.ReportPdfPath);
+                _isCstScanning = false;
             }
-
-            ProcessAnalyzerCstResultService.TryShowResults(result.Output, path, processName, owner);
         }
 
         private static string? FindLatestCstArtifactPath()
@@ -890,8 +969,21 @@ namespace ToolkitGUI.ViewModels
             if (string.IsNullOrWhiteSpace(path))
                 return Task.CompletedTask;
 
-            try { Clipboard.SetText(path); StatusText = "Path copied."; }
-            catch { }
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    Clipboard.SetText(path);
+                    StatusText = "Path copied.";
+                    return Task.CompletedTask;
+                }
+                catch
+                {
+                    Thread.Sleep(25);
+                }
+            }
+
+            StatusText = "Unable to access the Windows clipboard.";
             return Task.CompletedTask;
         }
 
@@ -921,7 +1013,7 @@ namespace ToolkitGUI.ViewModels
 
         private async Task RefreshFromTimerAsync()
         {
-            if (!IsAutoRefreshEnabled || FreezeSnapshot) return;
+            if (!IsAutoRefreshEnabled || FreezeSnapshot || IsLoading) return;
             if (!await _autoRefreshGate.WaitAsync(0)) return;
             try { await LoadAsync(silent: true); }
             finally { _autoRefreshGate.Release(); }
@@ -1006,7 +1098,7 @@ namespace ToolkitGUI.ViewModels
         private void BuildProcessTree()
         {
             ProcessTreeRoots.Clear();
-            var source = (FilteredProcesses.Count > 0 ? FilteredProcesses : Processes)
+            var source = FilteredProcesses
                 .GroupBy(p => p.Pid)
                 .Select(g => g.First())
                 .ToList();

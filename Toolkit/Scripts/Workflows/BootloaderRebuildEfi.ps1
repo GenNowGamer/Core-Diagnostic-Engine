@@ -11,28 +11,31 @@ $workflow = Start-Workflow -WorkflowName 'Bootloader_RebuildEFI' -ScriptBlock {
     Assert-WinPeOrThrow -Result $r
     $target = Select-BootloaderTargetWithConfirmation -Targets (Get-BootloaderTargets) -ActionName 'EFI rebuild' -PreSelectedDrive $TargetDrive
 
-    $efiTarget = if (Test-Path -LiteralPath $target.EfiBcdPath -PathType Leaf) {
-        $target
-    } else {
-        Select-BootloaderEfiVolumeWithConfirmation -PreSelectedDrive $EfiTargetDrive
+    $efiRoot = if ($target.EfiDriveRoot) { $target.EfiDriveRoot } else { '' }
+    if (-not [string]::IsNullOrWhiteSpace($EfiTargetDrive)) {
+        $efiTarget = Select-BootloaderEfiVolumeWithConfirmation -PreSelectedDrive $EfiTargetDrive
+        $efiRoot = $efiTarget.DriveRoot
+    } elseif ([string]::IsNullOrWhiteSpace($efiRoot) -or ($efiRoot -eq $target.DriveRoot -and -not (Test-Path -LiteralPath $target.EfiBcdPath -PathType Leaf))) {
+        $efiTarget = Select-BootloaderEfiVolumeWithConfirmation -PreSelectedDrive $EfiTargetDrive
+        $efiRoot = $efiTarget.DriveRoot
     }
 
-    if (-not (Test-Path -LiteralPath $efiTarget.EfiBcdPath -PathType Leaf)) {
-        throw 'Unable to find an EFI BCD store on mounted volumes. Cannot run EFI rebuild.'
+    if ([string]::IsNullOrWhiteSpace($efiRoot)) {
+        throw 'Unable to find a mounted EFI system partition. Cannot run EFI rebuild.'
     }
 
     $msg = @(
         'Run bcdboot to rebuild EFI boot files?',
         '',
         "Windows source: $($target.WindowsDir)",
-        "EFI system volume: $($efiTarget.DriveRoot)"
+        "EFI system volume: $efiRoot"
     ) -join "`n"
 
     if (-not (Confirm-BootloaderWriteAction -Message $msg -Force:$Confirmed)) {
         throw 'Operation cancelled by operator at write confirmation.'
     }
 
-    $step = Invoke-BootloaderCommandCaptured -FilePath 'bcdboot.exe' -ArgumentList @($target.WindowsDir, '/s', $efiTarget.DriveRoot, '/f', 'UEFI') -StepName 'BCDBootRebuildEFI'
+    $step = Invoke-BootloaderCommandCaptured -FilePath 'bcdboot.exe' -ArgumentList @($target.WindowsDir, '/s', $efiRoot, '/f', 'UEFI') -StepName 'BCDBootRebuildEFI'
     Add-BootloaderStep -Result $r -Step $step
 }
 

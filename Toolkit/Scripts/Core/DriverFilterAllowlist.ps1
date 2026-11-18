@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Shared driver/minifilter allowlist for System Health Driver Signature Audit.

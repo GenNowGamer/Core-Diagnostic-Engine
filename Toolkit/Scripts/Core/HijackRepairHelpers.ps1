@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Shared hijack/scam audit and repair helpers for HijackRepair.ps1 and System Health Check.
@@ -86,9 +86,16 @@ function Get-HijackTrustedPublicDnsServers {
 function Get-HijackAdapterGatewayMap {
     $map = @{}
     try {
-        foreach ($cfg in @(Get-NetIPConfiguration -ErrorAction SilentlyContinue)) {
-            if ($null -eq $cfg.IPv4DefaultGateway -or -not $cfg.IPv4DefaultGateway.NextHop) { continue }
-            $map[[int]$cfg.InterfaceIndex] = [string]$cfg.IPv4DefaultGateway.NextHop
+        $routes = @(
+            Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+                Where-Object { $_.NextHop -and [string]$_.NextHop -ne '0.0.0.0' } |
+                Sort-Object RouteMetric, InterfaceMetric
+        )
+        foreach ($route in $routes) {
+            $idx = [int]$route.InterfaceIndex
+            if (-not $map.ContainsKey($idx)) {
+                $map[$idx] = [string]$route.NextHop
+            }
         }
     } catch { }
     return $map
@@ -1190,12 +1197,24 @@ function Invoke-HijackSecurityTamperingRepair {
         $warn = $true
     } else {
         try {
-            Set-Service -Name 'WinDefend' -StartupType Automatic -ErrorAction Stop
-            Start-Service -Name 'WinDefend' -ErrorAction SilentlyContinue
-            $details.Add('WinDefend set to Automatic and start attempted.') | Out-Null
+            $winDefSvc = Get-Service -Name 'WinDefend' -ErrorAction Stop
+            if ($winDefSvc.StartType.ToString() -ne 'Automatic') {
+                Set-Service -Name 'WinDefend' -StartupType Automatic -ErrorAction Stop
+                $details.Add('WinDefend set to Automatic.') | Out-Null
+            } else {
+                $details.Add('WinDefend is already Automatic.') | Out-Null
+            }
+            if ($winDefSvc.Status -ne 'Running') {
+                Start-Service -Name 'WinDefend' -ErrorAction SilentlyContinue
+            }
         } catch {
-            $warn = $true
-            $details.Add("WinDefend: $($_.Exception.Message)") | Out-Null
+            $errMsg = $_.Exception.Message
+            if ($_.CategoryInfo.Category -eq 'PermissionDenied' -or $errMsg -match 'Access is denied|protected') {
+                $details.Add("WinDefend startup type is protected by Windows: $errMsg") | Out-Null
+            } else {
+                $warn = $true
+                $details.Add("WinDefend: $errMsg") | Out-Null
+            }
         }
 
         try {

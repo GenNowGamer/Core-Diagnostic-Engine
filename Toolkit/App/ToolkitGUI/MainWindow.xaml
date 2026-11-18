@@ -12,8 +12,8 @@
     <!-- DataContext is assigned in code-behind after Show() so WinPE can present the shell
          before DashboardView / work-order init runs. -->
 
-    <Border Background="{StaticResource BackgroundDarkBrush}"
-            BorderBrush="{StaticResource BorderBrush}"
+    <Border Background="{DynamicResource BackgroundDarkBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="1"
             CornerRadius="8"
             UseLayoutRounding="True"
@@ -73,11 +73,12 @@
                 </Grid>
             </Border>
 
-            <!-- ═══ HEADER INFO BAR (white) ═══ -->
+            <!-- ═══ HEADER INFO BAR ═══ -->
             <Border Grid.Row="1"
-                    Background="{StaticResource BackgroundMidBrush}"
-                    BorderBrush="{StaticResource BorderBrush}"
-                    BorderThickness="0,0,0,1">
+                    Background="{DynamicResource BackgroundMidBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
                 <ScrollViewer Margin="24,0"
                               VerticalScrollBarVisibility="Disabled"
                               HorizontalScrollBarVisibility="Auto"
@@ -86,75 +87,75 @@
 
                         <StackPanel>
                             <TextBlock Text="MACHINE" FontSize="{StaticResource HeaderLabelFontSize}" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
                             <TextBlock Text="{Binding MachineName}" FontSize="14" FontWeight="SemiBold"/>
                         </StackPanel>
 
-                        <Rectangle Width="1" Height="30" Fill="{StaticResource BorderBrush}" Margin="20,0"/>
+                        <Rectangle Width="1" Height="30" Fill="{DynamicResource BorderBrush}" Margin="20,0"/>
 
                         <StackPanel>
                             <TextBlock Text="OS" FontSize="{StaticResource HeaderLabelFontSize}" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
                             <TextBlock Text="{Binding OsVersion}" FontSize="13"/>
                         </StackPanel>
 
-                        <Rectangle Width="1" Height="30" Fill="{StaticResource BorderBrush}" Margin="20,0"/>
+                        <Rectangle Width="1" Height="30" Fill="{DynamicResource BorderBrush}" Margin="20,0"/>
 
                         <StackPanel>
                             <TextBlock Text="CPU" FontSize="{StaticResource HeaderLabelFontSize}" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="{Binding CpuUsage, StringFormat={}{0:F0}%}" FontSize="13" Margin="0,0,8,0"/>
                                 <ProgressBar Value="{Binding CpuUsage}" Maximum="100" Width="70" Height="7"
                                              VerticalAlignment="Center"
-                                             Background="{StaticResource BackgroundLightBrush}"
-                                             Foreground="{StaticResource AccentBlueBrush}"
+                                             Background="{DynamicResource BackgroundLightBrush}"
+                                             Foreground="{DynamicResource AccentBlueBrush}"
                                              BorderThickness="0"/>
                             </StackPanel>
                         </StackPanel>
 
-                        <Rectangle Width="1" Height="30" Fill="{StaticResource BorderBrush}" Margin="20,0"/>
+                        <Rectangle Width="1" Height="30" Fill="{DynamicResource BorderBrush}" Margin="20,0"/>
 
                         <StackPanel>
                             <TextBlock Text="RAM" FontSize="{StaticResource HeaderLabelFontSize}" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="{Binding RamUsage, StringFormat={}{0:F0}%}" FontSize="13" Margin="0,0,8,0"/>
                                 <ProgressBar Value="{Binding RamUsage}" Maximum="100" Width="70" Height="7"
                                              VerticalAlignment="Center"
-                                             Background="{StaticResource BackgroundLightBrush}"
-                                             Foreground="{StaticResource AccentGreenBrush}"
+                                             Background="{DynamicResource BackgroundLightBrush}"
+                                             Foreground="{DynamicResource AccentGreenBrush}"
                                              BorderThickness="0"/>
                             </StackPanel>
                         </StackPanel>
 
-                        <Rectangle Width="1" Height="30" Fill="{StaticResource BorderBrush}" Margin="20,0"/>
+                        <Rectangle Width="1" Height="30" Fill="{DynamicResource BorderBrush}" Margin="20,0"/>
 
                         <StackPanel>
                             <TextBlock Text="SMART" FontSize="{StaticResource HeaderLabelFontSize}" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
                             <TextBlock Text="{Binding SmartSummary}" FontSize="13"
                                        Foreground="{Binding SmartStatusBrush}"/>
                         </StackPanel>
 
-                        <Rectangle Width="1" Height="30" Fill="{StaticResource BorderBrush}" Margin="20,0"/>
+                        <Rectangle Width="1" Height="30" Fill="{DynamicResource BorderBrush}" Margin="20,0"/>
 
                         <StackPanel>
                             <TextBlock Text="UPTIME" FontSize="{StaticResource HeaderLabelFontSize}" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
                             <TextBlock Text="{Binding Uptime}" FontSize="13"/>
                         </StackPanel>
 
-                        <Rectangle Width="1" Height="30" Fill="{StaticResource BorderBrush}" Margin="20,0"
+                        <Rectangle Width="1" Height="30" Fill="{DynamicResource BorderBrush}" Margin="20,0"
                                    Visibility="{Binding HasActiveWorkOrder, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
                         <StackPanel Visibility="{Binding HasActiveWorkOrder, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <TextBlock Text="WORK ORDER" FontSize="{StaticResource HeaderLabelFontSize}" FontWeight="Bold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
                             <TextBlock Text="{Binding ActiveCaseId}" FontSize="13" FontWeight="SemiBold"
-                                       Foreground="{StaticResource AccentBlueBrush}"/>
+                                       Foreground="{DynamicResource AccentBlueBrush}"/>
                             <TextBlock Text="{Binding ActiveWorkOrderDetail}" FontSize="11"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
                         </StackPanel>
 
                     </StackPanel>
@@ -162,8 +163,8 @@
             </Border>
 
             <!-- ═══ MAIN CONTENT (full width) ═══ -->
-            <Grid Grid.Row="2" Background="{StaticResource BackgroundDarkBrush}"
-                  TextElement.Foreground="{StaticResource TextPrimaryBrush}">
+            <Grid Grid.Row="2" Background="{DynamicResource BackgroundDarkBrush}"
+                  TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
                 <ContentControl x:Name="MainContent"
                                 Content="{Binding CurrentView}"
                                 HorizontalContentAlignment="Stretch"

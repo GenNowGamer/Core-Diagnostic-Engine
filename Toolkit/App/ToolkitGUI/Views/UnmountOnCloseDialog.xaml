@@ -8,7 +8,7 @@
         MinWidth="400"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
-        Background="{StaticResource BackgroundDarkBrush}">
+        Background="{DynamicResource BackgroundDarkBrush}">
     <Grid Margin="24,20,24,20">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -17,7 +17,7 @@
 
         <TextBlock Grid.Row="0"
                    Text="An offline OS is currently loaded. Closing CDE will unmount it automatically.&#x0a;&#x0a;Proceed with unmounting the offline OS and closing?"
-                   Foreground="{StaticResource TextPrimaryBrush}"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
                    FontSize="13"
                    TextWrapping="Wrap"
                    VerticalAlignment="Center"/>
@@ -32,8 +32,8 @@
                     Height="32"
                     Margin="0,0,10,0"
                     Style="{StaticResource ActionButtonStyle}"
-                    Background="{StaticResource BackgroundLightBrush}"
-                    Foreground="{StaticResource TextPrimaryBrush}"
+                    Background="{DynamicResource BackgroundLightBrush}"
+                    Foreground="{DynamicResource TextPrimaryBrush}"
                     Click="CancelButton_Click"/>
             <Button x:Name="ConfirmButton"
                     Content="Confirm"

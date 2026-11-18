@@ -7,7 +7,7 @@
         MinHeight="560"
         MinWidth="760"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource BackgroundDarkBrush}">
+        Background="{DynamicResource BackgroundDarkBrush}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -20,7 +20,7 @@
             <StackPanel>
                 <TextBlock x:Name="CaseIdText" FontSize="22" FontWeight="Bold"/>
                 <TextBlock x:Name="StatusText" Margin="0,6,0,0" FontSize="13"
-                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
             </StackPanel>
         </Border>
 
@@ -38,19 +38,19 @@
 
                 <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,12,12">
                     <TextBlock Text="CLIENT NAME" FontSize="10" FontWeight="Bold"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBlock x:Name="ClientNameText" FontSize="14" TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <StackPanel Grid.Row="0" Grid.Column="1" Margin="12,0,0,12">
                     <TextBlock Text="CLIENT PHONE" FontSize="10" FontWeight="Bold"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBlock x:Name="ClientPhoneText" FontSize="14" TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2">
                     <TextBlock Text="WORK ORDER NOTES" FontSize="10" FontWeight="Bold"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBlock x:Name="NotesText" FontSize="14" TextWrapping="Wrap" Margin="0,4,0,0"/>
                 </StackPanel>
             </Grid>
@@ -60,20 +60,20 @@
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="TOOLS / SCANS (KEY RESULTS)"
                            FontSize="10" FontWeight="Bold"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,12"/>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <ItemsControl x:Name="RunsItems">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Margin="0,0,0,12" Padding="14"
-                                        Background="{StaticResource BackgroundMidBrush}"
-                                        BorderBrush="{StaticResource BorderBrush}"
+                                        Background="{DynamicResource BackgroundMidBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1" CornerRadius="6">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,8">
                                             <StackPanel>
                                                 <TextBlock Text="{Binding TimelineLabel}" FontSize="15" FontWeight="SemiBold"/>
-                                                <TextBlock FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0">
+                                                <TextBlock FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
@@ -89,10 +89,10 @@
                                                 </TextBlock>
                                             </StackPanel>
                                             <TextBlock DockPanel.Dock="Right" Text="{Binding OverallHealth}" FontWeight="SemiBold"
-                                                       HorizontalAlignment="Right" Foreground="{StaticResource AccentBlueBrush}"/>
+                                                       HorizontalAlignment="Right" Foreground="{DynamicResource AccentBlueBrush}"/>
                                         </DockPanel>
                                         <TextBlock Text="{Binding CompletedAt}" FontSize="11"
-                                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                             <StackPanel.Style>
                                                 <Style TargetType="StackPanel">

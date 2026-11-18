@@ -1,7 +1,7 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    HijackRepair.ps1 — Hijack scanner, selective repair, and bulk repair dispatcher.
+    HijackRepair.ps1 - Hijack scanner, selective repair, and bulk repair dispatcher.
 #>
 param(
     [string]$ToolName = 'All',

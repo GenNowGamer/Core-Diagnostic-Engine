@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Validates MD4 and DES-RID SAM crypto without touching a live hive.

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -12,10 +12,39 @@ namespace ToolkitGUI.Views
 {
     public partial class SettingsView : System.Windows.Controls.UserControl
     {
+        private bool _isPowerActionInProgress;
+        private bool _initializingTheme;
+
         public SettingsView()
         {
             InitializeComponent();
             AppVersionText.Text = $"Core Diagnostic Engine v{GetAppVersion()}";
+            _initializingTheme = true;
+            try
+            {
+                if (ThemeService.CurrentTheme == AppTheme.Dark)
+                    DarkThemeRadio.IsChecked = true;
+                else
+                    LightThemeRadio.IsChecked = true;
+            }
+            finally
+            {
+                _initializingTheme = false;
+            }
+        }
+
+        private void LightTheme_Checked(object sender, RoutedEventArgs e)
+        {
+            if (_initializingTheme)
+                return;
+            ThemeService.SetTheme(AppTheme.Light);
+        }
+
+        private void DarkTheme_Checked(object sender, RoutedEventArgs e)
+        {
+            if (_initializingTheme)
+                return;
+            ThemeService.SetTheme(AppTheme.Dark);
         }
 
         private void OpenUserGuide_Click(object sender, RoutedEventArgs e)
@@ -126,8 +155,17 @@ namespace ToolkitGUI.Views
                 result.Errors.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
 
+        private void SetPowerButtonsEnabled(bool enabled)
+        {
+            UnmountOfflineOsButton.IsEnabled = enabled;
+            RebootWindowsButton.IsEnabled = enabled;
+        }
+
         private async void UnmountOfflineOs_Click(object sender, RoutedEventArgs e)
         {
+            if (_isPowerActionInProgress)
+                return;
+
             var confirm = MessageBox.Show(
                 "Unload offline registry hives now?\n\nThis unloads HKLM\\Offline_* and HKU\\Offline_* without rebooting.",
                 "Unmount Offline OS",
@@ -137,29 +175,45 @@ namespace ToolkitGUI.Views
             if (confirm != MessageBoxResult.Yes)
                 return;
 
-            var result = await PowerShellService.ExecuteAsync(GetOfflineHiveCleanupScript());
-            if (!result.Success)
+            _isPowerActionInProgress = true;
+            SetPowerButtonsEnabled(false);
+            try
             {
-                var detail = !string.IsNullOrWhiteSpace(result.Error)
-                    ? result.Error
-                    : result.ExceptionMessage;
+                var result = await PowerShellService.ExecuteAsync(GetOfflineHiveCleanupScript(throwOnFailure: true));
+                if (!result.Success)
+                {
+                    var detail = !string.IsNullOrWhiteSpace(result.Error)
+                        ? result.Error
+                        : (!string.IsNullOrWhiteSpace(result.ExceptionMessage) ? result.ExceptionMessage : result.Output);
+                    MessageBox.Show(
+                        $"Offline hive unload failed:\n\n{detail}",
+                        "Unmount Offline OS",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
+
+                var summary = string.IsNullOrWhiteSpace(result.Output)
+                    ? "Offline hive unload command completed."
+                    : result.Output.Trim();
                 MessageBox.Show(
-                    $"Offline hive unload failed:\n\n{detail}",
+                    summary,
                     "Unmount Offline OS",
                     MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return;
+                    MessageBoxImage.Information);
             }
-
-            MessageBox.Show(
-                "Offline hive unload command completed.",
-                "Unmount Offline OS",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            finally
+            {
+                _isPowerActionInProgress = false;
+                SetPowerButtonsEnabled(true);
+            }
         }
 
         private async void RebootWindows_Click(object sender, RoutedEventArgs e)
         {
+            if (_isPowerActionInProgress)
+                return;
+
             var confirm = MessageBox.Show(
                 "Reboot now and unload offline registry hives first?\n\nThis will run cleanup for HKLM\\Offline_* and HKU\\Offline_* before reboot.",
                 "Reboot Windows",
@@ -169,30 +223,46 @@ namespace ToolkitGUI.Views
             if (confirm != MessageBoxResult.Yes)
                 return;
 
-            var script = GetOfflineHiveCleanupScript() + @"
- 
+            _isPowerActionInProgress = true;
+            SetPowerButtonsEnabled(false);
+            try
+            {
+                var script = GetOfflineHiveCleanupScript(throwOnFailure: false) + @"
+
 if (Test-Path 'X:\Windows\System32\wpeutil.exe') {
-    & 'X:\Windows\System32\wpeutil.exe' reboot
+    $out = & 'X:\Windows\System32\wpeutil.exe' reboot 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw ""wpeutil reboot failed (exit $LASTEXITCODE): $(($out | Out-String).Trim())""
+    }
 } else {
-    shutdown.exe /r /t 0
+    $out = & shutdown.exe /r /t 0 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw ""shutdown.exe failed (exit $LASTEXITCODE): $(($out | Out-String).Trim())""
+    }
 }
 ";
 
-            var result = await PowerShellService.ExecuteAsync(script);
-            if (!result.Success)
+                var result = await PowerShellService.ExecuteAsync(script);
+                if (!result.Success)
+                {
+                    var detail = !string.IsNullOrWhiteSpace(result.Error)
+                        ? result.Error
+                        : (!string.IsNullOrWhiteSpace(result.ExceptionMessage) ? result.ExceptionMessage : result.Output);
+                    MessageBox.Show(
+                        $"Reboot command failed:\n\n{detail}",
+                        "Reboot Windows",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+            }
+            finally
             {
-                var detail = !string.IsNullOrWhiteSpace(result.Error)
-                    ? result.Error
-                    : result.ExceptionMessage;
-                MessageBox.Show(
-                    $"Reboot command failed:\n\n{detail}",
-                    "Reboot Windows",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                _isPowerActionInProgress = false;
+                SetPowerButtonsEnabled(true);
             }
         }
 
-        internal static string GetOfflineHiveCleanupScript() => @"
+        internal static string GetOfflineHiveCleanupScript(bool throwOnFailure = true) => @"
 # Force release of any PS registry provider handles before unloading hives.
 # reg.exe must run as a child process (Start-Process) so it does not inherit
 # the PS runspace's open HKEY handles — inline reg.exe calls fail with
@@ -204,7 +274,7 @@ if (Test-Path 'X:\Windows\System32\wpeutil.exe') {
 function Invoke-HiveUnload {
     param([string]$HivePath)
     try {
-        $p = Start-Process 'reg.exe' -ArgumentList ""unload \""$HivePath\"""" `
+        $p = Start-Process 'reg.exe' -ArgumentList @('unload', $HivePath) `
              -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
         return $p.ExitCode
     } catch {
@@ -212,24 +282,49 @@ function Invoke-HiveUnload {
     }
 }
 
-foreach ($h in @('HKLM\Offline_SOFTWARE','HKLM\Offline_SYSTEM','HKLM\Offline_SAM')) {
-    $ec = Invoke-HiveUnload $h
-    if ($ec -notin @(0,2)) {
-        Write-Warning ""Hive unload exit $ec for $h""
+$targets = [System.Collections.Generic.List[string]]::new()
+foreach ($base in @('HKLM\Offline_SOFTWARE','HKLM\Offline_SYSTEM','HKLM\Offline_SAM','HKLM\Offline_DEFAULT','HKLM\Offline_SECURITY','HKLM\Offline_COMPONENTS')) {
+    if (-not $targets.Contains($base)) { $targets.Add($base) }
+}
+
+foreach ($root in @(
+    @{ Query = 'HKLM'; Prefix = 'HKEY_LOCAL_MACHINE\'; Short = 'HKLM\' },
+    @{ Query = 'HKU';  Prefix = 'HKEY_USERS\';         Short = 'HKU\' }
+)) {
+    $lines = & reg.exe query $root.Query 2>$null
+    if ($lines) {
+        foreach ($line in $lines) {
+            if ($line -match 'Offline_') {
+                $leaf = $line.Replace($root.Prefix, '').Trim()
+                if ($leaf -and $leaf -like 'Offline_*') {
+                    $hive = $root.Short + $leaf
+                    if (-not $targets.Contains($hive)) { $targets.Add($hive) }
+                }
+            }
+        }
     }
 }
 
-# Query HKU subkeys via reg.exe (avoids PS Registry provider handle acquisition)
-$hkuLines = & reg.exe query HKU 2>$null
-if ($hkuLines) {
-    $hkuLines |
-        Where-Object { $_ -match 'Offline_' } |
-        ForEach-Object {
-            $leaf = ($_ -replace 'HKEY_USERS\\','').Trim()
-            if ($leaf -and $leaf -like 'Offline_*') {
-                Invoke-HiveUnload ""HKU\$leaf"" | Out-Null
-            }
-        }
+$unloaded = [System.Collections.Generic.List[string]]::new()
+$failed = [System.Collections.Generic.List[string]]::new()
+foreach ($h in $targets) {
+    $ec = Invoke-HiveUnload $h
+    if ($ec -eq 0) {
+        $unloaded.Add($h)
+    } elseif ($ec -ne 2) {
+        $failed.Add(""$h (exit $ec)"")
+    }
+}
+
+if ($failed.Count -gt 0) {
+    $msg = ""Failed to unload offline hive(s): $($failed -join ', ')""
+    " + (throwOnFailure ? "throw $msg" : "Write-Warning $msg") + @"
+}
+
+if ($unloaded.Count -gt 0) {
+    Write-Output ""Unloaded $($unloaded.Count) offline hive(s): $($unloaded -join ', ')""
+} else {
+    Write-Output ""No offline registry hives were loaded.""
 }
 ";
 

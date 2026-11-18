@@ -124,6 +124,13 @@ namespace ToolkitGUI.Services
                     return candidate;
             }
 
+            foreach (Match match in Regex.Matches(args, @"(?:^|\s)(?<path>[A-Za-z]:\\[^\s""]+?\.(?:ps1|vbs|js|wsf|hta|bat|cmd|exe|dll|scr|msi|lnk))\b", RegexOptions.IgnoreCase))
+            {
+                var candidate = TryNormalizeExistingLeaf(match.Groups["path"].Value);
+                if (candidate != null)
+                    return candidate;
+            }
+
             return null;
         }
 
@@ -170,11 +177,6 @@ namespace ToolkitGUI.Services
             try
             {
                 if (File.Exists(expanded))
-                    return Path.GetFullPath(expanded);
-
-                // .lnk: return the shortcut itself so Explorer can select it;
-                // CST can still scan the .lnk if needed.
-                if (expanded.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) && File.Exists(expanded))
                     return Path.GetFullPath(expanded);
             }
             catch

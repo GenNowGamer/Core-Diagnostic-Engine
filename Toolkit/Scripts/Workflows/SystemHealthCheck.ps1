@@ -1,7 +1,7 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    SystemHealthCheck.ps1 — Run selected diagnostic checks and produce a unified health report.
+    SystemHealthCheck.ps1 - Run selected diagnostic checks and produce a unified health report.
 #>
 
 param(

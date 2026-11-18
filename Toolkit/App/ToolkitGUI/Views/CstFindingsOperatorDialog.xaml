@@ -8,12 +8,12 @@
         MinWidth="1020"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize"
-        Background="{StaticResource BackgroundDarkBrush}">
+        Background="{DynamicResource BackgroundDarkBrush}">
     <Window.Resources>
         <Style x:Key="SecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
-            <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource BackgroundLightBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="14,8"/>
             <Setter Property="Template">
@@ -34,7 +34,7 @@
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="border" Property="Background" Value="#E1E6EF"/>
                                 <Setter TargetName="border" Property="BorderBrush" Value="#CCD4E0"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -45,7 +45,7 @@
         <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
     </Window.Resources>
@@ -71,18 +71,18 @@
                     <TextBlock Text="Post-Scan Operator Actions"
                                FontSize="24"
                                FontWeight="Bold"
-                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
                     <TextBlock x:Name="SummaryText"
                                Margin="0,6,0,0"
                                FontSize="13"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <Border Grid.Column="1"
                         Padding="12,8"
                         CornerRadius="16"
-                        Background="{StaticResource AccentBlueBrush}"
+                        Background="{DynamicResource AccentBlueBrush}"
                         VerticalAlignment="Top">
                     <TextBlock Text="Review Ready"
                                Foreground="White"
@@ -106,7 +106,7 @@
                     <TextBlock Text="Selection Controls" Style="{StaticResource SectionHeaderStyle}"/>
                     <TextBlock x:Name="SelectionText"
                                Margin="0,8,0,0"
-                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                TextWrapping="Wrap"/>
                 </StackPanel>
 
@@ -135,8 +135,8 @@
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0"
-                        Background="{StaticResource BackgroundLightBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
+                        Background="{DynamicResource BackgroundLightBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="16,12">
                     <Grid>
@@ -149,18 +149,18 @@
                             <TextBlock Text="Findings"
                                        FontSize="14"
                                        FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
                             <TextBlock Text="Select concrete file traces to quarantine or remove. Scope-filtered rows remain visible for review."
                                        Margin="0,4,0,0"
                                        FontSize="12"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
                                        TextWrapping="Wrap"/>
                         </StackPanel>
 
                         <TextBlock Grid.Column="1"
                                    Text="Weak heuristic items show a warning badge"
                                    VerticalAlignment="Center"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
                     </Grid>
                 </Border>
 
@@ -213,7 +213,7 @@
                 <TextBlock Grid.Column="0"
                            Text="Remove permanently deletes selected files. Quarantine moves selected files into the CST quarantine store with rollback metadata."
                            VerticalAlignment="Center"
-                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            TextWrapping="Wrap"
                            Margin="0,0,12,0"/>
                 <Button Grid.Column="1"

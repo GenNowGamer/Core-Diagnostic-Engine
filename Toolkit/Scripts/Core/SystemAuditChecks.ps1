@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     System audit check functions used by SystemHealthCheck.ps1.
@@ -449,10 +449,21 @@ function Get-SafeEventLogErrors {
     )
 
     try {
-        return @(Get-EventLog -LogName $LogName -EntryType Error -After $Since -Newest 1000 -ErrorAction Stop)
+        return @(
+            Get-WinEvent -FilterHashtable @{ LogName = $LogName; Level = 2; StartTime = $Since } -MaxEvents 1000 -ErrorAction Stop |
+                ForEach-Object {
+                    [PSCustomObject]@{
+                        EntryType     = 'Error'
+                        TimeGenerated = $_.TimeCreated
+                        Source        = $_.ProviderName
+                        Message       = $_.Message
+                        EventID       = $_.Id
+                    }
+                }
+        )
     }
     catch {
-        if ($_.Exception.Message -match 'No matches|cannot find|not find') {
+        if ($_.Exception.Message -match 'No events were found|No matches|cannot find|not find') {
             return @()
         }
         throw
@@ -507,35 +518,45 @@ function Invoke-EventLogsAudit {
 
             $sysErr = @()
             $appErr = @()
+            $isoSince = $since.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+            $xpath = "*[System[Level=2 and TimeCreated[@SystemTime>='$isoSince']]]"
 
             if (Test-Path $systemLogPath) {
-                $sysErr = Get-WinEvent -Path $systemLogPath -ErrorAction Stop |
-                    Where-Object { $_.LevelDisplayName -eq 'Error' -and $_.TimeCreated -ge $since } |
-                    Select-Object -First 1000 |
-                    ForEach-Object {
-                        [PSCustomObject]@{
-                            EntryType       = $_.LevelDisplayName
-                            TimeGenerated   = $_.TimeCreated
-                            Source          = $_.ProviderName
-                            Message         = $_.Message
-                            EventID         = $_.Id
-                        }
-                    }
+                try {
+                    $sysErr = @(
+                        Get-WinEvent -Path $systemLogPath -FilterXPath $xpath -MaxEvents 1000 -ErrorAction Stop |
+                            ForEach-Object {
+                                [PSCustomObject]@{
+                                    EntryType     = 'Error'
+                                    TimeGenerated = $_.TimeCreated
+                                    Source        = $_.ProviderName
+                                    Message       = $_.Message
+                                    EventID       = $_.Id
+                                }
+                            }
+                    )
+                } catch {
+                    if ($_.Exception.Message -notmatch 'No events were found') { throw }
+                }
             }
 
             if (Test-Path $appLogPath) {
-                $appErr = Get-WinEvent -Path $appLogPath -ErrorAction Stop |
-                    Where-Object { $_.LevelDisplayName -eq 'Error' -and $_.TimeCreated -ge $since } |
-                    Select-Object -First 1000 |
-                    ForEach-Object {
-                        [PSCustomObject]@{
-                            EntryType       = $_.LevelDisplayName
-                            TimeGenerated   = $_.TimeCreated
-                            Source          = $_.ProviderName
-                            Message         = $_.Message
-                            EventID         = $_.Id
-                        }
-                    }
+                try {
+                    $appErr = @(
+                        Get-WinEvent -Path $appLogPath -FilterXPath $xpath -MaxEvents 1000 -ErrorAction Stop |
+                            ForEach-Object {
+                                [PSCustomObject]@{
+                                    EntryType     = 'Error'
+                                    TimeGenerated = $_.TimeCreated
+                                    Source        = $_.ProviderName
+                                    Message       = $_.Message
+                                    EventID       = $_.Id
+                                }
+                            }
+                    )
+                } catch {
+                    if ($_.Exception.Message -notmatch 'No events were found') { throw }
+                }
             }
         } else {
             $sysErr = Get-SafeEventLogErrors -LogName 'System' -Since $since

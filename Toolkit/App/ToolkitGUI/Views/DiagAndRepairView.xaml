@@ -4,7 +4,7 @@
              xmlns:vm="clr-namespace:ToolkitGUI.ViewModels"
              xmlns:views="clr-namespace:ToolkitGUI.Views"
              xmlns:models="clr-namespace:ToolkitGUI.Models"
-             Background="{StaticResource BackgroundDarkBrush}">
+             Background="{DynamicResource BackgroundDarkBrush}">
     <views:WorkflowViewBase.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <models:InverseBooleanConverter x:Key="InverseBool"/>
@@ -21,24 +21,24 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,14">
+        <Border Grid.Row="0" Background="{DynamicResource BackgroundMidBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,14">
             <StackPanel>
                 <TextBlock Text="Diag &amp; Repair" FontSize="20" FontWeight="Bold"/>
                 <TextBlock Text="{Binding ProfileDescription}" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"
+                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0"
                            TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding WinPeOfflineNote}" FontSize="11"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0"
+                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"
                            TextWrapping="Wrap"
                            Visibility="{Binding ShowWinPeOfflineNote, Converter={StaticResource BoolToVis}}"/>
                 <TextBlock Text="{Binding SummaryBanner}" FontSize="11"
-                           Foreground="{StaticResource AccentBlueBrush}" Margin="0,4,0,0"
+                           Foreground="{DynamicResource AccentBlueBrush}" Margin="0,4,0,0"
                            TextWrapping="Wrap"/>
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
                             Visibility="{Binding ShowChuGuidance, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="{Binding ChuGuidanceBanner}" FontSize="11"
-                               Foreground="#926800" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextWarningBrush}" TextWrapping="Wrap"
                                VerticalAlignment="Center" MaxWidth="720" Margin="0,0,12,0"/>
                     <Button Content="Open CHU Results"
                             Command="{Binding OpenChuResultsCommand}"
@@ -49,12 +49,12 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="1" Background="{StaticResource BackgroundMidBrush}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+        <Border Grid.Row="1" Background="{DynamicResource BackgroundMidBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
             <WrapPanel>
                 <TextBlock Text="Profile:" FontSize="12" FontWeight="SemiBold"
                            VerticalAlignment="Center" Margin="0,0,10,6"
-                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
                 <RadioButton Content="Quick" GroupName="HwTestProfile"
                              IsChecked="{Binding IsQuickProfile}"
                              IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}"
@@ -63,7 +63,7 @@
                              IsChecked="{Binding IsExtendedProfile}"
                              IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}"
                              VerticalAlignment="Center" Margin="0,0,16,6" FontSize="12"/>
-                <Border Width="1" Height="24" Background="{StaticResource BorderBrush}"
+                <Border Width="1" Height="24" Background="{DynamicResource BorderBrush}"
                         Margin="0,0,16,6" VerticalAlignment="Center"/>
                 <ItemsControl ItemsSource="{Binding HardwareTools}" Margin="0,0,8,6">
                     <ItemsControl.ItemsPanel>
@@ -89,32 +89,32 @@
                         VerticalAlignment="Center"
                         ToolTip="{Binding CstScanTool.Description}"/>
                 <TextBlock Text="{Binding TestsProgressDisplay}" FontSize="12" FontWeight="SemiBold"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,16,6"
+                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,16,6"
                            VerticalAlignment="Center"/>
-                <TextBlock Text="Elapsed" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
+                <TextBlock Text="Elapsed" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"
                            VerticalAlignment="Center" Margin="0,0,6,6"/>
                 <TextBlock Text="{Binding ElapsedDisplay}" FontSize="13" FontWeight="Bold"
-                           Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,16,6"
+                           Foreground="{DynamicResource AccentBlueBrush}" Margin="0,0,16,6"
                            VerticalAlignment="Center"/>
                 <ProgressBar Value="{Binding Progress}" Maximum="100" Width="140" Height="8"
-                             Background="{StaticResource BackgroundLightBrush}"
-                             Foreground="{StaticResource AccentBlueBrush}"
+                             Background="{DynamicResource BackgroundLightBrush}"
+                             Foreground="{DynamicResource AccentBlueBrush}"
                              BorderThickness="0" Margin="0,0,0,6"
                              VerticalAlignment="Center"
                              Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}"/>
             </WrapPanel>
         </Border>
 
-        <Border Grid.Row="2" Margin="16,12,16,8" Background="White"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="4">
+        <Border Grid.Row="2" Margin="16,12,16,8" Background="{DynamicResource SurfaceGridRowBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0" Background="#D6E4F0"
-                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+                <Border Grid.Row="0" Background="{DynamicResource SurfaceHeaderBandBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -122,11 +122,11 @@
                             <ColumnDefinition Width="70"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="Component / Test" FontSize="11" FontWeight="Bold"
-                                   Foreground="#1A1A1A"/>
+                                   Foreground="{DynamicResource TextOnNeutralBrush}"/>
                         <TextBlock Grid.Column="1" Text="Status" FontSize="11" FontWeight="Bold"
-                                   Foreground="#1A1A1A" HorizontalAlignment="Center"/>
+                                   Foreground="{DynamicResource TextOnNeutralBrush}" HorizontalAlignment="Center"/>
                         <TextBlock Grid.Column="2" Text="Time" FontSize="11" FontWeight="Bold"
-                                   Foreground="#1A1A1A" HorizontalAlignment="Right"/>
+                                   Foreground="{DynamicResource TextOnNeutralBrush}" HorizontalAlignment="Right"/>
                     </Grid>
                 </Border>
 
@@ -153,7 +153,7 @@
                                                        TextWrapping="Wrap"/>
                                             <TextBlock Text="{Binding Detail}"
                                                        FontSize="11"
-                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
                                                        TextTrimming="CharacterEllipsis"
                                                        ToolTip="{Binding Detail}"
                                                        Margin="0,2,0,0"
@@ -169,7 +169,7 @@
                                         <TextBlock Grid.Column="2"
                                                    Text="{Binding DurationText}"
                                                    FontSize="11"
-                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                                    HorizontalAlignment="Right"
                                                    VerticalAlignment="Center"
                                                    Visibility="{Binding IsTest, Converter={StaticResource BoolToVis}}"/>
@@ -182,17 +182,17 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="3" Background="{StaticResource BackgroundMidBrush}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,8">
+        <Border Grid.Row="3" Background="{DynamicResource BackgroundMidBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{Binding PhaseDisplay}" FontSize="12"
-                           Foreground="{StaticResource AccentBlueBrush}" FontWeight="SemiBold"/>
+                           Foreground="{DynamicResource AccentBlueBrush}" FontWeight="SemiBold"/>
                 <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
             </Grid>
         </Border>
     </Grid>

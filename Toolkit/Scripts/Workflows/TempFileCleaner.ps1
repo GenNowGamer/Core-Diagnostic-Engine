@@ -173,9 +173,27 @@ function Add-ScanLocation {
         if (-not (Test-Path -LiteralPath $normalized)) { return }
         if (-not $Seen.Add($normalized)) { return }
 
-        $fileItems = @(Get-ChildItem -LiteralPath $normalized -File -Recurse -Force -ErrorAction SilentlyContinue)
-        $bytesRaw = ($fileItems | Measure-Object Length -Sum -ErrorAction SilentlyContinue).Sum
-        $bytes = if ($null -eq $bytesRaw) { 0L } else { [long]$bytesRaw }
+        $fileCount = 0
+        $bytes = 0L
+        $stack = [System.Collections.Generic.Stack[System.IO.DirectoryInfo]]::new()
+        $stack.Push([System.IO.DirectoryInfo]::new($normalized))
+        while ($stack.Count -gt 0) {
+            $dir = $stack.Pop()
+            try {
+                if (($dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+                foreach ($file in $dir.EnumerateFiles()) {
+                    try {
+                        $fileCount++
+                        $bytes += [long]$file.Length
+                    } catch {}
+                }
+                foreach ($subDir in $dir.EnumerateDirectories()) {
+                    if (($subDir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) {
+                        $stack.Push($subDir)
+                    }
+                }
+            } catch {}
+        }
 
         $protection = Get-ProtectionInfo -Path $normalized
 
@@ -188,7 +206,7 @@ function Add-ScanLocation {
             DiscoverySource  = $DiscoverySource
             IsProtected      = [bool]$protection.IsProtected
             ProtectionReason = [string]$protection.Reason
-            FileCount        = [int]$fileItems.Count
+            FileCount        = [int]$fileCount
             Bytes            = $bytes
         })
     } catch {
@@ -381,7 +399,10 @@ function Invoke-Clean {
 
             foreach ($item in ($dirItems | Sort-Object FullName -Descending)) {
                 try {
-                    Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction Stop
+                    if (-not (Test-Path -LiteralPath $item.FullName)) { continue }
+                    $hasRemainingChildren = @([System.IO.Directory]::EnumerateFileSystemEntries($item.FullName)).Count -gt 0
+                    if ($hasRemainingChildren) { continue }
+                    Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop
                 } catch {
                     Register-RemovalFailure -ItemPath $item.FullName -ErrorRecord $_ `
                         -FailedCount ([ref]$failedCount) -SkippedInUseCount ([ref]$skippedInUseCount)

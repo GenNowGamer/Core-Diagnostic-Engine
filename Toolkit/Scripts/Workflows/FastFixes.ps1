@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 param(
     [string]$Action = 'List',
     [string]$FixKey = '',
@@ -54,7 +54,7 @@ function Invoke-FastFixElevationRelay {
 
 $FixDefinitions = @(
     # Networking
-    @{ Key='ResetWinsock';    Category='Networking'; Name='Reset Winsock';              Risk='Caution'; Description='Resets Winsock catalog — may require reboot' },
+    @{ Key='ResetWinsock';    Category='Networking'; Name='Reset Winsock';              Risk='Caution'; Description='Resets Winsock catalog - may require reboot' },
     @{ Key='RenewIp';         Category='Networking'; Name='Release & Renew IP';         Risk='Safe';    Description='ipconfig /release then /renew' },
     @{ Key='DisableIPv6';     Category='Networking'; Name='Disable IPv6';               Risk='Caution'; Description='Disables IPv6 on all adapters' },
     # OS
@@ -103,7 +103,7 @@ function Invoke-FixCommand {
         [switch]$Quiet
     )
     # Start-Process -RedirectStandard* expects file paths in Windows PowerShell 5.1,
-    # not $true — boolean splats coerce to "True" and collide for stdout/stderr.
+    # not $true - boolean splats coerce to "True" and collide for stdout/stderr.
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $FilePath
     if ($ArgumentList -and $ArgumentList.Count -gt 0) {
@@ -128,9 +128,10 @@ function Invoke-FixCommand {
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $startInfo
     $null = $proc.Start()
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
     $stdoutText = $proc.StandardOutput.ReadToEnd()
-    $stderrText = $proc.StandardError.ReadToEnd()
     $proc.WaitForExit()
+    $stderrText = $stderrTask.Result
 
     $stdout = @(($stdoutText -split "`r?`n") | Where-Object { $_ -ne '' })
     $stderr = @(($stderrText -split "`r?`n") | Where-Object { $_ -ne '' })
@@ -162,7 +163,7 @@ function Test-EventLogCleared {
     )
     if ($ExitCode -ne 0) { return $false }
     if ($null -eq $After -or $After -eq 0) { return $true }
-    # wevtutil cl succeeded but Windows may leave 1–10 immediate post-clear events
+    # wevtutil cl succeeded but Windows may leave 1-10 immediate post-clear events
     # (common on System/Security, especially when the log was already small).
     if ($After -le 10) {
         if ($null -eq $Before -or $Before -le 10) { return $true }
@@ -198,7 +199,7 @@ function Get-HighPerformanceSchemeGuid {
 
 function Remove-BrowserProfileData {
     param(
-        [Parameter(Mandatory)][string]$ProfileRoot,
+        [Parameter(Mandatory)][string]$UserDataRoot,
         [string[]]$ProcessNames
     )
     $details = [System.Collections.Generic.List[string]]::new()
@@ -214,25 +215,95 @@ function Remove-BrowserProfileData {
     }
     if ($ProcessNames.Count -gt 0) { Start-Sleep -Seconds 1 }
 
+    $profileDirs = @(Get-ChildItem -LiteralPath $UserDataRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq 'Default' -or $_.Name -like 'Profile *' })
+    if ($profileDirs.Count -eq 0) {
+        return [PSCustomObject]@{ ProfilesFound = 0; Removed = 0; Locked = 0; Details = $details }
+    }
+
     $targets = @(
         'Cache', 'Code Cache', 'GPUCache', 'Service Worker',
-        'Cookies', 'Local Storage', 'Session Storage', 'IndexedDB', 'WebStorage'
+        'Cookies', 'Network\Cookies', 'Local Storage', 'Session Storage', 'IndexedDB', 'WebStorage'
     )
     $removed = 0
     $locked  = 0
-    foreach ($name in $targets) {
-        $path = Join-Path $ProfileRoot $name
-        if (-not (Test-Path -LiteralPath $path)) { continue }
-        try {
-            Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
-            $removed++
-            $details.Add("Removed: $name")
-        } catch {
-            $locked++
-            $details.Add("Locked or failed: $name ($($_.Exception.Message))")
+    foreach ($profileDir in $profileDirs) {
+        foreach ($name in $targets) {
+            $path = Join-Path $profileDir.FullName $name
+            if (-not (Test-Path -LiteralPath $path)) { continue }
+            try {
+                Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+                $removed++
+                $details.Add("Removed ($($profileDir.Name)): $name")
+            } catch {
+                $locked++
+                $details.Add("Locked or failed ($($profileDir.Name)): $name ($($_.Exception.Message))")
+            }
         }
     }
-    return [PSCustomObject]@{ Removed = $removed; Locked = $locked; Details = $details }
+    return [PSCustomObject]@{ ProfilesFound = $profileDirs.Count; Removed = $removed; Locked = $locked; Details = $details }
+}
+
+function Invoke-BrowserReset {
+    param(
+        [Parameter(Mandatory)][string]$DisplayName,
+        [Parameter(Mandatory)][string]$UserDataRoot,
+        [Parameter(Mandatory)][string[]]$ProcessNames
+    )
+
+    if (-not (Test-Path -LiteralPath $UserDataRoot)) {
+        return New-FixResult -Status Pass -Summary "$DisplayName profile not found (nothing to clear)" -Details @($UserDataRoot)
+    }
+
+    $work = Remove-BrowserProfileData -UserDataRoot $UserDataRoot -ProcessNames $ProcessNames
+    foreach ($line in $work.Details) { Write-FixLog $line }
+
+    if ($work.ProfilesFound -eq 0) {
+        return New-FixResult -Status Pass -Summary "$DisplayName has no user profiles to clear" -Details @($UserDataRoot)
+    }
+    if ($work.Removed -eq 0 -and $work.Locked -eq 0) {
+        return New-FixResult -Status Pass -Summary "$DisplayName cache and local state already clean" -Details @(
+            "Profiles checked: $($work.ProfilesFound)"
+        )
+    }
+    if ($work.Removed -gt 0 -and $work.Locked -eq 0) {
+        return New-FixResult -Status Pass -Summary "$DisplayName cache and local state cleared" -Details @(
+            "Profiles checked: $($work.ProfilesFound)",
+            "Removed items: $($work.Removed)"
+        )
+    }
+    if ($work.Removed -gt 0) {
+        return New-FixResult -Status Fail -Summary "$DisplayName data partially cleared (close $DisplayName and retry)" -Details @(
+            "Removed: $($work.Removed)",
+            "Locked/failed: $($work.Locked)"
+        )
+    }
+    return New-FixResult -Status Fail -Summary "No $DisplayName data could be cleared" -Details $work.Details
+}
+
+function Enable-ManagedService {
+    param(
+        [Parameter(Mandatory)][string]$ServiceName,
+        [Parameter(Mandatory)][string]$DisplayName
+    )
+
+    try {
+        Set-Service -Name $ServiceName -StartupType Automatic -ErrorAction Stop
+        Start-Service -Name $ServiceName -ErrorAction Stop
+    } catch {
+        $detail = $null
+        try { $detail = (Test-ServiceReady -ServiceName $ServiceName).Detail } catch { }
+        $details = @($_.Exception.Message)
+        if ($detail) { $details += $detail }
+        return New-FixResult -Status Fail -Summary "$DisplayName could not be enabled or started" -Details $details
+    }
+
+    $check = Test-ServiceReady -ServiceName $ServiceName
+    Write-FixLog $check.Detail
+    if ($check.Ready) {
+        return New-FixResult -Status Pass -Summary "$DisplayName enabled and running" -Details @($check.Detail)
+    }
+    return New-FixResult -Status Fail -Summary "$DisplayName is not running" -Details @($check.Detail)
 }
 
 function Invoke-Fix {
@@ -243,7 +314,7 @@ function Invoke-Fix {
             $result = Invoke-FixCommand -FilePath "$env:SystemRoot\System32\netsh.exe" -ArgumentList @('winsock', 'reset')
             $ok = ($result.ExitCode -eq 0) -or ($result.Text -match 'successfully')
             if ($ok) {
-                return New-FixResult -Status Pass -Summary 'Winsock catalog reset — reboot required' -Details @(
+                return New-FixResult -Status Pass -Summary 'Winsock catalog reset - reboot required' -Details @(
                     'Winsock reset command completed successfully.',
                     'Reboot the computer to finish applying the change.'
                 )
@@ -256,7 +327,7 @@ function Invoke-Fix {
             $renew   = Invoke-FixCommand -FilePath "$env:SystemRoot\System32\ipconfig.exe" -ArgumentList @('/renew')
             $adapters = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
                 Where-Object { $_.IPAddress -notlike '127.*' -and $_.PrefixOrigin -ne 'WellKnown' })
-            # Lease evidence: DHCP Preferred address, or renew text that confirms a lease — not merely leftover IPv4.
+            # Lease evidence: DHCP Preferred address, or renew text that confirms a lease - not merely leftover IPv4.
             $leaseAdapters = @($adapters | Where-Object {
                 $_.PrefixOrigin -eq 'Dhcp' -and (
                     -not $_.PSObject.Properties['AddressState'] -or
@@ -277,10 +348,10 @@ function Invoke-Fix {
                 if ($primaryIp) {
                     $nic = Get-NetAdapter -InterfaceIndex $primaryRoute.InterfaceIndex -ErrorAction SilentlyContinue
                     $nicName = if ($nic) { $nic.Name } else { "ifindex $($primaryRoute.InterfaceIndex)" }
-                    $primaryDetail = "Primary adapter: $nicName — $($primaryIp.IPAddress) (gateway $($primaryRoute.NextHop))"
+                    $primaryDetail = "Primary adapter: $nicName - $($primaryIp.IPAddress) (gateway $($primaryRoute.NextHop))"
                 }
             }
-            if ($renewExitOk -and $hasLeaseEvidence) {
+            if (($renewExitOk -and $hasLeaseEvidence) -or ($leaseAdapters.Count -gt 0 -and $primaryDetail)) {
                 $details = @(
                     "ipconfig /renew exit code: $($renew.ExitCode)",
                     "DHCP lease adapters after renew: $($leaseAdapters.Count)"
@@ -289,6 +360,9 @@ function Invoke-Fix {
                     $details += $primaryDetail
                 } elseif ($leaseAdapters.Count -gt 0) {
                     $details += "DHCP IPv4 addresses: $($leaseAdapters.IPAddress -join ', ')"
+                }
+                if (-not $renewExitOk) {
+                    $details += "Note: ipconfig /renew exited $($renew.ExitCode) (likely a disconnected/virtual adapter); primary adapter has an active DHCP lease."
                 }
                 if ($release.ExitCode -ne 0) {
                     $details += "Note: ipconfig /release exited $($release.ExitCode); renew still obtained a lease."
@@ -360,7 +434,7 @@ function Invoke-Fix {
                 }
             }
             foreach ($r in $results) {
-                $note = if ($r.After -gt 0 -and $r.Before -gt 0 -and $r.Ok) { ' (residual post-clear events — expected)' } else { '' }
+                $note = if ($r.After -gt 0 -and $r.Before -gt 0 -and $r.Ok) { ' (residual post-clear events - expected)' } else { '' }
                 Write-FixLog "$($r.LogName): records before=$($r.Before), after=$($r.After), exit=$($r.ExitCode)$note"
             }
             $failed = @($results | Where-Object { -not $_.Ok })
@@ -381,32 +455,18 @@ function Invoke-Fix {
             return New-FixResult -Status Fail -Summary $summary -Details @(
                 ($failed | ForEach-Object {
                     $msg = "$($_.LogName): $($_.Before) -> $($_.After) records, exit code $($_.ExitCode)"
-                    if ($_.Output) { $msg += " — $($_.Output -join ' ')" }
+                    if ($_.Output) { $msg += " - $($_.Output -join ' ')" }
                     $msg
                 })
             )
         }
 
         'EnableWuauserv' {
-            Set-Service -Name 'wuauserv' -StartupType Automatic -ErrorAction Stop
-            Start-Service -Name 'wuauserv' -ErrorAction Stop
-            $check = Test-ServiceReady -ServiceName 'wuauserv'
-            Write-FixLog $check.Detail
-            if ($check.Ready) {
-                return New-FixResult -Status Pass -Summary 'Windows Update service enabled and running' -Details @($check.Detail)
-            }
-            return New-FixResult -Status Fail -Summary 'Windows Update service is not running' -Details @($check.Detail)
+            return Enable-ManagedService -ServiceName 'wuauserv' -DisplayName 'Windows Update service'
         }
 
         'EnableBits' {
-            Set-Service -Name 'bits' -StartupType Automatic -ErrorAction Stop
-            Start-Service -Name 'bits' -ErrorAction Stop
-            $check = Test-ServiceReady -ServiceName 'bits'
-            Write-FixLog $check.Detail
-            if ($check.Ready) {
-                return New-FixResult -Status Pass -Summary 'BITS enabled and running' -Details @($check.Detail)
-            }
-            return New-FixResult -Status Fail -Summary 'BITS is not running' -Details @($check.Detail)
+            return Enable-ManagedService -ServiceName 'bits' -DisplayName 'BITS'
         }
 
         'EnableDefender' {
@@ -414,12 +474,24 @@ function Invoke-Fix {
             $warn = $false
 
             try {
-                Set-Service -Name 'WinDefend' -StartupType Automatic -ErrorAction Stop
-                Start-Service -Name 'WinDefend' -ErrorAction SilentlyContinue
-                $details.Add('WinDefend service set to Automatic and start attempted.') | Out-Null
+                $svcObj = Get-Service -Name 'WinDefend' -ErrorAction Stop
+                if ($svcObj.StartType.ToString() -ne 'Automatic') {
+                    Set-Service -Name 'WinDefend' -StartupType Automatic -ErrorAction Stop
+                    $details.Add('WinDefend service set to Automatic.') | Out-Null
+                } else {
+                    $details.Add('WinDefend service is already Automatic.') | Out-Null
+                }
+                if ($svcObj.Status -ne 'Running') {
+                    Start-Service -Name 'WinDefend' -ErrorAction SilentlyContinue
+                }
             } catch {
-                $details.Add("WinDefend service: $($_.Exception.Message)") | Out-Null
-                $warn = $true
+                $errMsg = $_.Exception.Message
+                if ($_.CategoryInfo.Category -eq 'PermissionDenied' -or $errMsg -match 'Access is denied|protected') {
+                    $details.Add("WinDefend service startup type is protected by Windows: $errMsg") | Out-Null
+                } else {
+                    $details.Add("WinDefend service: $errMsg") | Out-Null
+                    $warn = $true
+                }
             }
 
             try {
@@ -463,69 +535,38 @@ function Invoke-Fix {
         }
 
         'ResetEdge' {
-            $profile = Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data\Default'
-            if (-not (Test-Path -LiteralPath $profile)) {
-                return New-FixResult -Status Pass -Summary 'Microsoft Edge profile not found (nothing to clear)' -Details @($profile)
-            }
-            $work = Remove-BrowserProfileData -ProfileRoot $profile -ProcessNames @('msedge', 'msedgewebview2')
-            foreach ($line in $work.Details) { Write-FixLog $line }
-            if ($work.Removed -gt 0 -and $work.Locked -eq 0) {
-                return New-FixResult -Status Pass -Summary 'Microsoft Edge cache and local state cleared' -Details @(
-                    "Removed items: $($work.Removed)"
-                )
-            }
-            if ($work.Removed -gt 0) {
-                return New-FixResult -Status Fail -Summary 'Microsoft Edge data partially cleared (close Edge and retry)' -Details @(
-                    "Removed: $($work.Removed)",
-                    "Locked/failed: $($work.Locked)"
-                )
-            }
-            return New-FixResult -Status Fail -Summary 'No Microsoft Edge data could be cleared' -Details $work.Details
+            $userData = Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'
+            return Invoke-BrowserReset -DisplayName 'Microsoft Edge' -UserDataRoot $userData -ProcessNames @('msedge')
         }
 
         'ResetChrome' {
-            $profile = Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data\Default'
-            if (-not (Test-Path -LiteralPath $profile)) {
-                return New-FixResult -Status Pass -Summary 'Google Chrome profile not found (nothing to clear)' -Details @($profile)
-            }
-            $work = Remove-BrowserProfileData -ProfileRoot $profile -ProcessNames @('chrome')
-            foreach ($line in $work.Details) { Write-FixLog $line }
-            if ($work.Removed -gt 0 -and $work.Locked -eq 0) {
-                return New-FixResult -Status Pass -Summary 'Google Chrome cache and local state cleared' -Details @(
-                    "Removed items: $($work.Removed)"
-                )
-            }
-            if ($work.Removed -gt 0) {
-                return New-FixResult -Status Fail -Summary 'Google Chrome data partially cleared (close Chrome and retry)' -Details @(
-                    "Removed: $($work.Removed)",
-                    "Locked/failed: $($work.Locked)"
-                )
-            }
-            return New-FixResult -Status Fail -Summary 'No Google Chrome data could be cleared' -Details $work.Details
+            $userData = Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data'
+            return Invoke-BrowserReset -DisplayName 'Google Chrome' -UserDataRoot $userData -ProcessNames @('chrome')
         }
 
         'FixBrowserAssoc' {
             $exts = @('.htm', '.html', '.url')
             $before = 0
             $cleared = 0
+            $blocked = [System.Collections.Generic.List[string]]::new()
             foreach ($ext in $exts) {
                 $userChoice = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$ext\UserChoice"
                 if (Test-Path -LiteralPath $userChoice) {
                     $before++
-                    Remove-Item -LiteralPath $userChoice -Recurse -Force -ErrorAction Stop
-                    $cleared++
-                    Write-FixLog "Removed UserChoice override for $ext"
+                    try {
+                        Remove-Item -LiteralPath $userChoice -Recurse -Force -ErrorAction Stop
+                        $cleared++
+                        Write-FixLog "Removed UserChoice override for $ext"
+                    } catch {
+                        $blocked.Add("$ext ($($_.Exception.Message))") | Out-Null
+                        Write-FixLog "Could not remove UserChoice for ${ext}: $($_.Exception.Message)" -Level Warning
+                    }
                 }
             }
-            $remaining = @(
-                foreach ($ext in $exts) {
-                    $userChoice = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$ext\UserChoice"
-                    if (Test-Path -LiteralPath $userChoice) { $ext }
-                }
-            )
-            if ($remaining.Count -gt 0) {
-                return New-FixResult -Status Fail -Summary 'Browser association overrides could not be fully cleared' -Details @(
-                    "Remaining: $($remaining -join ', ')"
+            if ($blocked.Count -gt 0) {
+                return New-FixResult -Status Fail -Summary 'Windows protected one or more browser UserChoice overrides (use Settings > Default apps)' -Details @(
+                    "Cleared: $cleared of $before",
+                    ("Blocked by Windows UserChoice protection (UCPD): " + ($blocked -join '; '))
                 )
             }
             if ($before -eq 0) {
@@ -542,6 +583,9 @@ function Invoke-Fix {
         'DisableAnimations' {
             $windowMetrics = 'HKCU:\Control Panel\Desktop\WindowMetrics'
             $visualEffects = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects'
+            if (-not (Test-Path -LiteralPath $windowMetrics)) {
+                New-Item -Path $windowMetrics -Force | Out-Null
+            }
             if (-not (Test-Path -LiteralPath $visualEffects)) {
                 New-Item -Path $visualEffects -Force | Out-Null
             }
@@ -553,7 +597,8 @@ function Invoke-Fix {
             if ($minAnimate -eq '0' -and $visualFx -eq 2) {
                 return New-FixResult -Status Pass -Summary 'UI animations disabled' -Details @(
                     'MinAnimate set to 0',
-                    'VisualFXSetting set to 2 (adjust for best performance)'
+                    'VisualFXSetting set to 2 (adjust for best performance)',
+                    'Sign out or restart Explorer for all window animation changes to take effect.'
                 )
             }
             return New-FixResult -Status Fail -Summary 'Animation registry settings were not applied' -Details @(
@@ -566,23 +611,36 @@ function Invoke-Fix {
             $startMenuRoot = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu'
             $removed = 0
             $skipped = 0
-            $shell = New-Object -ComObject WScript.Shell
             $shortcuts = @(Get-ChildItem -LiteralPath $startMenuRoot -Recurse -Filter '*.lnk' -ErrorAction SilentlyContinue)
             Write-FixLog "Scanning $($shortcuts.Count) Start Menu shortcut(s)"
-            foreach ($shortcut in $shortcuts) {
-                try {
-                    $target = $shell.CreateShortcut($shortcut.FullName).TargetPath
-                    if ([string]::IsNullOrWhiteSpace($target)) { continue }
-                    if (Test-Path -LiteralPath $target) { continue }
-                    Remove-Item -LiteralPath $shortcut.FullName -Force -ErrorAction Stop
-                    $removed++
-                    Write-FixLog "Removed broken shortcut: $($shortcut.Name) -> $target"
-                } catch {
-                    $skipped++
-                    Write-FixLog "Skipped shortcut $($shortcut.Name): $($_.Exception.Message)" -Level Warning
+            $shell = $null
+            try {
+                $shell = New-Object -ComObject WScript.Shell
+                foreach ($shortcut in $shortcuts) {
+                    try {
+                        $target = $shell.CreateShortcut($shortcut.FullName).TargetPath
+                        if ([string]::IsNullOrWhiteSpace($target)) { continue }
+                        # Skip UNC network paths and non-fixed/disconnected drives so offline targets are not deleted.
+                        if ($target -like '\\*') { continue }
+                        $root = [System.IO.Path]::GetPathRoot($target)
+                        if (-not [string]::IsNullOrWhiteSpace($root)) {
+                            $drive = [System.IO.DriveInfo]::new($root)
+                            if ($drive.DriveType -ne [System.IO.DriveType]::Fixed -or -not $drive.IsReady) { continue }
+                        }
+                        if (Test-Path -LiteralPath $target) { continue }
+                        Remove-Item -LiteralPath $shortcut.FullName -Force -ErrorAction Stop
+                        $removed++
+                        Write-FixLog "Removed broken shortcut: $($shortcut.Name) -> $target"
+                    } catch {
+                        $skipped++
+                        Write-FixLog "Skipped shortcut $($shortcut.Name): $($_.Exception.Message)" -Level Warning
+                    }
+                }
+            } finally {
+                if ($null -ne $shell) {
+                    [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell)
                 }
             }
-            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell)
             return New-FixResult -Status Pass -Summary 'Start Menu broken shortcuts cleaned' -Details @(
                 "Shortcuts scanned: $($shortcuts.Count)",
                 "Broken shortcuts removed: $removed",
@@ -594,12 +652,17 @@ function Invoke-Fix {
             $guid = Get-HighPerformanceSchemeGuid
             Write-FixLog "Activating power scheme: $guid"
             $activate = Invoke-FixCommand -FilePath 'powercfg.exe' -ArgumentList @('/setactive', $guid)
+            if ($activate.ExitCode -ne 0) {
+                $null = Invoke-FixCommand -FilePath 'powercfg.exe' -ArgumentList @('/duplicatescheme', $guid) -Quiet
+                $guid = Get-HighPerformanceSchemeGuid
+                $activate = Invoke-FixCommand -FilePath 'powercfg.exe' -ArgumentList @('/setactive', $guid)
+            }
             $active = Invoke-FixCommand -FilePath 'powercfg.exe' -ArgumentList @('/getactivescheme')
             $isHighPerf = ($active.Text -match [regex]::Escape($guid)) -or ($active.Text -match 'High performance')
             if ($isHighPerf) {
                 return New-FixResult -Status Pass -Summary 'High Performance power plan activated' -Details @($active.Text)
             }
-            return New-FixResult -Status Fail -Summary 'High Performance power plan was not activated' -Details @(
+            return New-FixResult -Status Fail -Summary 'High Performance power plan was not activated (Modern Standby S0ix systems may restrict legacy power plans)' -Details @(
                 "Requested GUID: $guid",
                 $active.Text
             ) + $activate.Output

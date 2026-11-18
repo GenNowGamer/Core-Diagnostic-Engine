@@ -19,8 +19,9 @@ function Invoke-StorageTestsForDrive {
         $displayName = $entry.displayName
         $impl = $entry.implementations.windows
 
+        $skipRetry = ($impl -eq 'SmartSelfTest')
         Invoke-SingleTest -Category 'Hard Drive' -TestName $displayName -Result $Result `
-            -Counter $Counter -Total $TestsPerDrive -Phase $Phase -DriveInfo $DriveInfo -TestAction {
+            -Counter $Counter -Total $TestsPerDrive -Phase $Phase -DriveInfo $DriveInfo -SkipRetryOnFail:$skipRetry -TestAction {
             switch ($impl) {
                 'SmartThresholds' {
                     return (Test-CdeSmartThresholds -DriveIndex $driveIndex)
@@ -38,12 +39,12 @@ function Invoke-StorageTestsForDrive {
                         try {
                             $bufSize64 = [int64]$bufSize
                             $diskLen = [int64](Get-HwDriveLengthBytes -DriveInfo $DriveInfo -Stream $stream)
-                            if ($diskLen -le 512) { return 'Failed: Drive length unavailable' }
+                            if ($diskLen -le 4096) { return 'Failed: Drive length unavailable' }
                             $readCount = $script:HwStorageRandomReads
-                            $upper = Get-HwInt64Max -Left 512 -Right ($diskLen - $bufSize64)
+                            $upper = Get-HwInt64Max -Left 4096 -Right ($diskLen - $bufSize64)
                             for ($i = 0; $i -lt $readCount; $i++) {
                                 $offset = [int64]($rng.NextDouble() * $upper)
-                                $offset = $offset - ($offset % 512)
+                                $offset = $offset - ($offset % 4096)
                                 $stream.Position = $offset
                                 $read = $stream.Read($buf, 0, $bufSize)
                                 if ($read -le 0) { return ('Failed: Read returned {0} bytes at offset {1}' -f $read, $offset) }
@@ -65,22 +66,23 @@ function Invoke-StorageTestsForDrive {
                         $stream = [System.IO.File]::Open($driveDeviceId, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
                         try {
                             $diskLen = [int64](Get-HwDriveLengthBytes -DriveInfo $DriveInfo -Stream $stream)
+                            $minExpected = [math]::Min([int64]1048576, [int64]$diskLen)
                             $totalRead = 0
                             while ($totalRead -lt $readLimit) {
                                 $bytesRead = $stream.Read($buf, 0, $bufSize)
                                 if ($bytesRead -eq 0) { break }
                                 $totalRead += $bytesRead
                             }
-                            if ($totalRead -lt 1048576) { return ('Failed: Only read {0} bytes sequentially' -f $totalRead) }
+                            if ($totalRead -lt $minExpected) { return ('Failed: Only read {0} bytes sequentially' -f $totalRead) }
 
                             $midNote = ''
                             if ($script:HwProfileName -eq 'Extended' -and $diskLen -gt ($readLimit * 2)) {
                                 $midLimit = [int64][math]::Max(1048576, [math]::Floor($readLimit / 2))
                                 $midStart = [int64]([math]::Floor($diskLen / 2))
-                                $midStart = $midStart - ($midStart % 512)
+                                $midStart = $midStart - ($midStart % 4096)
                                 if (($midStart + $midLimit) -gt $diskLen) {
                                     $midStart = Get-HwInt64Max -Left 0 -Right ($diskLen - $midLimit)
-                                    $midStart = $midStart - ($midStart % 512)
+                                    $midStart = $midStart - ($midStart % 4096)
                                 }
                                 $stream.Position = $midStart
                                 $midRead = 0
@@ -112,9 +114,10 @@ function Invoke-StorageTestsForDrive {
                         $stream = [System.IO.File]::Open($driveDeviceId, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
                         try {
                             $diskLen = [int64](Get-HwDriveLengthBytes -DriveInfo $DriveInfo -Stream $stream)
-                            if ($diskLen -le 512) { return 'Failed: Drive length unavailable for end-of-disk read' }
+                            if ($diskLen -le 4096) { return 'Failed: Drive length unavailable for end-of-disk read' }
+                            $minExpected = [math]::Min([int64]1048576, [int64]$diskLen)
                             $startPos = Get-HwInt64Max -Left 0 -Right ($diskLen - $readLimit)
-                            $startPos = $startPos - ($startPos % 512)
+                            $startPos = $startPos - ($startPos % 4096)
                             $stream.Position = $startPos
                             $totalRead = 0
                             while ($totalRead -lt $readLimit) {
@@ -122,7 +125,7 @@ function Invoke-StorageTestsForDrive {
                                 if ($bytesRead -eq 0) { break }
                                 $totalRead += $bytesRead
                             }
-                            if ($totalRead -lt 1048576) { return ('Failed: Only read {0} bytes at end of disk' -f $totalRead) }
+                            if ($totalRead -lt $minExpected) { return ('Failed: Only read {0} bytes at end of disk' -f $totalRead) }
                             return ('Passed: {0} MB end-of-disk linear read' -f [math]::Round($totalRead / 1MB, 1))
                         } finally {
                             $stream.Close()
@@ -160,11 +163,12 @@ function Invoke-StorageTests {
         return
     }
 
+    $totalStorageTests = $disks.Count * $testsPerDrive
     foreach ($disk in $disks) {
         $driveInfo = New-HwDriveInfo -Disk $disk
         Write-Log ('Storage: {0} | {1}' -f $driveInfo.Title, $driveInfo.PhysicalPath)
         Add-HwDriveHeaderStep -Result $r -DriveInfo $driveInfo
         Invoke-StorageTestsForDrive -Result $r -DriveInfo $driveInfo `
-            -Counter $counter -TestsPerDrive $testsPerDrive -Phase $phase
+            -Counter $counter -TestsPerDrive $totalStorageTests -Phase $phase
     }
 }

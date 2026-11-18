@@ -30,6 +30,8 @@ namespace ToolkitGUI.ViewModels
         public const string TabServices = "Services";
 
         private bool _isLoading;
+        private bool _isMutating;
+        private int _loadGeneration;
         private string _statusText = "Ready";
         private string _activeTab = TabStartupItems;
         private string _filterText = string.Empty;
@@ -58,7 +60,7 @@ namespace ToolkitGUI.ViewModels
         public string ActiveTab
         {
             get => _activeTab;
-            set { _activeTab = value; OnPropertyChanged(); }
+            set { _activeTab = value; OnPropertyChanged(); ApplyFilter(); }
         }
 
         public string FilterText
@@ -116,6 +118,7 @@ namespace ToolkitGUI.ViewModels
 
         private async Task LoadStartupCategoryAsync(string action, string statusLabel)
         {
+            var gen = ++_loadGeneration;
             IsLoading = true;
             StatusText = $"Loading {statusLabel}...";
             try
@@ -124,12 +127,14 @@ namespace ToolkitGUI.ViewModels
                     && IncludeWindowsScheduledTasks;
                 var includeArg = includeWindowsTasks ? " -IncludeWindowsScheduledTasks" : string.Empty;
                 var (json, psErr) = await PowerShellService.QueryAsync($"& '{ScriptPath}' -Action {action}{includeArg}");
+                if (gen != _loadGeneration) return;
                 if (!string.IsNullOrEmpty(psErr)) { StatusText = $"PS Error: {psErr}"; return; }
                 var entries = string.IsNullOrWhiteSpace(json) ? null
                     : JsonConvert.DeserializeObject<StartupEntry[]>(
                         json.TrimStart().StartsWith("[") ? json : $"[{json}]");
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
+                    if (gen != _loadGeneration) return;
                     StartupEntries.Clear();
                     if (entries != null)
                         foreach (var e in entries) StartupEntries.Add(e);
@@ -137,17 +142,27 @@ namespace ToolkitGUI.ViewModels
                     StatusText = $"{StartupEntries.Count} {statusLabel} loaded";
                 });
             }
-            catch (Exception ex) { StatusText = $"Error: {ex.Message}"; }
-            finally { IsLoading = false; }
+            catch (Exception ex)
+            {
+                if (gen == _loadGeneration)
+                    StatusText = $"Error: {ex.Message}";
+            }
+            finally
+            {
+                if (gen == _loadGeneration)
+                    IsLoading = false;
+            }
         }
 
         public async Task LoadServicesAsync()
         {
+            var gen = ++_loadGeneration;
             IsLoading = true;
             StatusText = "Loading services...";
             try
             {
                 var (json, psErr) = await PowerShellService.QueryAsync($"& '{ScriptPath}' -Action ListServices");
+                if (gen != _loadGeneration) return;
                 if (!string.IsNullOrEmpty(psErr) && string.IsNullOrWhiteSpace(json))
                 {
                     StatusText = $"PS Error: {psErr}";
@@ -159,6 +174,7 @@ namespace ToolkitGUI.ViewModels
                         json.TrimStart().StartsWith("[") ? json : $"[{json}]");
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
+                    if (gen != _loadGeneration) return;
                     Services.Clear();
                     if (svcs != null)
                         foreach (var s in svcs.OrderBy(x => x.DisplayName)) Services.Add(s);
@@ -168,8 +184,16 @@ namespace ToolkitGUI.ViewModels
                         : $"{Services.Count} services loaded (with access warnings)";
                 });
             }
-            catch (Exception ex) { StatusText = $"Error: {ex.Message}"; }
-            finally { IsLoading = false; }
+            catch (Exception ex)
+            {
+                if (gen == _loadGeneration)
+                    StatusText = $"Error: {ex.Message}";
+            }
+            finally
+            {
+                if (gen == _loadGeneration)
+                    IsLoading = false;
+            }
         }
 
         private async Task RefreshAsync()
@@ -191,9 +215,31 @@ namespace ToolkitGUI.ViewModels
             }
         }
 
+        private static bool ContainsIgnoreCase(string? source, string query)
+            => !string.IsNullOrEmpty(source) && source.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+
         private void ApplyFilter()
         {
-            var q = (FilterText ?? string.Empty).ToLowerInvariant();
+            var q = FilterText ?? string.Empty;
+            var hasQuery = !string.IsNullOrEmpty(q);
+
+            if (ActiveTab == TabServices)
+            {
+                FilteredServices.Clear();
+                foreach (var s in Services)
+                {
+                    if (ShowSuspiciousOnly && !s.IsSuspicious)
+                        continue;
+
+                    if (!hasQuery || ContainsIgnoreCase(s.DisplayName, q)
+                        || ContainsIgnoreCase(s.ServiceName, q) || ContainsIgnoreCase(s.User, q)
+                        || ContainsIgnoreCase(s.SignedDisplay, q) || ContainsIgnoreCase(s.AnalysisDetail, q)
+                        || ContainsIgnoreCase(s.FilePath, q) || ContainsIgnoreCase(s.Publisher, q)
+                        || ContainsIgnoreCase(s.RiskLevel, q) || ContainsIgnoreCase(s.SuspicionSummary, q))
+                        FilteredServices.Add(s);
+                }
+                return;
+            }
 
             FilteredEntries.Clear();
             foreach (var e in StartupEntries)
@@ -201,53 +247,57 @@ namespace ToolkitGUI.ViewModels
                 if (ShowSuspiciousOnly && !e.IsHijackSuspicious)
                     continue;
 
-                var name = e.Name ?? string.Empty;
-                var publisher = e.Publisher ?? string.Empty;
-                var filePath = e.FilePath ?? string.Empty;
-                var source = e.Source ?? string.Empty;
-
-                var user = e.User ?? string.Empty;
-                var signed = e.SignedDisplay ?? string.Empty;
-                var analysis = e.AnalysisDetail ?? string.Empty;
-                var sourceGroup = e.SourceGroup ?? string.Empty;
-                var correlation = e.CorrelationSummary ?? string.Empty;
-
-                if (string.IsNullOrEmpty(q) || name.ToLower().Contains(q)
-                    || publisher.ToLower().Contains(q) || filePath.ToLower().Contains(q)
-                    || source.ToLower().Contains(q) || user.ToLower().Contains(q)
-                    || signed.ToLower().Contains(q) || analysis.ToLower().Contains(q)
-                    || sourceGroup.ToLower().Contains(q) || correlation.ToLower().Contains(q))
+                if (!hasQuery || ContainsIgnoreCase(e.Name, q)
+                    || ContainsIgnoreCase(e.Publisher, q) || ContainsIgnoreCase(e.FilePath, q)
+                    || ContainsIgnoreCase(e.Source, q) || ContainsIgnoreCase(e.User, q)
+                    || ContainsIgnoreCase(e.SignedDisplay, q) || ContainsIgnoreCase(e.AnalysisDetail, q)
+                    || ContainsIgnoreCase(e.SourceGroup, q) || ContainsIgnoreCase(e.CorrelationSummary, q))
                     FilteredEntries.Add(e);
             }
+        }
 
-            FilteredServices.Clear();
-            foreach (var s in Services)
+        private static bool IsSameStartupEntry(StartupEntry a, StartupEntry b)
+        {
+            if (!string.Equals(a.Name, b.Name, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(a.RowType) || !string.IsNullOrWhiteSpace(b.RowType))
             {
-                if (ShowSuspiciousOnly && !s.IsSuspicious)
-                    continue;
-
-                var displayName = s.DisplayName ?? string.Empty;
-                var serviceName = s.ServiceName ?? string.Empty;
-                var user = s.User ?? string.Empty;
-                var signed = s.SignedDisplay ?? string.Empty;
-                var analysis = s.AnalysisDetail ?? string.Empty;
-                var filePath = s.FilePath ?? string.Empty;
-                var publisher = s.Publisher ?? string.Empty;
-                var risk = s.RiskLevel ?? string.Empty;
-                var suspicion = s.SuspicionSummary ?? string.Empty;
-
-                if (string.IsNullOrEmpty(q) || displayName.ToLower().Contains(q)
-                    || serviceName.ToLower().Contains(q) || user.ToLower().Contains(q)
-                    || signed.ToLower().Contains(q) || analysis.ToLower().Contains(q)
-                    || filePath.ToLower().Contains(q) || publisher.ToLower().Contains(q)
-                    || risk.ToLower().Contains(q) || suspicion.ToLower().Contains(q))
-                    FilteredServices.Add(s);
+                if (!string.Equals(a.RowType, b.RowType, StringComparison.OrdinalIgnoreCase))
+                    return false;
             }
+
+            var regA = string.IsNullOrWhiteSpace(a.RegistryKey) ? a.RegistryPath : a.RegistryKey;
+            var regB = string.IsNullOrWhiteSpace(b.RegistryKey) ? b.RegistryPath : b.RegistryKey;
+            if (!string.IsNullOrWhiteSpace(regA) || !string.IsNullOrWhiteSpace(regB))
+            {
+                if (!string.Equals(regA, regB, StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(a.ServiceName) || !string.IsNullOrWhiteSpace(b.ServiceName))
+            {
+                if (!string.Equals(a.ServiceName, b.ServiceName, StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(a.SourceGroup) || !string.IsNullOrWhiteSpace(b.SourceGroup))
+            {
+                if (!string.Equals(a.SourceGroup, b.SourceGroup, StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+
+            return true;
         }
 
         private async Task ToggleEntryAsync(StartupEntry? e, bool enable)
         {
             if (e == null) return;
+            if (_isMutating)
+            {
+                StatusText = "Another action is already in progress.";
+                return;
+            }
             if ((enable && !e.SupportsEnable) || (!enable && !e.SupportsDisable))
             {
                 StatusText = $"Action not supported for {e.Name}";
@@ -265,44 +315,43 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
-            var actionArgs = BuildStartupActionArgs(e, action);
-            var result = await PowerShellService.ExecuteAsync(
-                $"& '{ScriptPath}' {actionArgs}");
-            if (!result.Success)
+            _isMutating = true;
+            try
             {
-                StatusText = $"{action} failed: {FormatExecError(result)}";
-                return;
+                var actionArgs = BuildStartupActionArgs(e, action);
+                var result = await PowerShellService.ExecuteAsync(
+                    $"& '{ScriptPath}' {actionArgs}");
+                if (!result.Success)
+                {
+                    StatusText = $"{action} failed: {FormatExecError(result)}";
+                    return;
+                }
+
+                await RefreshAsync();
+
+                var updated = StartupEntries.FirstOrDefault(x => IsSameStartupEntry(x, e));
+                if (updated == null || updated.IsEnabled != enable)
+                {
+                    StatusText = $"{action} verification could not be confirmed for {e.Name}";
+                    return;
+                }
+
+                StatusText = $"{action}d: {e.Name}";
             }
-
-            await RefreshAsync();
-
-            StartupEntry? updated;
-            if (!string.IsNullOrWhiteSpace(e.RegistryKey))
+            finally
             {
-                updated = StartupEntries.FirstOrDefault(x =>
-                    string.Equals(x.Name, e.Name, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(x.RegistryKey, e.RegistryKey, StringComparison.OrdinalIgnoreCase));
+                _isMutating = false;
             }
-            else
-            {
-                updated = StartupEntries.FirstOrDefault(x =>
-                    string.IsNullOrWhiteSpace(x.RegistryKey) &&
-                    string.Equals(x.Name, e.Name, StringComparison.OrdinalIgnoreCase) &&
-                    x.IsEnabled == enable);
-            }
-
-            if (updated == null || updated.IsEnabled != enable)
-            {
-                StatusText = $"{action} verification could not be confirmed for {e.Name}";
-                return;
-            }
-
-            StatusText = $"{action}d: {e.Name}";
         }
 
         private async Task DeleteEntryAsync(StartupEntry? e)
         {
             if (e == null) return;
+            if (_isMutating)
+            {
+                StatusText = "Another action is already in progress.";
+                return;
+            }
             if (!e.SupportsDelete)
             {
                 StatusText = $"Delete is not supported for {e.Name}";
@@ -334,81 +383,78 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
-            var actionArgs = BuildStartupActionArgs(e, "Delete");
-            var result = await PowerShellService.ExecuteAsync(
-                $"& '{ScriptPath}' {actionArgs}");
-            if (!result.Success)
+            _isMutating = true;
+            try
             {
-                StatusText = $"Delete failed: {FormatExecError(result)}";
-                return;
-            }
+                var actionArgs = BuildStartupActionArgs(e, "Delete");
+                var result = await PowerShellService.ExecuteAsync(
+                    $"& '{ScriptPath}' {actionArgs}");
+                if (!result.Success)
+                {
+                    StatusText = $"Delete failed: {FormatExecError(result)}";
+                    return;
+                }
 
-            await RefreshAsync();
+                await RefreshAsync();
 
-            if (!string.IsNullOrWhiteSpace(e.RegistryKey))
-            {
-                var stillExists = StartupEntries.Any(x =>
-                    string.Equals(x.Name, e.Name, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(x.RegistryKey, e.RegistryKey, StringComparison.OrdinalIgnoreCase));
+                var stillExists = StartupEntries.Any(x => IsSameStartupEntry(x, e));
                 if (stillExists)
                 {
                     StatusText = $"Delete verification failed for {e.Name}";
                     return;
                 }
-            }
-            else
-            {
-                var stillExists = StartupEntries.Any(x =>
-                    string.IsNullOrWhiteSpace(x.RegistryKey) &&
-                    string.Equals(x.Name, e.Name, StringComparison.OrdinalIgnoreCase));
-                if (stillExists)
-                {
-                    StatusText = $"Delete verification failed for {e.Name}";
-                    return;
-                }
-            }
 
-            if (offerTargetCleanup && File.Exists(resolvedTarget!))
-            {
-                var removeTarget = MessageBox.Show(
-                    "Startup entry deleted.\n\nAlso delete the linked target file?\n\n"
-                    + resolvedTarget
-                    + "\n\nUse Yes for leftover droppers under ProgramData/AppData/Temp/Public. "
-                    + "Choose No if you only wanted the autorun removed.",
-                    "Startup Manager — remove target file?",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question,
-                    MessageBoxResult.No);
-
-                if (removeTarget == MessageBoxResult.Yes)
+                if (offerTargetCleanup && File.Exists(resolvedTarget!))
                 {
-                    if (StartupTargetFileCleanup.TryDeleteFileAndEmptyParents(resolvedTarget!, out var detail))
+                    var removeTarget = MessageBox.Show(
+                        "Startup entry deleted.\n\nAlso delete the linked target file?\n\n"
+                        + resolvedTarget
+                        + "\n\nUse Yes for leftover droppers under ProgramData/AppData/Temp/Public. "
+                        + "Choose No if you only wanted the autorun removed.",
+                        "Startup Manager — remove target file?",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question,
+                        MessageBoxResult.No);
+
+                    if (removeTarget == MessageBoxResult.Yes)
                     {
-                        StatusText = $"Deleted: {e.Name}. {detail}";
-                    }
-                    else
-                    {
-                        StatusText = $"Deleted: {e.Name}. Target file cleanup failed: {detail}";
-                        MessageBox.Show(
-                            $"Could not remove:\n{resolvedTarget}\n\n{detail}",
-                            "Startup Manager",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Warning);
+                        if (StartupTargetFileCleanup.TryDeleteFileAndEmptyParents(resolvedTarget!, out var detail))
+                        {
+                            StatusText = $"Deleted: {e.Name}. {detail}";
+                        }
+                        else
+                        {
+                            StatusText = $"Deleted: {e.Name}. Target file cleanup failed: {detail}";
+                            MessageBox.Show(
+                                $"Could not remove:\n{resolvedTarget}\n\n{detail}",
+                                "Startup Manager",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Warning);
+                        }
+
+                        return;
                     }
 
+                    StatusText = $"Deleted: {e.Name}. Target file left on disk: {resolvedTarget}";
                     return;
                 }
 
-                StatusText = $"Deleted: {e.Name}. Target file left on disk: {resolvedTarget}";
-                return;
+                StatusText = $"Deleted: {e.Name}";
             }
-
-            StatusText = $"Deleted: {e.Name}";
+            finally
+            {
+                _isMutating = false;
+            }
         }
 
         private async Task ResetEntryAsync(StartupEntry? e)
         {
             if (e == null) return;
+            if (_isMutating)
+            {
+                StatusText = "Another action is already in progress.";
+                return;
+            }
             if (!e.SupportsReset)
             {
                 StatusText = $"Reset is not available for {e.Name}";
@@ -429,21 +475,34 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
-            var actionArgs = BuildWinlogonActionArgs(e, "ResetWinlogonEntry");
-            var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {actionArgs}");
-            if (!result.Success)
+            _isMutating = true;
+            try
             {
-                StatusText = $"Reset failed: {FormatExecError(result)}";
-                return;
-            }
+                var actionArgs = BuildWinlogonActionArgs(e, "ResetWinlogonEntry");
+                var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {actionArgs}");
+                if (!result.Success)
+                {
+                    StatusText = $"Reset failed: {FormatExecError(result)}";
+                    return;
+                }
 
-            await RefreshAsync();
-            StatusText = $"Reset applied: {e.Name} (Undo available until you close this session or undo)";
+                await RefreshAsync();
+                StatusText = $"Reset applied: {e.Name} (Undo available until you close this session or undo)";
+            }
+            finally
+            {
+                _isMutating = false;
+            }
         }
 
         private async Task UndoEntryAsync(StartupEntry? e)
         {
             if (e == null) return;
+            if (_isMutating)
+            {
+                StatusText = "Another action is already in progress.";
+                return;
+            }
             if (!e.SupportsUndo)
             {
                 StatusText = $"Undo is not available for {e.Name}";
@@ -461,16 +520,24 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
-            var actionArgs = BuildWinlogonActionArgs(e, "UndoWinlogonEntry");
-            var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {actionArgs}");
-            if (!result.Success)
+            _isMutating = true;
+            try
             {
-                StatusText = $"Undo failed: {FormatExecError(result)}";
-                return;
-            }
+                var actionArgs = BuildWinlogonActionArgs(e, "UndoWinlogonEntry");
+                var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {actionArgs}");
+                if (!result.Success)
+                {
+                    StatusText = $"Undo failed: {FormatExecError(result)}";
+                    return;
+                }
 
-            await RefreshAsync();
-            StatusText = $"Undo applied: {e.Name}";
+                await RefreshAsync();
+                StatusText = $"Undo applied: {e.Name}";
+            }
+            finally
+            {
+                _isMutating = false;
+            }
         }
 
         private static string EscapePs(string value)
@@ -562,76 +629,102 @@ namespace ToolkitGUI.ViewModels
         private async Task ServiceActionAsync(ServiceEntry? s, string action)
         {
             if (s == null) return;
-            var escapedServiceName = EscapePs(s.ServiceName);
-
-            StatusText = $"{action}: {s.ServiceName}...";
-            var previousStatus = s.Status;
-            var result = await PowerShellService.ExecuteAsync(
-                $"& '{ScriptPath}' -Action {action} -ServiceName '{escapedServiceName}'");
-            if (!result.Success)
+            if (_isMutating)
             {
-                var errorText = FormatExecError(result);
-                var (category, message) = ClassifyServiceFailure(errorText);
-                if (category == "AlreadyInDesiredState")
+                StatusText = "Another action is already in progress.";
+                return;
+            }
+
+            _isMutating = true;
+            try
+            {
+                var escapedServiceName = EscapePs(s.ServiceName);
+
+                StatusText = $"{action}: {s.ServiceName}...";
+                var previousStatus = s.Status;
+                var result = await PowerShellService.ExecuteAsync(
+                    $"& '{ScriptPath}' -Action {action} -ServiceName '{escapedServiceName}'");
+                if (!result.Success)
                 {
-                    StatusText = $"No change needed: {message}";
+                    var errorText = FormatExecError(result);
+                    var (category, message) = ClassifyServiceFailure(errorText);
+                    if (category == "AlreadyInDesiredState")
+                    {
+                        StatusText = $"No change needed: {message}";
+                        await LoadServicesAsync();
+                        return;
+                    }
+
+                    StatusText = $"{action} failed ({category}): {message}";
+                    MessageBox.Show(
+                        $"{action} failed for '{s.ServiceName}'.\n\nReason: {message}",
+                        "Service Action Failed",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.Output) &&
+                    result.Output.Contains("ALREADY_IN_DESIRED_STATE", StringComparison.OrdinalIgnoreCase))
+                {
+                    StatusText = $"{s.ServiceName} is already in the desired state.";
                     await LoadServicesAsync();
                     return;
                 }
 
-                StatusText = $"{action} failed ({category}): {message}";
-                MessageBox.Show(
-                    $"{action} failed for '{s.ServiceName}'.\n\nReason: {message}",
-                    "Service Action Failed",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return;
-            }
-
-            if (!string.IsNullOrWhiteSpace(result.Output) &&
-                result.Output.Contains("ALREADY_IN_DESIRED_STATE", StringComparison.OrdinalIgnoreCase))
-            {
-                StatusText = $"{s.ServiceName} is already in the desired state.";
-                await LoadServicesAsync();
-                return;
-            }
-
-            var newStatus = string.Empty;
-            for (var i = 0; i < 20; i++)
-            {
-                await Task.Delay(300);
-                var (statusResult, queryErr) = await PowerShellService.QueryAsync(
-                    $"(Get-Service -Name '{escapedServiceName}' -ErrorAction SilentlyContinue).Status.ToString()");
-                if (!string.IsNullOrWhiteSpace(queryErr)) continue;
-
-                newStatus = statusResult.Trim();
-                if (string.IsNullOrWhiteSpace(newStatus)) continue;
-                if (!string.Equals(newStatus, previousStatus, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(action, "RestartService", StringComparison.OrdinalIgnoreCase))
+                var newStatus = string.Empty;
+                for (var i = 0; i < 20; i++)
                 {
-                    break;
+                    await Task.Delay(300);
+                    var (statusResult, queryErr) = await PowerShellService.QueryAsync(
+                        $"$s = Get-Service -Name '{escapedServiceName}' -ErrorAction SilentlyContinue; if ($s) {{ $s.Status.ToString() }} else {{ 'MISSING' }}");
+                    if (!string.IsNullOrWhiteSpace(queryErr)) continue;
+
+                    var candidate = statusResult.Trim();
+                    if (string.IsNullOrWhiteSpace(candidate)) continue;
+                    if (string.Equals(candidate, "MISSING", StringComparison.OrdinalIgnoreCase))
+                    {
+                        newStatus = string.Empty;
+                        break;
+                    }
+
+                    newStatus = candidate;
+                    if (!string.Equals(newStatus, previousStatus, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(action, "RestartService", StringComparison.OrdinalIgnoreCase))
+                    {
+                        break;
+                    }
                 }
-            }
 
-            if (!string.IsNullOrWhiteSpace(newStatus))
+                if (!string.IsNullOrWhiteSpace(newStatus))
+                {
+                    s.Status = newStatus;
+                }
+
+                await LoadServicesAsync();
+
+                if (string.IsNullOrWhiteSpace(newStatus))
+                {
+                    StatusText = $"{action} completed, but status verification timed out for {s.ServiceName}.";
+                    return;
+                }
+
+                StatusText = $"Done — {s.ServiceName} is now {newStatus}";
+            }
+            finally
             {
-                s.Status = newStatus;
+                _isMutating = false;
             }
-
-            await LoadServicesAsync();
-
-            if (string.IsNullOrWhiteSpace(newStatus))
-            {
-                StatusText = $"{action} completed, but status verification timed out for {s.ServiceName}.";
-                return;
-            }
-
-            StatusText = $"Done — {s.ServiceName} is now {newStatus}";
         }
 
         private async Task DeleteServiceAsync(ServiceEntry? s)
         {
             if (s == null) return;
+            if (_isMutating)
+            {
+                StatusText = "Another action is already in progress.";
+                return;
+            }
             if (!s.SupportsDelete)
             {
                 var block = string.IsNullOrWhiteSpace(s.DeletionBlockDetail)
@@ -663,65 +756,89 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
-            var escapedServiceName = EscapePs(s.ServiceName);
-            StatusText = $"DeleteService: {s.ServiceName}...";
-            var result = await PowerShellService.ExecuteAsync(
-                $"& '{ScriptPath}' -Action DeleteService -ServiceName '{escapedServiceName}'");
-            if (!result.Success)
+            _isMutating = true;
+            try
             {
-                var errorText = FormatExecError(result);
-                var (category, message) = ClassifyServiceFailure(errorText);
-                StatusText = $"Delete failed ({category}): {message}";
-                MessageBox.Show(
-                    $"Delete failed for '{s.ServiceName}'.\n\nReason: {message}",
-                    "Delete Service Failed",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return;
-            }
+                var escapedServiceName = EscapePs(s.ServiceName);
+                StatusText = $"DeleteService: {s.ServiceName}...";
+                var result = await PowerShellService.ExecuteAsync(
+                    $"& '{ScriptPath}' -Action DeleteService -ServiceName '{escapedServiceName}'");
+                if (!result.Success)
+                {
+                    var errorText = FormatExecError(result);
+                    var (category, message) = ClassifyServiceFailure(errorText);
+                    StatusText = $"Delete failed ({category}): {message}";
+                    MessageBox.Show(
+                        $"Delete failed for '{s.ServiceName}'.\n\nReason: {message}",
+                        "Delete Service Failed",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
 
-            await LoadServicesAsync();
-            StatusText = $"Deleted service: {s.ServiceName}";
+                await LoadServicesAsync();
+                StatusText = $"Deleted service: {s.ServiceName}";
+            }
+            finally
+            {
+                _isMutating = false;
+            }
         }
 
         private async Task SetStartTypeAsync(ServiceEntry? s)
         {
             if (s == null) return;
-            var escapedServiceName = EscapePs(s.ServiceName);
-
-            var result = await PowerShellService.ExecuteAsync(
-                $"& '{ScriptPath}' -Action SetStartType -ServiceName '{escapedServiceName}' -StartType '{EscapePs(s.StartupType)}'");
-            if (!result.Success)
+            if (_isMutating)
             {
-                var errorText = FormatExecError(result);
-                var (category, message) = ClassifyServiceFailure(errorText);
-                if (category == "AlreadyInDesiredState")
+                StatusText = "Another action is already in progress.";
+                await LoadServicesAsync();
+                return;
+            }
+
+            _isMutating = true;
+            try
+            {
+                var escapedServiceName = EscapePs(s.ServiceName);
+
+                var result = await PowerShellService.ExecuteAsync(
+                    $"& '{ScriptPath}' -Action SetStartType -ServiceName '{escapedServiceName}' -StartType '{EscapePs(s.StartupType)}'");
+                if (!result.Success)
                 {
-                    StatusText = $"No change needed: {message}";
+                    var errorText = FormatExecError(result);
+                    var (category, message) = ClassifyServiceFailure(errorText);
                     await LoadServicesAsync();
+                    if (category == "AlreadyInDesiredState")
+                    {
+                        StatusText = $"No change needed: {message}";
+                        return;
+                    }
+
+                    StatusText = $"Set start type failed ({category}): {message}";
+                    MessageBox.Show(
+                        $"Set Type failed for '{s.ServiceName}'.\n\nReason: {message}",
+                        "Set Start Type Failed",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
                     return;
                 }
 
-                StatusText = $"Set start type failed ({category}): {message}";
-                MessageBox.Show(
-                    $"Set Type failed for '{s.ServiceName}'.\n\nReason: {message}",
-                    "Set Start Type Failed",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return;
-            }
+                var (newType, queryErr) = await PowerShellService.QueryAsync(
+                    $"$s = Get-Service -Name '{escapedServiceName}' -ErrorAction SilentlyContinue; if ($s) {{ $s.StartType.ToString() }}");
+                if (!string.IsNullOrWhiteSpace(queryErr) || string.IsNullOrWhiteSpace(newType))
+                {
+                    await LoadServicesAsync();
+                    StatusText = $"Start type set command completed, but verification failed for {s.ServiceName}";
+                    return;
+                }
 
-            var (newType, queryErr) = await PowerShellService.QueryAsync(
-                $"(Get-Service -Name '{escapedServiceName}' -ErrorAction SilentlyContinue).StartType.ToString()");
-            if (!string.IsNullOrWhiteSpace(queryErr) || string.IsNullOrWhiteSpace(newType))
+                s.StartupType = NormalizeServiceStartupType(newType.Trim());
+                await LoadServicesAsync();
+                StatusText = $"Start type set: {s.ServiceName} → {s.StartupType}";
+            }
+            finally
             {
-                StatusText = $"Start type set command completed, but verification failed for {s.ServiceName}";
-                return;
+                _isMutating = false;
             }
-
-            s.StartupType = NormalizeServiceStartupType(newType.Trim());
-            await LoadServicesAsync();
-            StatusText = $"Start type set: {s.ServiceName} → {s.StartupType}";
         }
 
         private static (string Category, string Message) ClassifyServiceFailure(string rawError)
@@ -991,7 +1108,6 @@ namespace ToolkitGUI.ViewModels
                 return Task.CompletedTask;
             }
 
-            IsLoading = true;
             StatusText = $"Running CST startup-entry scan on {displayName}...";
             string? metaPath = null;
             try
@@ -1036,12 +1152,14 @@ namespace ToolkitGUI.ViewModels
             }
             catch (Exception ex)
             {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(metaPath) && File.Exists(metaPath))
+                        File.Delete(metaPath);
+                }
+                catch { }
                 StatusText = $"CST scan error: {ex.Message}";
                 MessageBox.Show(ex.Message, "CST Scan", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-            finally
-            {
-                IsLoading = false;
             }
 
             return Task.CompletedTask;
@@ -1364,6 +1482,9 @@ namespace ToolkitGUI.ViewModels
 
         public async Task ScanAsync()
         {
+            if (IsRunning)
+                return;
+
             if (PowerShellService.IsWinPeEnvironment())
             {
                 StatusText = "Not applicable in WinPE (live Windows temp cleanup only).";
@@ -1384,10 +1505,10 @@ namespace ToolkitGUI.ViewModels
             _lastScannedPaths.Clear();
 
             var drivesFile = Path.Combine(Path.GetTempPath(), $"cde_tempcleaner_drives_{Guid.NewGuid():N}.json");
-            File.WriteAllText(drivesFile, JsonConvert.SerializeObject(selectedDrives));
 
             try
             {
+                File.WriteAllText(drivesFile, JsonConvert.SerializeObject(selectedDrives));
                 var (json, psErr) = await PowerShellService.QueryAsync($"& '{ScriptPath}' -Action Scan -DrivesFile '{drivesFile.Replace("'", "''")}'");
                 if (!string.IsNullOrEmpty(psErr)) { StatusText = $"PS Error: {psErr}"; return; }
                 if (!string.IsNullOrWhiteSpace(json))
@@ -1469,19 +1590,29 @@ namespace ToolkitGUI.ViewModels
 
         private async Task CleanAsync()
         {
+            if (IsRunning)
+                return;
+
             if (_lastScannedPaths.Count == 0)
             {
                 StatusText = "Run a scan before cleaning.";
                 return;
             }
 
-            var selected = Folders
-                .SelectMany(p => p.Children.Where(c => c.IsSelected).Select(c => c.Path))
-                .Distinct()
+            var selectedNodes = Folders
+                .SelectMany(p => p.Children.Where(c => c.IsSelected && !c.IsProtected))
                 .ToList();
-            if (selected.Count == 0) { StatusText = "No locations selected"; return; }
+            var selected = selectedNodes
+                .Select(c => c.Path)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (selected.Count == 0)
+            {
+                StatusText = "No cleanable locations selected (protected paths are skipped).";
+                return;
+            }
 
-            var totalBytes = Folders.SelectMany(p => p.Children.Where(c => c.IsSelected)).Sum(c => c.Bytes);
+            var totalBytes = selectedNodes.Sum(c => c.Bytes);
             if (!DestructiveActionDialog.Confirm(
                     "Temp File Cleaner",
                     $"Clean {selected.Count} selected location(s) (~{SizeDisplayFormatter.FormatBytes(totalBytes)})?",
@@ -1494,34 +1625,48 @@ namespace ToolkitGUI.ViewModels
 
             // Write selected paths to a temp file
             // Windows command-line quote-stripping when passed to powershell.exe -File.
-            var tempFile = System.IO.Path.Combine(
-                System.IO.Path.GetTempPath(),
+            var tempFile = Path.Combine(
+                Path.GetTempPath(),
                 $"cde_tempcleaner_{Guid.NewGuid():N}.json");
-            System.IO.File.WriteAllText(tempFile, JsonConvert.SerializeObject(selected));
-
-            var whitelistFile = System.IO.Path.Combine(
-                System.IO.Path.GetTempPath(),
+            var whitelistFile = Path.Combine(
+                Path.GetTempPath(),
                 $"cde_tempcleaner_whitelist_{Guid.NewGuid():N}.json");
-            System.IO.File.WriteAllText(whitelistFile, JsonConvert.SerializeObject(_lastScannedPaths.ToList()));
 
             try
             {
+                File.WriteAllText(tempFile, JsonConvert.SerializeObject(selected));
+                File.WriteAllText(whitelistFile, JsonConvert.SerializeObject(_lastScannedPaths.ToList()));
+
                 await RunWorkflowAsync(
                     ScriptPath,
-                    $"-Action Clean -PathsFile \"{tempFile}\" -WhitelistFile \"{whitelistFile}\"",
+                    $"-Action Clean -PathsFile '{tempFile.Replace("'", "''")}' -WhitelistFile '{whitelistFile.Replace("'", "''")}'",
                     "Temporary File Cleanup",
                     "Remove the selected temporary locations and review the cleanup results in a dedicated execution window.");
 
                 LoadCleanupStructuredResults();
             }
+            catch (Exception ex)
+            {
+                StatusText = $"Clean error: {ex.Message}";
+                return;
+            }
             finally
             {
-                try { System.IO.File.Delete(tempFile); } catch { }
-                try { System.IO.File.Delete(whitelistFile); } catch { }
+                try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
+                try { if (File.Exists(whitelistFile)) File.Delete(whitelistFile); } catch { }
             }
 
-            // Re-scan after clean
-            await ScanAsync();
+            // Re-scan after clean when at least one drive remains checked.
+            if (GetSelectedDriveRoots().Count > 0)
+            {
+                await ScanAsync();
+            }
+            else
+            {
+                Folders.Clear();
+                _lastScannedPaths.Clear();
+                StatusText = "Clean complete. Select a drive to scan again.";
+            }
         }
 
         private void LoadCleanupStructuredResults()
@@ -1643,6 +1788,7 @@ namespace ToolkitGUI.ViewModels
     public class UninstallManagerViewModel : INotifyPropertyChanged
     {
         private bool _isLoading;
+        private bool _isMutating;
         private string _statusText = "Ready";
         private string _filterText = string.Empty;
 
@@ -1676,6 +1822,13 @@ namespace ToolkitGUI.ViewModels
 
         public async Task LoadAsync()
         {
+            if (PowerShellService.IsWinPeEnvironment())
+            {
+                StatusText = "Not applicable in WinPE (live Windows installed programs only).";
+                IsLoading = false;
+                return;
+            }
+
             IsLoading = true;
             StatusText = "Loading installed programs...";
             try
@@ -1701,6 +1854,11 @@ namespace ToolkitGUI.ViewModels
         private async Task UninstallAsync(InstalledProgram? p)
         {
             if (p == null) return;
+            if (_isMutating)
+            {
+                StatusText = "Another uninstall/removal is already in progress.";
+                return;
+            }
 
             if (!p.HasUninstaller)
             {
@@ -1723,27 +1881,42 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
-            StatusText = $"Uninstalling {p.Name} ({methodHint})...";
-            var uninstallArgs = BuildUninstallArgs(p, "Uninstall", preferQuiet: true, removeInstallFolder: false);
-            var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {uninstallArgs}");
-            if (!result.Success)
+            _isMutating = true;
+            IsLoading = true;
+            try
             {
-                StatusText = $"Uninstall failed: {FormatExecError(result)}";
-                await PromptLeftoverCleanupAsync(p, afterFailedUninstall: true);
+                StatusText = $"Uninstalling {p.Name} ({methodHint})...";
+                var uninstallArgs = BuildUninstallArgs(p, "Uninstall", preferQuiet: true, removeInstallFolder: false);
+                var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {uninstallArgs}");
+                if (!result.Success)
+                {
+                    StatusText = $"Uninstall failed: {FormatExecError(result)}";
+                    await PromptLeftoverCleanupAsync(p, afterFailedUninstall: true);
+                    await LoadAsync();
+                    return;
+                }
+
+                var action = TryParseUninstallActionResult(result.Output);
+                StatusText = action?.Message ?? $"Uninstaller finished: {p.Name}";
+
+                await PromptLeftoverCleanupAsync(p, afterFailedUninstall: false);
                 await LoadAsync();
-                return;
             }
-
-            var action = TryParseUninstallActionResult(result.Output);
-            StatusText = action?.Message ?? $"Uninstaller finished: {p.Name}";
-
-            await PromptLeftoverCleanupAsync(p, afterFailedUninstall: false);
-            await LoadAsync();
+            finally
+            {
+                _isMutating = false;
+                IsLoading = false;
+            }
         }
 
         private async Task ForceRemoveAsync(InstalledProgram? p)
         {
             if (p == null) return;
+            if (_isMutating)
+            {
+                StatusText = "Another uninstall/removal is already in progress.";
+                return;
+            }
 
             var hasInstallFolder = !string.IsNullOrWhiteSpace(p.InstallLocation)
                 && Directory.Exists(p.InstallLocation);
@@ -1789,24 +1962,35 @@ namespace ToolkitGUI.ViewModels
                 removeFolder = folderChoice == MessageBoxResult.Yes;
             }
 
-            StatusText = removeFolder
-                ? $"Force removing {p.Name} (ARP + install folder)..."
-                : $"Force removing ARP entry for {p.Name}...";
-
-            var forceArgs = BuildUninstallArgs(p, "ForceRemove", preferQuiet: false, removeInstallFolder: removeFolder);
-            var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {forceArgs}");
-            if (!result.Success)
+            _isMutating = true;
+            IsLoading = true;
+            try
             {
-                StatusText = $"Force remove failed: {FormatExecError(result)}";
-                return;
+                StatusText = removeFolder
+                    ? $"Force removing {p.Name} (ARP + install folder)..."
+                    : $"Force removing ARP entry for {p.Name}...";
+
+                var forceArgs = BuildUninstallArgs(p, "ForceRemove", preferQuiet: false, removeInstallFolder: removeFolder);
+                var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {forceArgs}");
+                if (!result.Success)
+                {
+                    StatusText = $"Force remove failed: {FormatExecError(result)}";
+                    await LoadAsync();
+                    return;
+                }
+
+                var action = TryParseUninstallActionResult(result.Output);
+                StatusText = action?.Message ?? $"Force removed: {p.Name}";
+
+                // Light leftover scan (name matches) — confirm before deleting anything else.
+                await PromptLeftoverCleanupAsync(p, afterFailedUninstall: false, skipInstallFolderAlreadyRemoved: removeFolder);
+                await LoadAsync();
             }
-
-            var action = TryParseUninstallActionResult(result.Output);
-            StatusText = action?.Message ?? $"Force removed: {p.Name}";
-
-            // Light leftover scan (name matches) — confirm before deleting anything else.
-            await PromptLeftoverCleanupAsync(p, afterFailedUninstall: false, skipInstallFolderAlreadyRemoved: removeFolder);
-            await LoadAsync();
+            finally
+            {
+                _isMutating = false;
+                IsLoading = false;
+            }
         }
 
         private static string BuildUninstallArgs(
@@ -1960,19 +2144,28 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
-            var removed = 0;
-            var failed = 0;
-            foreach (var folder in folders)
+            var folderPathsJson = JsonConvert.SerializeObject(folders.Select(f => f.Path).ToList());
+            var removeArgs = $"-Action RemoveFolder -FolderPathsJson '{EscapePs(folderPathsJson)}'";
+            var removeResult = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {removeArgs}");
+            var batchJson = ExtractJsonObject(removeResult.Output ?? string.Empty);
+            if (!string.IsNullOrWhiteSpace(batchJson))
             {
-                var removeArgs = $"-Action RemoveFolder -FolderPath '{EscapePs(folder.Path)}'";
-                var removeResult = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {removeArgs}");
-                if (removeResult.Success) removed++;
-                else failed++;
+                try
+                {
+                    var summary = Newtonsoft.Json.Linq.JObject.Parse(batchJson);
+                    var removedCount = summary.Value<int?>("RemovedCount") ?? 0;
+                    var failedCount = summary.Value<int?>("FailedCount") ?? 0;
+                    StatusText = failedCount == 0
+                        ? $"{StatusText} Removed {removedCount} leftover folder(s)."
+                        : $"{StatusText} Removed {removedCount} leftover folder(s); {failedCount} failed.";
+                    return;
+                }
+                catch { }
             }
 
-            StatusText = failed == 0
-                ? $"{StatusText} Removed {removed} leftover folder(s)."
-                : $"{StatusText} Removed {removed} leftover folder(s); {failed} failed.";
+            StatusText = removeResult.Success
+                ? $"{StatusText} Removed {folders.Count} leftover folder(s)."
+                : $"{StatusText} Leftover removal failed: {FormatExecError(removeResult)}";
         }
 
         private static string FormatExecError(PowerShellExecutionResult result)
@@ -1985,11 +2178,16 @@ namespace ToolkitGUI.ViewModels
 
         private void ApplyFilter()
         {
-            var q = FilterText.ToLowerInvariant();
+            var q = FilterText ?? string.Empty;
+            var hasQuery = !string.IsNullOrEmpty(q);
             FilteredPrograms.Clear();
             foreach (var p in Programs)
-                if (string.IsNullOrEmpty(q) || p.Name.ToLower().Contains(q)
-                    || p.Publisher.ToLower().Contains(q)) FilteredPrograms.Add(p);
+            {
+                if (!hasQuery
+                    || (!string.IsNullOrEmpty(p.Name) && p.Name.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0)
+                    || (!string.IsNullOrEmpty(p.Publisher) && p.Publisher.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0))
+                    FilteredPrograms.Add(p);
+            }
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

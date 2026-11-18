@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Shared structured finding helpers for System Health Check.
@@ -398,14 +398,14 @@ function Get-CalibratedHealthFindingConfidence {
             return [math]::Max($c, 90)
         }
         '^(?i)CorroboratedSuspect$' {
-            # Floor only — bonus already applied during corroboration.
+            # Floor only - bonus already applied during corroboration.
             return [math]::Max($c, 75)
         }
         '^(?i)SingleSignal$' {
             return $c
         }
         '^(?i)Inventory$' {
-            # Noise demotion for residual/inventory Info rows only — Pass "clean" stays as authored.
+            # Noise demotion for residual/inventory Info rows only - Pass "clean" stays as authored.
             if ($statusNorm -match '^(?i)info$') {
                 return [math]::Min($c, 40)
             }

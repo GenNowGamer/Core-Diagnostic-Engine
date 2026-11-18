@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Correlate Windows event log errors into technician-facing finding clusters.
@@ -255,7 +255,7 @@ function Invoke-EventFindingClustering {
 
     foreach ($cluster in @($catalog.clusters)) {
         $window = if ($cluster.windowMinutes) { [int]$cluster.windowMinutes } else { $defaultWindow }
-        # @($null) has Count 1 in Windows PowerShell — only wrap real arrays.
+        # @($null) has Count 1 in Windows PowerShell - only wrap real arrays.
         $required = @(
             if ($null -ne $cluster.required) { $cluster.required } else { @() }
         ) | Where-Object { $null -ne $_ }

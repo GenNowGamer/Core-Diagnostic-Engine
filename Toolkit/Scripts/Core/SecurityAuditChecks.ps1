@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Security audit check functions used by SystemHealthCheck.ps1. Malware cleanup workflows use Defender/CST helpers from this module.
@@ -188,7 +188,8 @@ function Invoke-CoreSecurityTool {
         } else {
             0
         }
-        $toolkitRoot = $ScriptDir | Split-Path -Parent | Split-Path -Parent
+        $coreBase = if ($PSScriptRoot) { $PSScriptRoot } else { $ScriptDir }
+        $toolkitRoot = $coreBase | Split-Path -Parent | Split-Path -Parent
         $cstDataRoot = Join-Path $toolkitRoot 'CDE\Runtime\Data\cst'
         if (-not (Test-Path $cstDataRoot)) {
             New-Item -Path $cstDataRoot -ItemType Directory -Force | Out-Null
@@ -296,8 +297,13 @@ function Invoke-CoreSecurityTool {
             }
             $relayOut = @{}
             Invoke-ToolkitElevatedRelay -ScriptPath $cstScript -ArgumentString ($relayParts -join ' ') -RelayOut $relayOut
+            $relay = $relayOut['Result']
             if (Test-Path -LiteralPath $resultArtifactPath -PathType Leaf) {
                 $result = Get-Content -LiteralPath $resultArtifactPath -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json -ErrorAction SilentlyContinue
+            } elseif ($null -eq $relay) {
+                Write-Log 'Core Security Tool elevation relay did not return a result (UAC may have been canceled).' -Level Warning
+            } elseif ($relay.ExitCode -ne 0) {
+                Write-Log ("Core Security Tool elevated run exited with code {0} without writing a result artifact." -f $relay.ExitCode) -Level Warning
             }
         } else {
             $result = & $cstScript @invokeArgs
@@ -520,7 +526,7 @@ function Invoke-DefenderScan {
         }
 
         $formatted = Format-DefenderStatus -MpStatus $mpStatus
-        Write-Log ("Defender status — Antivirus:{0}; Antispyware:{1}; RTP:{2}; Mode:{3}; Signature:{4}; Engine:{5}" -f `
+        Write-Log ("Defender status - Antivirus:{0}; Antispyware:{1}; RTP:{2}; Mode:{3}; Signature:{4}; Engine:{5}" -f `
             $mpStatus.AntivirusEnabled,
             $mpStatus.AntiSpywareEnabled,
             $mpStatus.RealTimeProtectionEnabled,
@@ -532,7 +538,7 @@ function Invoke-DefenderScan {
         $r.Steps.Add([PSCustomObject]@{ Name='DefenderStatus'; Status=$defStatus; Output=$formatted })
 
         if (-not $mpStatus.AntivirusEnabled) {
-            Write-DefenderProgress -Phase 'Blocked' -Percent 100 -Detail 'Antivirus is disabled — cannot start a Defender scan.' -EngineVersion $engineVersion -Estimated $false
+            Write-DefenderProgress -Phase 'Blocked' -Percent 100 -Detail 'Antivirus is disabled - cannot start a Defender scan.' -EngineVersion $engineVersion -Estimated $false
             $r.Steps.Add([PSCustomObject]@{ Name='DefenderScan'; Status='Warn'; Output='Antivirus is disabled. Enable Windows Defender or another AV before scanning.' })
             return
         }
@@ -567,7 +573,7 @@ function Invoke-DefenderScan {
                     if ($live -and $live.PSObject.Properties['QuickScanEndTime'] -and $null -ne $live.QuickScanEndTime) {
                         $endTime = [datetime]$live.QuickScanEndTime
                         if ($null -eq $priorEnd -or $endTime -gt $priorEnd) {
-                            # End time advanced after we started — treat as completed.
+                            # End time advanced after we started - treat as completed.
                             if ($endTime -ge $scanStart.AddSeconds(-5)) {
                                 $scanCompleted = $true
                             }
@@ -587,7 +593,7 @@ function Invoke-DefenderScan {
             $eta = [math]::Max(0, $estimateSec - $elapsed)
             $elapsedText = Format-DefenderElapsed $elapsed
             $etaText = Format-DefenderElapsed $eta
-            $detail = "Elapsed $elapsedText • ETA ~$etaText (estimated) • Defender does not report files scanned"
+            $detail = "Elapsed $elapsedText | ETA ~$etaText (estimated) | Defender does not report files scanned"
 
             Write-DefenderProgress -Phase 'Scanning' -Percent $pct -Detail $detail `
                 -ElapsedSec $elapsed -EtaSec $eta -EngineVersion $engineVersion -Estimated $true
@@ -602,11 +608,13 @@ function Invoke-DefenderScan {
             Receive-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
             try { $jobState = [string]$job.State } catch { }
         } catch { }
+        $jobError = ''
+        if ($jobState -eq 'Failed') {
+            try { $jobError = (@($job.ChildJobs | ForEach-Object { $_.JobStateInfo.Reason }) | Where-Object { $_ }) -join '; ' } catch { }
+        }
         try { Remove-Job -Job $job -Force -ErrorAction SilentlyContinue } catch { }
 
         if ($jobState -eq 'Failed') {
-            $jobError = ''
-            try { $jobError = (@($job.ChildJobs | ForEach-Object { $_.JobStateInfo.Reason }) | Where-Object { $_ }) -join '; ' } catch { }
             Write-DefenderProgress -Phase 'Failed' -Percent 100 -Detail "Defender scan job failed. $jobError" `
                 -ElapsedSec $elapsedFinal -EngineVersion $engineVersion -Estimated $false
             $r.Steps.Add([PSCustomObject]@{
@@ -643,7 +651,7 @@ function Invoke-DefenderScan {
                 $name = if ($d.PSObject.Properties['ThreatName'] -and $d.ThreatName) { [string]$d.ThreatName } else { 'Threat' }
                 $res = if ($d.PSObject.Properties['Resources'] -and $d.Resources) { @($d.Resources) -join '; ' } else { '' }
                 $when = if ($d.PSObject.Properties['InitialDetectionTime'] -and $d.InitialDetectionTime) { [string]$d.InitialDetectionTime } else { '' }
-                $line = if ($res) { "$name — $res" } else { $name }
+                $line = if ($res) { "$name - $res" } else { $name }
                 if ($when) { $line = "$line ($when)" }
                 $threatLines += $line
                 Write-Log "  Detection: $line"
@@ -659,7 +667,7 @@ function Invoke-DefenderScan {
             "Quick scan finished in $elapsedText. No threat detections returned by Get-MpThreatDetection."
         }
         if ($unscopedPriorCount -gt 0) {
-            $summary = $summary + " ($unscopedPriorCount prior detection(s) omitted — InitialDetectionTime before scan start window.)"
+            $summary = $summary + " ($unscopedPriorCount prior detection(s) omitted - InitialDetectionTime before scan start window.)"
         }
         if ($threatLines.Count -gt 0) {
             $summary = $summary + "`n`n" + ($threatLines -join "`n")
@@ -1252,7 +1260,7 @@ function Test-IsScheduledTaskScriptExecute {
 
 function Test-IsHighRiskScheduledTaskPath {
     <#
-    .SYNOPSIS Temp/Downloads/Public — always review-worthy regardless of publisher.
+    .SYNOPSIS Temp/Downloads/Public - always review-worthy regardless of publisher.
     #>
     param([string]$Path)
 
@@ -1662,7 +1670,7 @@ function Invoke-ScheduledTasksAudit {
     }
 }
 
-# â”€â”€â”€ Dispatch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# --- Dispatch ---------------------------------------------------------------
 function Invoke-RansomwareRecoveryAudit {
     param($r)
     Write-Log 'Auditing ransomware recovery tamper indicators (T1490)...'

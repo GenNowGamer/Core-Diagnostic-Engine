@@ -74,8 +74,9 @@ function Clear-ToolkitFileReadOnlyAttribute {
     if (-not (Test-Path -LiteralPath $Path)) { return }
 
     $item = Get-Item -LiteralPath $Path -Force
-    if ($item.IsReadOnly) {
-        $item.IsReadOnly = $false
+    $mask = [System.IO.FileAttributes]::ReadOnly -bor [System.IO.FileAttributes]::Hidden -bor [System.IO.FileAttributes]::System
+    if (($item.Attributes -band $mask) -ne 0) {
+        $item.Attributes = $item.Attributes -band (-bnot $mask)
     }
 }
 
@@ -119,6 +120,22 @@ function Invoke-PostOpIconThumbCacheClear {
             ForEach-Object { $iconPaths.Add($_.FullName) | Out-Null }
     }
 
+    $thumbFiles = @()
+    if (Test-Path -LiteralPath $explorerDir) {
+        $thumbFiles = @(Get-ChildItem -LiteralPath $explorerDir -Filter 'thumbcache_*.db' -ErrorAction SilentlyContinue)
+    }
+
+    # Stop Explorer briefly so iconcache_*.db and thumbcache_*.db are not exclusively locked.
+    $stoppedExplorer = $false
+    $explorers = @(Get-Process -Name explorer -ErrorAction SilentlyContinue)
+    if ($explorers.Count -gt 0 -and ($iconPaths.Count -gt 0 -or $thumbFiles.Count -gt 0)) {
+        try {
+            $explorers | Stop-Process -Force -ErrorAction Stop
+            $stoppedExplorer = $true
+            Start-Sleep -Milliseconds 500
+        } catch { }
+    }
+
     $iconRemoved = 0
     $iconLocked = 0
     foreach ($path in $iconPaths) {
@@ -130,29 +147,32 @@ function Invoke-PostOpIconThumbCacheClear {
         }
     }
 
-    $ie4uinit = Join-Path $env:SystemRoot 'System32\ie4uinit.exe'
-    if (Test-Path -LiteralPath $ie4uinit) {
-        Invoke-PostOpCapturedCommand -FilePath $ie4uinit -ArgumentList @('-ClearIconCache') | Out-Null
-    }
-
     $thumbRemoved = 0
-    $thumbBefore = 0
+    $thumbBefore = $thumbFiles.Count
     $thumbRemaining = 0
+    foreach ($file in $thumbFiles) {
+        try {
+            Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+            $thumbRemoved++
+        } catch { }
+    }
     if (Test-Path -LiteralPath $explorerDir) {
-        $thumbFiles = @(Get-ChildItem -LiteralPath $explorerDir -Filter 'thumbcache_*.db' -ErrorAction SilentlyContinue)
-        $thumbBefore = $thumbFiles.Count
-        foreach ($file in $thumbFiles) {
-            try {
-                Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
-                $thumbRemoved++
-            } catch { }
-        }
         $thumbRemaining = @(Get-ChildItem -LiteralPath $explorerDir -Filter 'thumbcache_*.db' -ErrorAction SilentlyContinue).Count
     }
 
     $iconRemaining = 0
     foreach ($path in $iconPaths) {
         if (Test-Path -LiteralPath $path) { $iconRemaining++ }
+    }
+
+    $ie4uinit = Join-Path $env:SystemRoot 'System32\ie4uinit.exe'
+    if (Test-Path -LiteralPath $ie4uinit) {
+        Invoke-PostOpCapturedCommand -FilePath $ie4uinit -ArgumentList @('-ClearIconCache') | Out-Null
+        Invoke-PostOpCapturedCommand -FilePath $ie4uinit -ArgumentList @('-show') | Out-Null
+    }
+
+    if ($stoppedExplorer) {
+        $null = Invoke-PostOpRestartExplorer -SkipStop
     }
 
     $warn = ($iconLocked -gt 0) -or ($thumbRemaining -gt 0) -or ($iconRemaining -gt 0)
@@ -162,7 +182,7 @@ function Invoke-PostOpIconThumbCacheClear {
         Details = @(
             "Icon files remaining: $iconRemaining",
             "Thumbnail files remaining: $thumbRemaining",
-            'Run Restart Explorer or sign out to rebuild icon cache if needed.'
+            $(if ($stoppedExplorer) { 'Explorer restarted to release cache locks and rebuild caches.' } else { 'Run Restart Explorer or sign out to rebuild icon cache if needed.' })
         )
     }
 }
@@ -194,10 +214,19 @@ function Invoke-PostOpDnsFlush {
         }
     }
 
+    $details = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($result.Text)) {
+        $details.Add([string]$result.Text) | Out-Null
+    }
+    $dnsSvc = Get-Service -Name 'Dnscache' -ErrorAction SilentlyContinue
+    if ($dnsSvc -and $dnsSvc.Status -ne 'Running') {
+        $details.Add("DNS Client service (Dnscache) is currently $($dnsSvc.Status).") | Out-Null
+    }
+
     return [PSCustomObject]@{
         Status  = 'Fail'
         Output  = 'DNS flush did not complete successfully.'
-        Details = @([string]$result.Text)
+        Details = @($details)
     }
 }
 
@@ -210,7 +239,7 @@ function Invoke-PostOpProxyReset {
     try {
         foreach ($sidKey in (Get-ChildItem 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue)) {
             $sidName = $sidKey.PSChildName
-            if ($sidName -match '^S-1-5-21-\d+-\d+-\d+-\d+$') {
+            if ($sidName -match '^S-1-(?:5-21|12-1)-[\d-]+$' -and $sidName -notlike '*_Classes') {
                 $candidate = "Registry::HKEY_USERS\$sidName\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
                 if (Test-Path -LiteralPath $candidate) {
                     $targetPaths.Add($candidate) | Out-Null
@@ -241,6 +270,22 @@ function Invoke-PostOpProxyReset {
                 Remove-ItemProperty -LiteralPath $internetSettings -Name $name -ErrorAction Stop
                 $details.Add("Removed Internet Settings value ($internetSettings): $name") | Out-Null
             } catch { }
+        }
+
+        $connectionsPath = Join-Path $internetSettings 'Connections'
+        if (Test-Path -LiteralPath $connectionsPath) {
+            foreach ($connProp in @('DefaultConnectionSettings', 'SavedLegacySettings')) {
+                try {
+                    $connObj = Get-ItemProperty -LiteralPath $connectionsPath -Name $connProp -ErrorAction Stop
+                    $bytes = [byte[]]$connObj.$connProp
+                    if ($bytes -and $bytes.Length -ge 9 -and (($bytes[8] -band 0x0E) -ne 0)) {
+                        # Bitmask in byte 8: 0x01=Direct, 0x02=ManualProxy, 0x04=AutoConfigURL, 0x08=AutoDetect
+                        $bytes[8] = 0x01
+                        Set-ItemProperty -LiteralPath $connectionsPath -Name $connProp -Value $bytes -Type Binary -Force -ErrorAction Stop
+                        $details.Add("Reset $connProp flags ($connectionsPath).") | Out-Null
+                    }
+                } catch { }
+            }
         }
     }
 
@@ -319,29 +364,54 @@ function Invoke-PostOpHostsFileRestore {
 }
 
 function Invoke-PostOpRestartExplorer {
-    $stopped = $false
-    try {
-        $explorers = @(Get-Process -Name explorer -ErrorAction SilentlyContinue)
-        if ($explorers.Count -gt 0) {
-            $explorers | Stop-Process -Force -ErrorAction Stop
-            $stopped = $true
-            Start-Sleep -Milliseconds 500
+    param(
+        [switch]$SkipStop
+    )
+
+    $stopped = $SkipStop.IsPresent
+    if (-not $SkipStop) {
+        try {
+            $explorers = @(Get-Process -Name explorer -ErrorAction SilentlyContinue)
+            if ($explorers.Count -gt 0) {
+                $explorers | Stop-Process -Force -ErrorAction Stop
+                $stopped = $true
+            }
+        } catch {
+            return [PSCustomObject]@{
+                Status  = 'Fail'
+                Output  = "Could not restart Explorer: $($_.Exception.Message)"
+                Details = @()
+            }
         }
-    } catch {
-        return [PSCustomObject]@{
-            Status  = 'Fail'
-            Output  = "Could not restart Explorer: $($_.Exception.Message)"
-            Details = @()
+    }
+
+    if ($stopped) {
+        # Give Windows AutoRestartShell up to 1.5s to respawn Explorer so we don't open a duplicate window.
+        for ($i = 0; $i -lt 3; $i++) {
+            Start-Sleep -Milliseconds 500
+            if (@(Get-Process -Name explorer -ErrorAction SilentlyContinue).Count -gt 0) {
+                return [PSCustomObject]@{
+                    Status  = 'Pass'
+                    Output  = 'Windows Explorer restarted.'
+                    Details = @()
+                }
+            }
         }
     }
 
     try {
         $shell = Join-Path $env:SystemRoot 'explorer.exe'
         Start-Process -FilePath $shell -ErrorAction Stop | Out-Null
+        $details = @()
+        if (Get-Command Test-ToolkitIsElevated -ErrorAction SilentlyContinue) {
+            if (Test-ToolkitIsElevated) {
+                $details = @('Note: Explorer was started from an elevated CDE session.')
+            }
+        }
         return [PSCustomObject]@{
             Status  = 'Pass'
             Output  = if ($stopped) { 'Windows Explorer restarted.' } else { 'Windows Explorer was not running; started a new instance.' }
-            Details = @()
+            Details = $details
         }
     } catch {
         return [PSCustomObject]@{

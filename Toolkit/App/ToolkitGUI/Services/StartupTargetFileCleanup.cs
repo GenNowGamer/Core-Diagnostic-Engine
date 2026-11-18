@@ -89,6 +89,8 @@ namespace ToolkitGUI.Services
             {
                 var file = new FileInfo(Path.GetFullPath(fullPath));
                 var parent = file.Directory;
+                if ((file.Attributes & FileAttributes.ReadOnly) != 0)
+                    file.Attributes &= ~FileAttributes.ReadOnly;
                 file.Delete();
 
                 var removedDirs = new List<string>();

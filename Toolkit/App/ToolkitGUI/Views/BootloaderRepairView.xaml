@@ -4,7 +4,7 @@
              xmlns:vm="clr-namespace:ToolkitGUI.ViewModels"
              xmlns:views="clr-namespace:ToolkitGUI.Views"
              xmlns:ctrl="clr-namespace:ToolkitGUI.Controls"
-             Background="{StaticResource BackgroundDarkBrush}">
+             Background="{DynamicResource BackgroundDarkBrush}">
     <views:WorkflowViewBase.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </views:WorkflowViewBase.Resources>
@@ -17,8 +17,8 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+        <Border Grid.Row="0" Background="{DynamicResource BackgroundMidBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -27,7 +27,7 @@
                 <StackPanel Grid.Column="0">
                     <TextBlock Text="Disk &amp; Boot Repair" FontSize="22" FontWeight="Bold"/>
                     <TextBlock Text="WinPE disk map, BCD/partition backups, and bootloader repair (bootsect, bcdboot, bcdedit)."
-                               FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                               FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0"/>
                     <TextBlock Text="{Binding WinPeGateMessage}" FontSize="12" Foreground="OrangeRed" Margin="0,6,0,0">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
@@ -64,13 +64,13 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0" Padding="16,10" Background="{StaticResource BackgroundMidBrush}"
-                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                <Border Grid.Row="0" Padding="16,10" Background="{DynamicResource BackgroundMidBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                     <StackPanel>
                         <TextBlock Text="DISK MAP (read-only)" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
                         <TextBlock Text="{Binding LayoutStatus}" FontSize="12" Margin="0,4,0,0"
-                                   Foreground="{StaticResource AccentBlueBrush}"/>
+                                   Foreground="{DynamicResource AccentBlueBrush}"/>
                     </StackPanel>
                 </Border>
 
@@ -80,7 +80,7 @@
                                      PartitionSelected="DiskMap_PartitionSelected"/>
 
                 <Border Grid.Row="2" Background="{StaticResource LogBgBrush}" MaxHeight="220"
-                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
                     <TextBox Text="{Binding LogText, Mode=OneWay}"
                              FontFamily="Cascadia Code, Consolas, Courier New"
                              FontSize="12" Foreground="{StaticResource LogTextBrush}"
@@ -91,22 +91,22 @@
                 </Border>
             </Grid>
 
-            <Border Grid.Column="1" Background="{StaticResource BackgroundMidBrush}"
-                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+            <Border Grid.Column="1" Background="{DynamicResource BackgroundMidBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="14">
                         <TextBlock Text="SELECTION" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
                         <TextBlock Text="{Binding DetailText}" TextWrapping="Wrap" Margin="0,6,0,8" FontSize="12"/>
                         <TextBlock Text="LAST ACTION" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                    Visibility="{Binding HasActionSummary, Converter={StaticResource BoolToVis}}"/>
                         <TextBlock Text="{Binding ActionSummary}" TextWrapping="Wrap" Margin="0,4,0,14" FontSize="11"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                    Visibility="{Binding HasActionSummary, Converter={StaticResource BoolToVis}}"/>
 
                         <TextBlock Text="BACKUP" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
                         <Button Content="Backup BCD (store file)" Margin="0,6,0,4" Padding="10,8"
                                 Command="{Binding RunBackupCommand}" CommandParameter="bcd"
                                 Style="{StaticResource ActionButtonStyle}"/>
@@ -118,7 +118,7 @@
                                 Style="{StaticResource ActionButtonStyle}"/>
 
                         <TextBlock Text="RESTORE BCD" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
                         <TextBlock Text="EFI backups" FontSize="11" Margin="0,6,0,2"/>
                         <ItemsControl ItemsSource="{Binding EfiBackupFiles}">
                             <ItemsControl.ItemTemplate>
@@ -144,7 +144,7 @@
                                 Style="{StaticResource ActionButtonStyle}"/>
 
                         <TextBlock Text="REPAIR" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
                         <Button Content="Check integrity" Margin="0,6,0,4" Padding="10,8"
                                 Command="{Binding RunRepairCommand}" CommandParameter="BootloaderCheckIntegrity.ps1"
                                 Style="{StaticResource ActionButtonStyle}"/>

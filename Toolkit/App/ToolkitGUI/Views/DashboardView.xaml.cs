@@ -338,9 +338,9 @@ namespace ToolkitGUI.Views
             }
             else
             {
-                button.Background = Brushes.White;
-                button.Foreground = new SolidColorBrush(Color.FromRgb(0x1A, 0x2B, 0x42));
-                button.BorderBrush = new SolidColorBrush(Color.FromRgb(0xD8, 0xDE, 0xE6));
+                button.Background = FindThemeBrush("BackgroundMidBrush");
+                button.Foreground = FindThemeBrush("TextPrimaryBrush");
+                button.BorderBrush = FindThemeBrush("BorderBrush");
                 button.FontWeight = FontWeights.Normal;
             }
 
@@ -350,8 +350,8 @@ namespace ToolkitGUI.Views
         private static void ApplyFollowUpButtonStyle(Button button)
         {
             button.Background = Brushes.Transparent;
-            button.Foreground = new SolidColorBrush(Color.FromRgb(0x1F, 0x6F, 0xEB));
-            button.BorderBrush = new SolidColorBrush(Color.FromRgb(0xD8, 0xDE, 0xE6));
+            button.Foreground = FindThemeBrush("AccentBlueBrush");
+            button.BorderBrush = FindThemeBrush("BorderBrush");
             button.BorderThickness = new Thickness(1);
         }
 

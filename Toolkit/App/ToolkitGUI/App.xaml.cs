@@ -52,6 +52,7 @@ namespace ToolkitGUI
             }
 
             base.OnStartup(e);
+            ThemeService.Initialize();
 
             // Windows always shows a brief branded splash. global.ini ShowSplash no longer drives a MessageBox.
             if (!IsWinPeRuntime())

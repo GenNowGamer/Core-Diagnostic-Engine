@@ -123,12 +123,13 @@ function Get-HwInt64Max {
 }
 
 function Get-MemoryTestSizeMB {
+    param($OsInfo = $null)
     $p = $script:HwProfileParams
     if ((Get-EnvironmentMode) -eq 'WinPE') {
         return [int]$p.memoryWinPeMb
     }
     try {
-        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+        $os = if ($null -ne $OsInfo) { $OsInfo } else { Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue }
         if ($os) {
             $freeMb = [math]::Round($os.FreePhysicalMemory / 1024)
             $target = [math]::Floor($freeMb * [double]$p.memoryFreePercent)
@@ -141,17 +142,18 @@ function Get-MemoryTestSizeMB {
 }
 
 function Get-MemoryCoverageDetail {
-    param([int]$SizeMB)
-    $totalRamMB = 0
-    try {
-        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
-        if ($os) { $totalRamMB = [math]::Round($os.TotalVisibleMemorySize / 1024) }
-    } catch {}
+    param([int]$SizeMB, [int]$TotalRamMB = 0)
+    if ($TotalRamMB -le 0) {
+        try {
+            $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+            if ($os) { $TotalRamMB = [math]::Round($os.TotalVisibleMemorySize / 1024) }
+        } catch {}
+    }
     $blocks = [HardwareTestEngine]::MemoryBlockCount
     $testedMb = $SizeMB
-    if ($totalRamMB -gt 0) {
-        $pct = [math]::Round(($testedMb / $totalRamMB) * 100, 1)
-        return ('{0} MB tested (~{1}% of {2} MB installed)' -f $testedMb, $pct, $totalRamMB)
+    if ($TotalRamMB -gt 0) {
+        $pct = [math]::Round(($testedMb / $TotalRamMB) * 100, 1)
+        return ('{0} MB tested (~{1}% of {2} MB installed)' -f $testedMb, $pct, $TotalRamMB)
     }
     return ('{0} MB tested ({1} block(s))' -f $testedMb, $blocks)
 }
@@ -221,7 +223,8 @@ function Invoke-SingleTest {
         [ref]$Counter,
         [int]$Total,
         [string]$Phase,
-        [hashtable]$DriveInfo = $null
+        [hashtable]$DriveInfo = $null,
+        [switch]$SkipRetryOnFail
     )
 
     $driveIndex = if ($DriveInfo) { [int]$DriveInfo.Index } else { -1 }
@@ -239,8 +242,8 @@ function Invoke-SingleTest {
     try {
         $testResult = & $TestAction
 
-        # Confirm-on-Fail: re-run once; intermittent Fail → Warn with note; persistent Fail stays Fail.
-        if (Test-HwTestResultIsHardFail -TestResult $testResult) {
+        # Confirm-on-Fail: re-run once; intermittent Fail -> Warn with note; persistent Fail stays Fail.
+        if (-not $SkipRetryOnFail -and (Test-HwTestResultIsHardFail -TestResult $testResult)) {
             Write-Log ("Confirm-on-Fail: re-running '{0}' once" -f $TestName) -Level Verbose
             $retryResult = & $TestAction
             if (-not (Test-HwTestResultIsHardFail -TestResult $retryResult)) {

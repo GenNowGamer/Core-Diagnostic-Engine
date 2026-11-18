@@ -41,6 +41,7 @@ namespace CdeSmart
 
         const uint IOCTL_STORAGE_QUERY_PROPERTY = 0x002D1400;
         const uint IOCTL_ATA_PASS_THROUGH = 0x0004D02C;
+        const uint IOCTL_SCSI_PASS_THROUGH = 0x0004D004;
         const uint IOCTL_DISK_GET_LENGTH_INFO = 0x0007405C;
         // CTL_CODE(IOCTL_STORAGE_BASE, 0x04F0, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
         const uint IOCTL_STORAGE_PROTOCOL_COMMAND = 0x002DD3C0;
@@ -216,7 +217,7 @@ namespace CdeSmart
                     else if (busType == 3 || busType == 11 || busType == 2) // ATA / SATA / ATAPI
                     {
                         d.Protocol = "ATA";
-                        if (rw) ReadAta(h, d);
+                        if (rw) ReadAta(h, d, false);
                         else { d.Note = "Access denied - run elevated for SMART"; }
                     }
                     else if (busType == 7) // USB bridge - best effort SAT
@@ -224,7 +225,7 @@ namespace CdeSmart
                         d.Protocol = "USB/SAT";
                         if (rw)
                         {
-                            ReadAta(h, d);
+                            ReadAta(h, d, true);
                             if (d.Attributes.Count == 0)
                             {
                                 d.Supported = false;
@@ -297,11 +298,17 @@ namespace CdeSmart
         }
 
         // --- ATA / SATA path ---
-        static void ReadAta(IntPtr h, SmartDrive d)
+        static void ReadAta(IntPtr h, SmartDrive d, bool trySat)
         {
             byte[] data = AtaSmartCmd(h, 0xD0); // SMART READ DATA
+            bool usedSat = false;
+            if (data == null && trySat)
+            {
+                data = AtaSmartCmdSat(h, 0xD0);
+                usedSat = (data != null);
+            }
             if (data == null) return;
-            byte[] thr = AtaSmartCmd(h, 0xD1); // SMART READ THRESHOLDS
+            byte[] thr = usedSat ? AtaSmartCmdSat(h, 0xD1) : AtaSmartCmd(h, 0xD1); // SMART READ THRESHOLDS
 
             Dictionary<int, int> thresholds = new Dictionary<int, int>();
             if (thr != null)
@@ -333,13 +340,15 @@ namespace CdeSmart
                 string st = "OK";
                 if (a.Threshold > 0 && a.Current <= a.Threshold) { st = "Fail"; anyFail = true; }
                 else if (IsMediaFailureAta(id) && a.Raw > 0) { st = "Warn"; anyWarn = true; }
+                else if ((id == 231 || id == 233) && a.Current >= 1 && a.Current <= 10)
+                {
+                    if (a.Current <= 5) { st = "Fail"; anyFail = true; }
+                    else { st = "Warn"; anyWarn = true; }
+                }
                 else if (IsInterconnectAta(id) && a.Raw > 0)
                 {
-                    // CRC/timeouts: treat modest counts as interconnect noise (Info);
-                    // very high 199 still elevates Overall Warn.
-                    if (id == 199 && a.Raw >= 100) { st = "Warn"; anyWarn = true; }
-                    else if (id == 188 && a.Raw >= 50) { st = "Warn"; anyWarn = true; }
-                    else { st = "Info"; }
+                    // Interconnect counters (188/199) are historical cable/port noise; report as advisory Info.
+                    st = "Info";
                 }
                 a.Status = st;
                 d.Attributes.Add(a);
@@ -388,6 +397,48 @@ namespace CdeSmart
 
             uint ret;
             if (!DeviceIoControl(h, IOCTL_ATA_PASS_THROUGH, buf, (uint)total, buf, (uint)total, out ret, IntPtr.Zero))
+                return null;
+
+            byte[] data = new byte[512];
+            Array.Copy(buf, dataOff, data, 0, 512);
+            return data;
+        }
+
+        static byte[] AtaSmartCmdSat(IntPtr h, byte feature)
+        {
+            int sptLen = (IntPtr.Size == 8) ? 56 : 44;
+            int senseLen = 32;
+            int dataOff = sptLen + senseLen;
+            int total = dataOff + 512;
+            byte[] buf = new byte[total];
+
+            WriteU16(buf, 0, (ushort)sptLen); // Length
+            buf[6] = 16;                      // CdbLength = 16 (SAT ATA PASS-THROUGH 16)
+            buf[7] = (byte)senseLen;          // SenseInfoLength
+            buf[8] = 1;                       // DataIn = SCSI_IOCTL_DATA_IN
+            WriteU32(buf, 12, 512);           // DataTransferLength
+            WriteU32(buf, 16, 10);            // TimeOutValue (s)
+            int dboOff = (IntPtr.Size == 8) ? 24 : 20;
+            int senseOff = (IntPtr.Size == 8) ? 32 : 24;
+            int cdbOff = (IntPtr.Size == 8) ? 36 : 28;
+            if (IntPtr.Size == 8) WriteU64(buf, dboOff, (ulong)dataOff);
+            else WriteU32(buf, dboOff, (uint)dataOff);
+            WriteU32(buf, senseOff, (uint)sptLen);
+
+            // SAT-16 (0x85): PIO Data-In (4 << 1 = 0x08), T_DIR=1, BYT_BLOK=1, T_LENGTH=2 (0x0E)
+            buf[cdbOff + 0] = 0x85;
+            buf[cdbOff + 1] = 0x08;
+            buf[cdbOff + 2] = 0x0E;
+            buf[cdbOff + 4] = feature;
+            buf[cdbOff + 6] = 1;
+            buf[cdbOff + 10] = 0x4F;
+            buf[cdbOff + 12] = 0xC2;
+            buf[cdbOff + 14] = 0xB0;
+
+            uint ret;
+            if (!DeviceIoControl(h, IOCTL_SCSI_PASS_THROUGH, buf, (uint)total, buf, (uint)total, out ret, IntPtr.Zero))
+                return null;
+            if (buf[2] != 0 && buf[2] != 2) // ScsiStatus != GOOD / CHECK CONDITION
                 return null;
 
             byte[] data = new byte[512];
@@ -582,9 +633,9 @@ namespace CdeSmart
             WriteU32(buf, 8, 0);
             WriteU32(buf, 12, (uint)Math.Max(30, timeoutSeconds));
             int tf = hdr - 8;
-            buf[tf + 0] = 0xD4;
-            buf[tf + 1] = 0x01;
-            buf[tf + 2] = 0;
+            buf[tf + 0] = 0xD4; // Features = SMART EXECUTE OFF-LINE IMMEDIATE
+            buf[tf + 1] = 0;    // SectorCount
+            buf[tf + 2] = 0x01; // LBA Low = Short self-test (off-line)
             buf[tf + 3] = 0x4F;
             buf[tf + 4] = 0xC2;
             buf[tf + 5] = 0;
@@ -598,6 +649,19 @@ namespace CdeSmart
             while (DateTime.UtcNow < deadline)
             {
                 System.Threading.Thread.Sleep(5000);
+                byte[] smartData = AtaSmartCmd(h, 0xD0);
+                if (smartData != null && smartData.Length > 363)
+                {
+                    int execStatus = (smartData[363] >> 4) & 0x0F;
+                    if (execStatus == 0xF) continue; // still in progress
+                    if (execStatus == 0x0)
+                    {
+                        int retStatus = AtaReturnStatus(h);
+                        if (retStatus == 1) return "Failed: SMART RETURN STATUS threshold exceeded after self-test";
+                        return "Passed: ATA short self-test completed";
+                    }
+                    return "Failed: ATA short self-test ended with status 0x" + execStatus.ToString("X");
+                }
                 int status = AtaReturnStatus(h);
                 if (status == 1) return "Failed: SMART RETURN STATUS threshold exceeded after self-test";
                 if (status == 0) return "Passed: ATA short self-test completed";
@@ -610,7 +674,7 @@ namespace CdeSmart
             // Issue NVMe Device Self-Test (admin opcode 0x14, STC=1 short) via
             // IOCTL_STORAGE_PROTOCOL_COMMAND, then poll Device Self-test log page 0x06.
             // See: https://learn.microsoft.com/en-us/windows/win32/fileio/working-with-nvme-devices
-            const int cmdHdrSize = 84; // sizeof(STORAGE_PROTOCOL_COMMAND) excl. Command[] (common Win10 layout)
+            const int cmdHdrSize = 80; // sizeof(STORAGE_PROTOCOL_COMMAND) up to Command[]
             const int nvmeCmdSize = 64;
             int total = cmdHdrSize + nvmeCmdSize;
             byte[] buf = new byte[total];
@@ -645,6 +709,7 @@ namespace CdeSmart
             }
 
             bool started = true;
+            int idleEmptyPolls = 0;
             DateTime deadline = DateTime.UtcNow.AddSeconds(Math.Max(30, timeoutSeconds));
             while (DateTime.UtcNow < deadline)
             {
@@ -653,7 +718,12 @@ namespace CdeSmart
                 if (dst == 0) return "Passed: NVMe short self-test completed";
                 if (dst == 1) return "Failed: NVMe short self-test reported failure";
                 if (dst == 2) return "Warn: NVMe self-test started but completion status unavailable";
-                // dst == -1 still in progress / unknown
+                if (dst == -2)
+                {
+                    idleEmptyPolls++;
+                    if (idleEmptyPolls >= 2)
+                        return "Warn: NVMe self-test started but completion status unavailable";
+                }
             }
 
             if (started)
@@ -663,7 +733,7 @@ namespace CdeSmart
 
         /// <summary>
         /// Reads NVMe Device Self-test log page (0x06).
-        /// Returns 0=pass/complete-ok, 1=fail, 2=log unavailable after start, -1=in progress/unknown.
+        /// Returns 0=pass/complete-ok, 1=fail, 2=log unavailable after start, -1=in progress, -2=idle with no result.
         /// </summary>
         static int ReadNvmeSelfTestLogStatus(IntPtr h)
         {
@@ -699,13 +769,13 @@ namespace CdeSmart
 
             // Newest result entry starts at offset 4 (NVMe DST log layout)
             int newestResult = qbuf[dataOff + 4] & 0x0F;
-            // 0h = Entry unused / no result yet after idle can mean never run — treat as unavailable once
+            // 0h = Entry unused / no result yet
             // 1h = Operation completed without error
             // 2h = Operation aborted by DST command
             // 3h..Fh = various failures / aborted
             if (newestResult == 1) return 0;
-            if (newestResult == 0) return -1; // still waiting for result population
-            if (newestResult == 2) return 2;  // aborted — soft
+            if (newestResult == 0) return -2;
+            if (newestResult == 2) return 2;  // aborted - soft
             return 1;
         }
 

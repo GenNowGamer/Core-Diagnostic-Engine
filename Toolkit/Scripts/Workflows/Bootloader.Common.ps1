@@ -41,24 +41,34 @@ function global:Invoke-BootloaderCommandCaptured {
         }
 
         $tempDir = if ($env:TEMP) { $env:TEMP } elseif ($env:TMP) { $env:TMP } else { "$env:SystemRoot\Temp" }
-        $stdoutPath = Join-Path $tempDir 'bootloader_stdout.txt'
-        $stderrPath = Join-Path $tempDir 'bootloader_stderr.txt'
+        $runId = [guid]::NewGuid().ToString('N')
+        $stdoutPath = Join-Path $tempDir "bootloader_stdout_$runId.txt"
+        $stderrPath = Join-Path $tempDir "bootloader_stderr_$runId.txt"
 
-        if (Test-Path -LiteralPath $stdoutPath) { Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue }
-        if (Test-Path -LiteralPath $stderrPath) { Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue }
+        $quotedArgs = @(
+            foreach ($arg in @($ArgumentList)) {
+                $text = [string]$arg
+                if ($text -match '[\s"]') { '"' + $text.Replace('"', '\"') + '"' } else { $text }
+            }
+        )
 
-        $proc = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait -PassThru -NoNewWindow `
-            -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+        try {
+            $proc = Start-Process -FilePath $FilePath -ArgumentList ($quotedArgs -join ' ') -Wait -PassThru -NoNewWindow `
+                -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
 
-        $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw -Encoding Default } else { '' }
-        $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw -Encoding Default } else { '' }
-        $combined = Get-CommandCaptureText -Stdout $stdout -Stderr $stderr
+            $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw -Encoding Default } else { '' }
+            $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw -Encoding Default } else { '' }
+            $combined = Get-CommandCaptureText -Stdout $stdout -Stderr $stderr
 
-        return [PSCustomObject]@{
-            Name     = $StepName
-            Status   = if ($proc.ExitCode -eq 0) { 'Pass' } else { 'Warn' }
-            ExitCode = $proc.ExitCode
-            Output   = $combined
+            return [PSCustomObject]@{
+                Name     = $StepName
+                Status   = if ($proc.ExitCode -eq 0) { 'Pass' } else { 'Warn' }
+                ExitCode = $proc.ExitCode
+                Output   = $combined
+            }
+        } finally {
+            Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
         }
     } catch {
         return [PSCustomObject]@{
@@ -466,13 +476,11 @@ function global:Resolve-TargetEfiBcdPath {
                 $efiRoot = Ensure-PartitionDriveLetter -Partition $efiPart
                 if ($efiRoot) {
                     $efiBcd = Join-Path $efiRoot 'EFI\Microsoft\Boot\BCD'
-                    if (Test-Path -LiteralPath $efiBcd -PathType Leaf) {
-                        return [PSCustomObject]@{
-                            EfiDriveRoot = $efiRoot
-                            EfiBcdPath   = $efiBcd
-                            Source       = 'EfiSystemPartition'
-                            Mounted      = $true
-                        }
+                    return [PSCustomObject]@{
+                        EfiDriveRoot = $efiRoot
+                        EfiBcdPath   = $efiBcd
+                        Source       = 'EfiSystemPartition'
+                        Mounted      = $true
                     }
                 }
             }

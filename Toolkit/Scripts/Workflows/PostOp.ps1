@@ -1,7 +1,7 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    PostOp.ps1 — Post-operation cleanup tools dispatcher.
+    PostOp.ps1 - Post-operation cleanup tools dispatcher.
     Pass -ToolName to run a specific tool.
 #>
 param(
@@ -26,38 +26,63 @@ Import-Module $ElevationModule -Force -DisableNameChecking
 function Get-BrowserCacheTargetPaths {
     $targets = [System.Collections.Generic.List[object]]::new()
     $skipProfileNames = @('System Profile', 'Guest Profile', 'Crashpad', 'ShaderCache', 'GrShaderCache')
-
-    $chromiumBases = @(
-        @{ Label = 'Edge';   Root = "$env:LOCALAPPDATA\Microsoft\Edge\User Data" },
-        @{ Label = 'Chrome'; Root = "$env:LOCALAPPDATA\Google\Chrome\User Data" }
-    )
     $cacheSubdirs = @('Cache', 'Code Cache', 'GPUCache')
 
-    foreach ($browser in $chromiumBases) {
-        if (-not (Test-Path $browser.Root)) { continue }
-        Get-ChildItem -LiteralPath $browser.Root -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -notin $skipProfileNames } |
-            ForEach-Object {
-                foreach ($sub in $cacheSubdirs) {
-                    $path = Join-Path $_.FullName $sub
-                    if (Test-Path -LiteralPath $path) {
-                        $targets.Add([PSCustomObject]@{ Label = $browser.Label; Profile = $_.Name; Path = $path }) | Out-Null
-                    }
-                }
-            }
+    $userRoots = [System.Collections.Generic.List[object]]::new()
+    $userRoots.Add([PSCustomObject]@{
+        LocalAppData = $env:LOCALAPPDATA
+        AppData      = $env:APPDATA
+    }) | Out-Null
+
+    $isElevated = $false
+    if (Get-Command Test-ToolkitIsElevated -ErrorAction SilentlyContinue) {
+        $isElevated = Test-ToolkitIsElevated
+    }
+    if ($isElevated -and (Test-Path -LiteralPath 'C:\Users')) {
+        $skipUsers = @('Public', 'Default', 'Default User', 'All Users')
+        foreach ($dir in (Get-ChildItem -LiteralPath 'C:\Users' -Directory -ErrorAction SilentlyContinue)) {
+            if ($dir.Name -in $skipUsers) { continue }
+            $userRoots.Add([PSCustomObject]@{
+                LocalAppData = Join-Path $dir.FullName 'AppData\Local'
+                AppData      = Join-Path $dir.FullName 'AppData\Roaming'
+            }) | Out-Null
+        }
     }
 
-    $firefoxProfiles = "$env:APPDATA\Mozilla\Firefox\Profiles"
-    if (Test-Path -LiteralPath $firefoxProfiles) {
-        Get-ChildItem -LiteralPath $firefoxProfiles -Directory -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                foreach ($sub in @('cache2', 'startupCache', 'thumbnails')) {
-                    $path = Join-Path $_.FullName $sub
-                    if (Test-Path -LiteralPath $path) {
-                        $targets.Add([PSCustomObject]@{ Label = 'Firefox'; Profile = $_.Name; Path = $path }) | Out-Null
+    $seenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($rootSet in $userRoots) {
+        $chromiumBases = @(
+            @{ Label = 'Edge';   Root = (Join-Path $rootSet.LocalAppData 'Microsoft\Edge\User Data') },
+            @{ Label = 'Chrome'; Root = (Join-Path $rootSet.LocalAppData 'Google\Chrome\User Data') }
+        )
+
+        foreach ($browser in $chromiumBases) {
+            if (-not (Test-Path -LiteralPath $browser.Root)) { continue }
+            Get-ChildItem -LiteralPath $browser.Root -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notin $skipProfileNames } |
+                ForEach-Object {
+                    foreach ($sub in $cacheSubdirs) {
+                        $path = Join-Path $_.FullName $sub
+                        if ((Test-Path -LiteralPath $path) -and $seenPaths.Add($path)) {
+                            $targets.Add([PSCustomObject]@{ Label = $browser.Label; Profile = $_.Name; Path = $path }) | Out-Null
+                        }
                     }
                 }
-            }
+        }
+
+        $firefoxProfiles = Join-Path $rootSet.AppData 'Mozilla\Firefox\Profiles'
+        if (Test-Path -LiteralPath $firefoxProfiles) {
+            Get-ChildItem -LiteralPath $firefoxProfiles -Directory -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    foreach ($sub in @('cache2', 'startupCache', 'thumbnails')) {
+                        $path = Join-Path $_.FullName $sub
+                        if ((Test-Path -LiteralPath $path) -and $seenPaths.Add($path)) {
+                            $targets.Add([PSCustomObject]@{ Label = 'Firefox'; Profile = $_.Name; Path = $path }) | Out-Null
+                        }
+                    }
+                }
+        }
     }
 
     return @($targets)
@@ -81,30 +106,42 @@ function Invoke-TempCleanup {
         [System.IO.Path]::GetTempPath(),
         'C:\Windows\Temp',
         "$env:LOCALAPPDATA\Temp"
-    ) | Select-Object -Unique | Where-Object { Test-Path $_ }
+    ) | Select-Object -Unique | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) }
 
     $totalDeleted = 0
-    $totalBytes   = 0
+    $totalLocked  = 0
+    $totalBytes   = [long]0
 
     foreach ($path in $paths) {
         Write-Log "  Cleaning: $path"
         try {
-            $items = Get-ChildItem $path -Recurse -Force -ErrorAction SilentlyContinue
-            $bytes = ($items | Measure-Object Length -Sum -ErrorAction SilentlyContinue).Sum
-            Remove-Item "$path\*" -Recurse -Force -ErrorAction SilentlyContinue
-            $safeBytes = if ($bytes) { [long]$bytes } else { 0 }
-            $totalBytes   += $safeBytes
-            $totalDeleted += $items.Count
-            Write-Log "  Removed $($items.Count) item(s) ($(Format-SizeHuman -Bytes $safeBytes))"
+            $beforeFiles = @(Get-ChildItem -LiteralPath $path -Recurse -File -Force -ErrorAction SilentlyContinue)
+            $beforeBytes = [long](($beforeFiles | Measure-Object Length -Sum -ErrorAction SilentlyContinue).Sum)
+
+            Get-ChildItem -LiteralPath $path -Force -ErrorAction SilentlyContinue |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+            $afterFiles = @(Get-ChildItem -LiteralPath $path -Recurse -File -Force -ErrorAction SilentlyContinue)
+            $afterBytes = [long](($afterFiles | Measure-Object Length -Sum -ErrorAction SilentlyContinue).Sum)
+
+            $freedBytes = [math]::Max([long]0, $beforeBytes - $afterBytes)
+            $deletedCount = [math]::Max(0, $beforeFiles.Count - $afterFiles.Count)
+            $lockedCount = $afterFiles.Count
+
+            $totalBytes   += $freedBytes
+            $totalDeleted += $deletedCount
+            $totalLocked  += $lockedCount
+            Write-Log "  Removed $deletedCount file(s) ($(Format-SizeHuman -Bytes $freedBytes)); $lockedCount locked/remaining"
         } catch {
-            Write-Log "  [WARN] $path — $_"
+            $totalLocked++
+            Write-Log "  [WARN] $path - $_"
         }
     }
 
-    Write-Log "Total freed: ~$(Format-SizeHuman -Bytes ([long]$totalBytes))"
-    $status = Get-ToolkitWorkflowStepStatus -Succeeded $totalDeleted -Skipped 0
+    Write-Log "Total freed: ~$(Format-SizeHuman -Bytes $totalBytes)"
+    $status = Get-ToolkitWorkflowStepStatus -Succeeded $totalDeleted -Skipped $totalLocked
     Add-ToolkitWorkflowStep -WorkflowResult $r -Name 'TempCleanup' -Status $status `
-        -Output "Removed $totalDeleted items (~$(Format-SizeHuman -Bytes ([long]$totalBytes)))"
+        -Output "Removed $totalDeleted file(s) (~$(Format-SizeHuman -Bytes $totalBytes)), $totalLocked locked/remaining"
 }
 
 function Invoke-BrowserCacheClean {
@@ -135,17 +172,29 @@ function Invoke-BrowserCacheClean {
 
     foreach ($target in $targets) {
         try {
-            $items = Get-ChildItem -LiteralPath $target.Path -Recurse -Force -ErrorAction SilentlyContinue
-            $bytes = ($items | Measure-Object Length -Sum -ErrorAction SilentlyContinue).Sum
-            $safeBytes = if ($bytes) { [long]$bytes } else { 0 }
-            Remove-Item -LiteralPath "$($target.Path)\*" -Recurse -Force -ErrorAction SilentlyContinue
-            $freedText = Format-SizeHuman -Bytes $safeBytes
-            Write-Log "  $($target.Label) [$($target.Profile)]\$([IO.Path]::GetFileName($target.Path)): ~$freedText"
-            $results += "$($target.Label)/$($target.Profile): ~$freedText"
-            $cleared++
+            $beforeFiles = @(Get-ChildItem -LiteralPath $target.Path -Recurse -File -Force -ErrorAction SilentlyContinue)
+            $beforeBytes = [long](($beforeFiles | Measure-Object Length -Sum -ErrorAction SilentlyContinue).Sum)
+
+            Get-ChildItem -LiteralPath $target.Path -Force -ErrorAction SilentlyContinue |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+            $afterFiles = @(Get-ChildItem -LiteralPath $target.Path -Recurse -File -Force -ErrorAction SilentlyContinue)
+            $afterBytes = [long](($afterFiles | Measure-Object Length -Sum -ErrorAction SilentlyContinue).Sum)
+
+            $freedBytes = [math]::Max([long]0, $beforeBytes - $afterBytes)
+            $freedText = Format-SizeHuman -Bytes $freedBytes
+            if ($beforeFiles.Count -gt 0 -and $afterFiles.Count -eq $beforeFiles.Count -and $freedBytes -eq 0) {
+                $skipped++
+                Write-Log "  $($target.Label) [$($target.Profile)]\$([IO.Path]::GetFileName($target.Path)): locked ($($afterFiles.Count) file(s))"
+                $results += "$($target.Label)/$($target.Profile): locked"
+            } else {
+                $cleared++
+                Write-Log "  $($target.Label) [$($target.Profile)]\$([IO.Path]::GetFileName($target.Path)): ~$freedText ($($afterFiles.Count) remaining)"
+                $results += "$($target.Label)/$($target.Profile): ~$freedText"
+            }
         } catch {
             $skipped++
-            Write-Log "  $($target.Label) [$($target.Profile)]: skipped — $_"
+            Write-Log "  $($target.Label) [$($target.Profile)]: skipped - $_"
             $results += "$($target.Label)/$($target.Profile): skipped"
         }
     }
@@ -183,26 +232,41 @@ function Invoke-RestoreDefaultServices {
     }
 
     $fixed = 0
+    $alreadyOk = 0
+    $protectedSkipped = 0
     $skipped = 0
 
     foreach ($svc in $defaults.GetEnumerator()) {
         try {
-            $null = Get-Service -Name $svc.Key -ErrorAction Stop
+            $serviceObj = Get-Service -Name $svc.Key -ErrorAction Stop
+            if ($serviceObj.StartType.ToString() -eq $svc.Value) {
+                Write-Log "  $($svc.Key): already $($svc.Value)"
+                $alreadyOk++
+                continue
+            }
+
             Set-Service -Name $svc.Key -StartupType $svc.Value -ErrorAction Stop
             Write-Log "  $($svc.Key): set to $($svc.Value)"
             $fixed++
         } catch {
-            $skipped++
-            Write-Log "  $($svc.Key): skipped — $_"
+            $errMsg = $_.Exception.Message
+            if ($_.CategoryInfo.Category -eq 'PermissionDenied' -or $errMsg -match 'Access is denied|protected') {
+                $protectedSkipped++
+                Write-Log "  $($svc.Key): protected by Windows (skipped) - $errMsg"
+            } else {
+                $skipped++
+                Write-Log "  $($svc.Key): skipped - $errMsg"
+            }
         }
     }
 
-    Write-Log "Services adjusted: $fixed | Skipped: $skipped"
-    $status = Get-ToolkitWorkflowStepStatus -Succeeded $fixed -Skipped $skipped -RequireSuccess
-    $output = if ($fixed -eq 0) {
+    $okTotal = $fixed + $alreadyOk
+    Write-Log "Services adjusted: $fixed | Already default: $alreadyOk | Protected: $protectedSkipped | Skipped: $skipped"
+    $status = Get-ToolkitWorkflowStepStatus -Succeeded $okTotal -Skipped $skipped -RequireSuccess
+    $output = if ($okTotal -eq 0) {
         "$fixed service(s) restored, $skipped skipped. Run CDE as Administrator."
     } else {
-        "$fixed service(s) restored to defaults, $skipped skipped"
+        "$fixed service(s) restored, $alreadyOk already default, $protectedSkipped protected, $skipped skipped"
     }
     Add-ToolkitWorkflowStep -WorkflowResult $r -Name 'RestoreDefaultServices' -Status $status -Output $output
 }
@@ -210,9 +274,10 @@ function Invoke-RestoreDefaultServices {
 function Invoke-CmdAssoc {
     param([string]$CommandLine)
     $output = & cmd.exe /c $CommandLine 2>&1
+    $text = (($output | ForEach-Object { [string]$_ }) -join "`n").Trim()
     return [PSCustomObject]@{
         ExitCode = $LASTEXITCODE
-        Output   = ([string]$output).Trim()
+        Output   = $text
     }
 }
 
@@ -244,8 +309,7 @@ function Set-RegistryProgIdDefault {
     $fixed = 0
     $targets = @(
         "Registry::HKEY_CLASSES_ROOT\$Extension",
-        "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\$Extension",
-        "Registry::HKEY_CURRENT_USER\Software\Classes\$Extension"
+        "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\$Extension"
     )
     foreach ($path in $targets) {
         try {
@@ -255,9 +319,24 @@ function Set-RegistryProgIdDefault {
             Set-ItemProperty -LiteralPath $path -Name '(default)' -Value $ProgId -ErrorAction Stop
             $fixed++
         } catch {
-            Write-Log "  [WARN] $path — $_"
+            Write-Log "  [WARN] $path - $_"
         }
     }
+
+    # Only repair HKCU\Software\Classes\<ext> if it already exists and was hijacked; avoid creating new HKCU keys.
+    $hkcuPath = "Registry::HKEY_CURRENT_USER\Software\Classes\$Extension"
+    if (Test-Path -LiteralPath $hkcuPath) {
+        try {
+            $hkcuVal = (Get-ItemProperty -LiteralPath $hkcuPath -Name '(default)' -ErrorAction SilentlyContinue).'(default)'
+            if ($hkcuVal -and $hkcuVal -ne $ProgId) {
+                Set-ItemProperty -LiteralPath $hkcuPath -Name '(default)' -Value $ProgId -ErrorAction Stop
+                $fixed++
+            }
+        } catch {
+            Write-Log "  [WARN] $hkcuPath - $_"
+        }
+    }
+
     return $fixed
 }
 
@@ -268,6 +347,20 @@ function Repair-CriticalFileTypeOpenCommand {
     )
 
     $commandPath = "Registry::HKEY_CLASSES_ROOT\$FileType\shell\open\command"
+    if ($FileType -eq 'lnkfile') {
+        # lnkfile uses Explorer shell handlers, not shell\open\command; remove any hijacked command key.
+        if (Test-Path -LiteralPath $commandPath) {
+            try {
+                Remove-Item -LiteralPath $commandPath -Recurse -Force -ErrorAction Stop
+                return $true
+            } catch {
+                Write-Log "  [WARN] $commandPath - $_"
+                return $false
+            }
+        }
+        return $true
+    }
+
     try {
         if (-not (Test-Path -LiteralPath $commandPath)) {
             New-Item -LiteralPath $commandPath -Force | Out-Null
@@ -275,7 +368,7 @@ function Repair-CriticalFileTypeOpenCommand {
         Set-ItemProperty -LiteralPath $commandPath -Name '(default)' -Value $Command -ErrorAction Stop
         return $true
     } catch {
-        Write-Log "  [WARN] $commandPath — $_"
+        Write-Log "  [WARN] $commandPath - $_"
         return $false
     }
 }
@@ -316,10 +409,12 @@ function Invoke-FileAssociationFix {
         Write-Log "  assoc $($item.Ext): $($assocResult.Output)"
         if ($assocResult.ExitCode -eq 0) { $repairs++ }
 
-        $ftypeCmd = if ($item.FileType -eq 'lnkfile') { "ftype $($item.FileType)=`"%1`" %*" } else { "ftype $($item.FileType)=`"%1`" %*" }
-        $ftypeResult = Invoke-CmdAssoc -CommandLine $ftypeCmd
-        Write-Log "  ftype $($item.FileType): $($ftypeResult.Output)"
-        if ($ftypeResult.ExitCode -eq 0) { $repairs++ }
+        if ($item.FileType -ne 'lnkfile') {
+            $ftypeCmd = "ftype $($item.FileType)=`"%1`" %*"
+            $ftypeResult = Invoke-CmdAssoc -CommandLine $ftypeCmd
+            Write-Log "  ftype $($item.FileType): $($ftypeResult.Output)"
+            if ($ftypeResult.ExitCode -eq 0) { $repairs++ }
+        }
 
         if (Repair-CriticalFileTypeOpenCommand -FileType $item.FileType) {
             $repairs++
@@ -470,7 +565,7 @@ function Invoke-PostOpElevationRelay {
         -ArgumentString (Get-PostOpRelayArgumentString) -ElevatedRelay:$ElevatedRelay)
 }
 
-# ─── Dispatch ───────────────────────────────────────────────────────────────
+# --- Dispatch ---------------------------------------------------------------
 $workflowName = if ($ToolName -eq 'All') { 'PostOp_All' } else { "PostOp_$ToolName" }
 
 if (Invoke-PostOpElevationRelay) { exit 0 }

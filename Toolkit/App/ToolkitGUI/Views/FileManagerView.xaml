@@ -2,20 +2,20 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:ToolkitGUI.Views"
-             Background="{StaticResource BackgroundDarkBrush}">
+             Background="{DynamicResource BackgroundDarkBrush}">
     <UserControl.Resources>
         <HierarchicalDataTemplate DataType="{x:Type local:FolderTreeNode}" ItemsSource="{Binding Children}">
             <TextBlock Text="{Binding Display}" Padding="2,1" TextWrapping="Wrap"/>
         </HierarchicalDataTemplate>
 
-        <Style x:Key="FileListViewStyle" TargetType="ListView">
+        <Style x:Key="FileListViewStyle" TargetType="ListView" BasedOn="{StaticResource {x:Type ListView}}">
             <Setter Property="SelectionMode" Value="Extended"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
         </Style>
 
-        <Style x:Key="FolderTreeStyle" TargetType="TreeView">
+        <Style x:Key="FolderTreeStyle" TargetType="TreeView" BasedOn="{StaticResource {x:Type TreeView}}">
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
@@ -86,11 +86,12 @@
                                   SelectedItemChanged="TopFolderTree_SelectedItemChanged"
                                   TreeViewItem.Expanded="FolderTreeItem_Expanded"/>
                         <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
-                                      Background="{StaticResource TextSecondaryBrush}" Opacity="0.25"/>
+                                      Background="{DynamicResource TextSecondaryBrush}" Opacity="0.25"/>
                         <ListView x:Name="TopItemsListView" Grid.Column="2" Style="{StaticResource FileListViewStyle}"
                                   SelectionChanged="TopPane_SelectionChanged"
                                   MouseDoubleClick="TopItemsListView_MouseDoubleClick"
-                                  PreviewMouseRightButtonUp="TopItemsListView_PreviewMouseRightButtonUp">
+                                  PreviewMouseRightButtonUp="TopItemsListView_PreviewMouseRightButtonUp"
+                                  KeyDown="TopItemsListView_KeyDown">
                             <ListView.GroupStyle>
                                 <GroupStyle>
                                     <GroupStyle.ContainerStyle>
@@ -102,7 +103,7 @@
                                                             <TextBlock Text="{Binding Name}"
                                                                        FontWeight="SemiBold"
                                                                        Margin="4,10,0,4"
-                                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
                                                             <ItemsPresenter/>
                                                         </StackPanel>
                                                     </ControlTemplate>
@@ -115,12 +116,12 @@
                         </ListView>
                     </Grid>
                     <TextBlock x:Name="TopPaneCountText" Grid.Row="3" Margin="0,6,0,0" FontSize="11"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
                 </Grid>
             </Border>
 
             <GridSplitter x:Name="PaneSplitter" Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
-                          Background="{StaticResource TextSecondaryBrush}" Opacity="0.35"
+                          Background="{DynamicResource TextSecondaryBrush}" Opacity="0.35"
                           Visibility="Collapsed" ResizeDirection="Rows" ShowsPreview="True"/>
 
             <!-- Bottom pane (split view) -->
@@ -158,11 +159,12 @@
                                   SelectedItemChanged="BottomFolderTree_SelectedItemChanged"
                                   TreeViewItem.Expanded="FolderTreeItem_Expanded"/>
                         <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
-                                      Background="{StaticResource TextSecondaryBrush}" Opacity="0.25"/>
+                                      Background="{DynamicResource TextSecondaryBrush}" Opacity="0.25"/>
                         <ListView x:Name="BottomItemsListView" Grid.Column="2" Style="{StaticResource FileListViewStyle}"
                                   SelectionChanged="BottomPane_SelectionChanged"
                                   MouseDoubleClick="BottomItemsListView_MouseDoubleClick"
-                                  PreviewMouseRightButtonUp="BottomItemsListView_PreviewMouseRightButtonUp">
+                                  PreviewMouseRightButtonUp="BottomItemsListView_PreviewMouseRightButtonUp"
+                                  KeyDown="BottomItemsListView_KeyDown">
                             <ListView.GroupStyle>
                                 <GroupStyle>
                                     <GroupStyle.ContainerStyle>
@@ -174,7 +176,7 @@
                                                             <TextBlock Text="{Binding Name}"
                                                                        FontWeight="SemiBold"
                                                                        Margin="4,10,0,4"
-                                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
                                                             <ItemsPresenter/>
                                                         </StackPanel>
                                                     </ControlTemplate>
@@ -187,7 +189,7 @@
                         </ListView>
                     </Grid>
                     <TextBlock x:Name="BottomPaneCountText" Grid.Row="3" Margin="0,6,0,0" FontSize="11"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
                 </Grid>
             </Border>
         </Grid>
@@ -201,7 +203,7 @@
                 <Button Content="Delete" Style="{StaticResource ActionButtonStyle}" Width="100" Margin="0,0,8,0" Click="DeleteSelected_Click"/>
                 <Button Content="New Folder" Style="{StaticResource ActionButtonStyle}" Width="120" Margin="0,0,8,0" Click="NewFolder_Click"/>
                 <Button x:Name="SplitViewButton" Content="Split View" Style="{StaticResource ActionButtonStyle}" Width="120" Margin="0,0,8,0" Click="SplitView_Click"/>
-                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="12,0,0,0"/>
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="12,0,0,0"/>
             </StackPanel>
         </Border>
     </Grid>

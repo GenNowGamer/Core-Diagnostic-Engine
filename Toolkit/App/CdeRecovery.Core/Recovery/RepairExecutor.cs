@@ -36,6 +36,8 @@ namespace CdeRecovery.Core.Recovery
         private const uint OPEN_EXISTING = 3;
         private const uint FILE_FLAG_WRITE_THROUGH = 0x80000000;
         private const uint IOCTL_DISK_UPDATE_PROPERTIES = 0x00070140;
+        private const uint FSCTL_LOCK_VOLUME = 0x00090018;
+        private const uint FSCTL_DISMOUNT_VOLUME = 0x00090020;
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern SafeFileHandle CreateFileW(
@@ -354,44 +356,55 @@ namespace CdeRecovery.Core.Recovery
                 audit.Add($"[SNAPSHOT VERIFIED] Saved mandatory rollback snapshot: {manifestPath}");
             }
 
-            // 3. Open PhysicalDriveN for sector-aligned write
-            using (var writeHandle = CreateFileW(
-                plan.SourceIdentity.DevicePath,
-                GENERIC_READ | GENERIC_WRITE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
-                IntPtr.Zero,
-                OPEN_EXISTING,
-                FILE_FLAG_WRITE_THROUGH,
-                IntPtr.Zero))
+            // 3. Lock/dismount any mounted volumes on this disk so Windows permits raw sector writes, then open PhysicalDriveN.
+            var lockedVolumeHandles = LockAndDismountVolumes(liveMatch.MountedDriveLetters, audit);
+            try
             {
-                if (writeHandle.IsInvalid)
+                using (var writeHandle = CreateFileW(
+                    plan.SourceIdentity.DevicePath,
+                    GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    IntPtr.Zero,
+                    OPEN_EXISTING,
+                    FILE_FLAG_WRITE_THROUGH,
+                    IntPtr.Zero))
                 {
-                    int err = Marshal.GetLastWin32Error();
-                    throw new Win32Exception(err, $"Failed to open {plan.SourceIdentity.DevicePath} for authorized metadata write (Win32 error {err}). Ensure CDE is running as Administrator and no volume locks are held.");
-                }
-
-                foreach (var patch in plan.Patches)
-                {
-                    if (!SetFilePointerEx(writeHandle, patch.TargetByteOffset, out _, 0 /* FILE_BEGIN */))
+                    if (writeHandle.IsInvalid)
                     {
                         int err = Marshal.GetLastWin32Error();
-                        throw new Win32Exception(err, $"SetFilePointerEx failed at 0x{patch.TargetByteOffset:X} (Win32 error {err}).");
+                        throw new Win32Exception(err, $"Failed to open {plan.SourceIdentity.DevicePath} for authorized metadata write (Win32 error {err}). Ensure CDE is running as Administrator and no volume locks are held.");
                     }
 
-                    if (!WriteFile(writeHandle, patch.ReplacementBytes, (uint)patch.ReplacementBytes.Length, out uint written, IntPtr.Zero)
-                        || written != (uint)patch.ReplacementBytes.Length)
+                    foreach (var patch in plan.Patches)
                     {
-                        int err = Marshal.GetLastWin32Error();
-                        throw new Win32Exception(err, $"WriteFile failed at 0x{patch.TargetByteOffset:X} (Win32 error {err}).");
+                        if (!SetFilePointerEx(writeHandle, patch.TargetByteOffset, out _, 0 /* FILE_BEGIN */))
+                        {
+                            int err = Marshal.GetLastWin32Error();
+                            throw new Win32Exception(err, $"SetFilePointerEx failed at 0x{patch.TargetByteOffset:X} (Win32 error {err}).");
+                        }
+
+                        if (!WriteFile(writeHandle, patch.ReplacementBytes, (uint)patch.ReplacementBytes.Length, out uint written, IntPtr.Zero)
+                            || written != (uint)patch.ReplacementBytes.Length)
+                        {
+                            int err = Marshal.GetLastWin32Error();
+                            throw new Win32Exception(err, $"WriteFile failed at 0x{patch.TargetByteOffset:X} (Win32 error {err}).");
+                        }
+
+                        audit.Add($"[PHYSICAL WRITE] Wrote {patch.ByteLength} bytes to {plan.SourceIdentity.DevicePath} '{patch.RegionName}' at 0x{patch.TargetByteOffset:X} (LBA {patch.StartLba}).");
                     }
+                    FlushFileBuffers(writeHandle);
 
-                    audit.Add($"[PHYSICAL WRITE] Wrote {patch.ByteLength} bytes to {plan.SourceIdentity.DevicePath} '{patch.RegionName}' at 0x{patch.TargetByteOffset:X} (LBA {patch.StartLba}).");
+                    // Notify Windows kernel to re-read partition table
+                    DeviceIoControl(writeHandle, IOCTL_DISK_UPDATE_PROPERTIES, IntPtr.Zero, 0, IntPtr.Zero, 0, out _, IntPtr.Zero);
+                    audit.Add("[IOCTL] Sent IOCTL_DISK_UPDATE_PROPERTIES to refresh Windows partition table cache.");
                 }
-                FlushFileBuffers(writeHandle);
-
-                // Notify Windows kernel to re-read partition table
-                DeviceIoControl(writeHandle, IOCTL_DISK_UPDATE_PROPERTIES, IntPtr.Zero, 0, IntPtr.Zero, 0, out _, IntPtr.Zero);
-                audit.Add("[IOCTL] Sent IOCTL_DISK_UPDATE_PROPERTIES to refresh Windows partition table cache.");
+            }
+            finally
+            {
+                foreach (var volHandle in lockedVolumeHandles)
+                {
+                    volHandle.Dispose();
+                }
             }
 
             // 4. Post-write verification
@@ -428,6 +441,46 @@ namespace CdeRecovery.Core.Recovery
                     : "In-place write completed, but post-write sector verification reported a mismatch.",
                 AuditLogEntries = audit
             };
+        }
+
+        private static List<SafeFileHandle> LockAndDismountVolumes(IEnumerable<string>? mountedDriveLetters, List<string> audit)
+        {
+            var handles = new List<SafeFileHandle>();
+            if (mountedDriveLetters == null)
+                return handles;
+
+            foreach (var rawLetter in mountedDriveLetters)
+            {
+                string trimmed = (rawLetter ?? string.Empty).Trim().TrimEnd('\\');
+                if (string.IsNullOrEmpty(trimmed))
+                    continue;
+                if (!trimmed.EndsWith(":", StringComparison.Ordinal))
+                    trimmed += ":";
+
+                string volPath = $@"\\.\{trimmed}";
+                var volHandle = CreateFileW(
+                    volPath,
+                    GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    IntPtr.Zero,
+                    OPEN_EXISTING,
+                    0,
+                    IntPtr.Zero);
+
+                if (volHandle.IsInvalid)
+                {
+                    volHandle.Dispose();
+                    audit.Add($"[VOLUME] Could not open {volPath} for lock/dismount (Win32 {Marshal.GetLastWin32Error()}); proceeding with raw disk write.");
+                    continue;
+                }
+
+                bool locked = DeviceIoControl(volHandle, FSCTL_LOCK_VOLUME, IntPtr.Zero, 0, IntPtr.Zero, 0, out _, IntPtr.Zero);
+                bool dismounted = DeviceIoControl(volHandle, FSCTL_DISMOUNT_VOLUME, IntPtr.Zero, 0, IntPtr.Zero, 0, out _, IntPtr.Zero);
+                audit.Add($"[VOLUME] {volPath}: lock={locked}, dismount={dismounted}");
+                handles.Add(volHandle);
+            }
+
+            return handles;
         }
     }
 }

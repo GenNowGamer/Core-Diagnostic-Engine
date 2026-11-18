@@ -11,15 +11,21 @@ $workflow = Start-Workflow -WorkflowName 'Bootloader_BCDRepair' -ScriptBlock {
     Assert-WinPeOrThrow -Result $r
     $target = Select-BootloaderTargetWithConfirmation -Targets (Get-BootloaderTargets) -ActionName 'BCD Repair' -PreSelectedDrive $TargetDrive
 
-    $efiStore = $target.EfiBcdPath
-    $enumStep = if (Test-Path -LiteralPath $efiStore -PathType Leaf) {
-        Invoke-BootloaderCommandCaptured -FilePath 'bcdedit.exe' -ArgumentList @('/store', $efiStore, '/enum', 'all') -StepName 'BCDEnum'
+    $bcdStore = if (Test-Path -LiteralPath $target.EfiBcdPath -PathType Leaf) {
+        $target.EfiBcdPath
+    } elseif (Test-Path -LiteralPath $target.BiosBcdPath -PathType Leaf) {
+        $target.BiosBcdPath
+    } else {
+        $target.EfiBcdPath
+    }
+    $enumStep = if (Test-Path -LiteralPath $bcdStore -PathType Leaf) {
+        Invoke-BootloaderCommandCaptured -FilePath 'bcdedit.exe' -ArgumentList @('/store', $bcdStore, '/enum', 'all') -StepName 'BCDEnum'
     } else {
         [PSCustomObject]@{
             Name = 'BCDEnum'
             Status = 'Warn'
             ExitCode = 1
-            Output = "EFI BCD store not found at $efiStore"
+            Output = "BCD store not found at $($target.EfiBcdPath) or $($target.BiosBcdPath)"
         }
     }
     Add-BootloaderStep -Result $r -Step $enumStep
@@ -34,8 +40,8 @@ $workflow = Start-Workflow -WorkflowName 'Bootloader_BCDRepair' -ScriptBlock {
     }
 
     # bootrec.exe is not available in ADK WinPE (WinRE-only). Use WinPE-native equivalents:
-    #   bootsect.exe  — writes MBR and VBR (from ADK, injected into WinPE by Customize-WinPE.ps1)
-    #   bcdboot.exe   — rebuilds BCD store and boot files (native in WinPE)
+    #   bootsect.exe  - writes MBR and VBR (from ADK, injected into WinPE by Customize-WinPE.ps1)
+    #   bcdboot.exe   - rebuilds BCD store and boot files (native in WinPE)
 
     $step = Invoke-BootsectOnBootloaderTarget -Target $target -StepName 'BootsectFixMBR' -IncludeMbr
     Add-BootloaderStep -Result $r -Step $step
@@ -43,7 +49,8 @@ $workflow = Start-Workflow -WorkflowName 'Bootloader_BCDRepair' -ScriptBlock {
     $step = Invoke-BootsectOnBootloaderTarget -Target $target -StepName 'BootsectFixBoot'
     Add-BootloaderStep -Result $r -Step $step
 
-    $step = Invoke-BootloaderCommandCaptured -FilePath 'bcdboot.exe' -ArgumentList @($target.WindowsDir, '/s', $target.DriveRoot, '/f', 'ALL') -StepName 'BcdBootRebuildBCD'
+    $bootTargetRoot = if ($target.EfiDriveRoot) { $target.EfiDriveRoot } else { $target.DriveRoot }
+    $step = Invoke-BootloaderCommandCaptured -FilePath 'bcdboot.exe' -ArgumentList @($target.WindowsDir, '/s', $bootTargetRoot, '/f', 'ALL') -StepName 'BcdBootRebuildBCD'
     Add-BootloaderStep -Result $r -Step $step
 }
 

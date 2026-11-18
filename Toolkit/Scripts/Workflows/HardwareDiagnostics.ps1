@@ -48,6 +48,7 @@ function Invoke-HardwareDiagnosticsElevationRelay {
     if (-not (Test-ToolkitShouldRelayElevation -ElevatedRelay:$ElevatedRelay)) { return $false }
 
     try {
+        $script:HwRelayStartTime = (Get-Date).AddSeconds(-2)
         $relayOut = @{}
         Invoke-ToolkitElevatedRelay -ScriptPath $Script:HardwareDiagnosticsScriptPath `
             -ArgumentString (Get-HardwareDiagnosticsRelayArgumentString) `
@@ -116,10 +117,12 @@ function Write-HardwareDiagnosticsRelayedJson {
     }
 
     $latest = Get-ChildItem -LiteralPath $dataRoot -Filter ($prefix + '*.json') -ErrorAction SilentlyContinue |
+        Where-Object { -not $script:HwRelayStartTime -or $_.LastWriteTime -ge $script:HwRelayStartTime } |
         Sort-Object LastWriteTimeUtc -Descending |
         Select-Object -First 1
     if (-not $latest) {
         $latest = Get-ChildItem -LiteralPath $dataRoot -Filter 'HardwareDiag_*.json' -ErrorAction SilentlyContinue |
+            Where-Object { -not $script:HwRelayStartTime -or $_.LastWriteTime -ge $script:HwRelayStartTime } |
             Sort-Object LastWriteTimeUtc -Descending |
             Select-Object -First 1
     }

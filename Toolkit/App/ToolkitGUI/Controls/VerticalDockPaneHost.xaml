@@ -4,7 +4,7 @@
              xmlns:ad="https://github.com/Dirkster99/AvalonDock"
              xmlns:layout="clr-namespace:AvalonDock.Layout;assembly=AvalonDock">
     <ad:DockingManager x:Name="WorkbenchDock"
-                       Background="{StaticResource BackgroundDarkBrush}">
+                       Background="{DynamicResource BackgroundDarkBrush}">
         <layout:LayoutRoot>
             <layout:LayoutPanel Orientation="Vertical">
                 <layout:LayoutDocumentPane DockHeight="2*">

@@ -346,7 +346,22 @@ function Invoke-HealthCheck_event_errors_24h {
     if ((Get-EnvironmentMode) -ne 'Windows') { return }
     try {
         $since = (Get-Date).AddHours(-24)
-        $errors = @(Get-EventLog -LogName System -EntryType Error -After $since -ErrorAction Stop)
+        $errors = @()
+        try {
+            $errors = @(
+                Get-WinEvent -FilterHashtable @{ LogName = 'System'; Level = 2; StartTime = $since } -MaxEvents 1000 -ErrorAction Stop |
+                    ForEach-Object {
+                        [PSCustomObject]@{
+                            TimeGenerated = $_.TimeCreated
+                            Source        = $_.ProviderName
+                            EventID       = $_.Id
+                            Message       = $_.Message
+                        }
+                    }
+            )
+        } catch {
+            if ($_.Exception.Message -notmatch 'No events were found') { throw }
+        }
         $errCount = $errors.Count
         $samples = @($errors | Select-Object -First 10 TimeGenerated, Source, EventID, Message)
         $output = Format-HealthCheckEventErrors -ErrorCount $errCount -SampleEvents $samples
@@ -1264,16 +1279,11 @@ function Invoke-HealthCheck_reliability_monitor {
 
         $records = @()
         try {
-            $records = @(Get-CimInstance -ClassName Win32_ReliabilityRecords -ErrorAction SilentlyContinue |
+            $dmtfSince = [System.Management.ManagementDateTimeConverter]::ToDmtfDateTime($since)
+            $records = @(Get-CimInstance -ClassName Win32_ReliabilityRecords -Filter "TimeGenerated >= '$dmtfSince'" -ErrorAction SilentlyContinue |
                 Where-Object {
-                    $tg = $_.TimeGenerated
-                    if ($tg -is [string]) {
-                        try { $tg = [System.Management.ManagementDateTimeConverter]::ToDateTime($tg) } catch { $tg = $null }
-                    }
-                    $tg -and $tg -ge $since -and (
-                        [string]$_.SourceName -match '(?i)(BugCheck|Windows Error Reporting|Application Error|WER)' -or
-                        [int]$_.EventIdentifier -in @(1001, 1000, 41)
-                    )
+                    [string]$_.SourceName -match '(?i)(BugCheck|Windows Error Reporting|Application Error|WER)' -or
+                    [int]$_.EventIdentifier -in @(1001, 1000, 41)
                 })
         } catch { }
 

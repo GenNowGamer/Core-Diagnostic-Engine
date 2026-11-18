@@ -182,10 +182,14 @@ function Compare-CdeSmartBaselineDelta {
     $deltas = New-Object System.Collections.Generic.List[object]
     if ($null -eq $PriorSmart -or $null -eq $CurrentSmart) { return @() }
 
-    $keys = @($PriorSmart.PSObject.Properties.Name)
-    if ($PriorSmart -is [hashtable]) { $keys = @($PriorSmart.Keys) }
+    $keys = if ($PriorSmart -is [hashtable]) {
+        @($PriorSmart.Keys)
+    } else {
+        @($PriorSmart.PSObject.Properties | ForEach-Object { $_.Name })
+    }
 
     foreach ($key in $keys) {
+        if ([string]::IsNullOrWhiteSpace([string]$key)) { continue }
         $prev = if ($PriorSmart -is [hashtable]) { [int64]$PriorSmart[$key] } else { [int64]$PriorSmart.$key }
         $curr = $null
         if ($CurrentSmart -is [hashtable]) {

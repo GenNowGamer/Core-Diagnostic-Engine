@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
     Loads HardwareTestEngine and CpuSimdEngine (C#) for Diag & Repair hardware tests.
     On Windows PowerShell 5.1, prefers pre-published CdeCpuSimdCli.exe (.NET 8 intrinsics)

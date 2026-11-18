@@ -4,7 +4,7 @@
              xmlns:vm="clr-namespace:ToolkitGUI.ViewModels"
              xmlns:views="clr-namespace:ToolkitGUI.Views"
              xmlns:controls="clr-namespace:ToolkitGUI.Controls"
-             Background="{StaticResource BackgroundDarkBrush}">
+             Background="{DynamicResource BackgroundDarkBrush}">
     <views:WorkflowViewBase.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </views:WorkflowViewBase.Resources>
@@ -17,13 +17,13 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Background="{StaticResource BackgroundMidBrush}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
+        <Border Grid.Row="0" Background="{DynamicResource BackgroundMidBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,16">
             <Grid>
                 <StackPanel>
                     <TextBlock Text="💾  CHU Pre-Boot Results" FontSize="22" FontWeight="Bold"/>
                     <TextBlock Text="Core Hardware Utility results written to CDEDATA during last boot diagnostic."
-                               FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                               FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0"/>
                 </StackPanel>
                 <Button Content="↻  Refresh" Style="{StaticResource ActionButtonStyle}"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -32,19 +32,19 @@
         </Border>
 
         <!-- Status bar -->
-        <Border Grid.Row="1" Background="{StaticResource BackgroundMidBrush}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+        <Border Grid.Row="1" Background="{DynamicResource BackgroundMidBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
             <StackPanel>
                 <controls:ResponsiveToolbar>
                     <TextBlock Text="STATUS" FontSize="10" FontWeight="Bold"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                VerticalAlignment="Center" Margin="0,0,16,6"/>
                     <TextBlock Text="{Binding StatusText}" FontSize="13" FontWeight="SemiBold"
-                               Foreground="{StaticResource AccentBlueBrush}"
+                               Foreground="{DynamicResource AccentBlueBrush}"
                                VerticalAlignment="Center" Margin="0,0,20,6"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6"
                                 Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
-                        <Rectangle Width="1" Height="20" Fill="{StaticResource BorderBrush}" Margin="0,0,20,0"/>
+                        <Rectangle Width="1" Height="20" Fill="{DynamicResource BorderBrush}" Margin="0,0,20,0"/>
                         <TextBlock FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap">
                             <Run Text="Run:  " FontWeight="Bold"/>
                             <Run Text="{Binding RunLabel}"/>
@@ -55,7 +55,7 @@
                     </StackPanel>
                 </controls:ResponsiveToolbar>
                 <TextBlock Text="{Binding RollupText}" FontSize="13" FontWeight="SemiBold"
-                           Foreground="{StaticResource AccentBlueBrush}" Margin="0,8,0,0"
+                           Foreground="{DynamicResource AccentBlueBrush}" Margin="0,8,0,0"
                            Visibility="{Binding HasRollup, Converter={StaticResource BoolToVis}}"/>
             </StackPanel>
         </Border>
@@ -68,9 +68,9 @@
                     Visibility="{Binding NoData, Converter={StaticResource BoolToVis}}">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                     <TextBlock Text="⚠" FontSize="48" HorizontalAlignment="Center"
-                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,16"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,16"/>
                     <TextBlock Text="{Binding NoDataMessage}" FontSize="14" TextAlignment="Center"
-                               Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                               Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
 
@@ -82,15 +82,15 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Border Margin="0,0,0,12"
-                                    Background="{StaticResource BackgroundMidBrush}"
-                                    BorderBrush="{StaticResource BorderBrush}"
+                                    Background="{DynamicResource BackgroundMidBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}"
                                     BorderThickness="1" CornerRadius="6" Padding="18,14">
                                 <Grid>
                                     <Grid.Style>
                                         <Style TargetType="Grid">
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsCategoryHeader}" Value="True">
-                                                    <Setter Property="Background" Value="{StaticResource BackgroundDarkBrush}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource BackgroundDarkBrush}"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -155,13 +155,13 @@
                                             </Style>
                                         </StackPanel.Style>
                                         <TextBlock Text="Errors: " FontSize="12"
-                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
                                         <TextBlock Text="{Binding Errors}" FontSize="12" FontWeight="SemiBold"/>
                                     </StackPanel>
 
                                     <TextBlock Grid.Column="3" Text="{Binding Details}"
                                                FontSize="12" TextWrapping="Wrap"
-                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
                                                VerticalAlignment="Center" Margin="16,0,0,0">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">

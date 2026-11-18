@@ -8,6 +8,7 @@ param(
     [string]$DisplayName = '',
     [string]$Publisher = '',
     [string]$FolderPath = '',
+    [string]$FolderPathsJson = '',
     [switch]$PreferQuiet,
     [switch]$RemoveInstallFolder,
     [switch]$ElevatedRelay
@@ -31,6 +32,7 @@ function Get-UninstallManagerRelayArgumentString {
     Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'DisplayName' -Value $DisplayName
     Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'Publisher' -Value $Publisher
     Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'FolderPath' -Value $FolderPath
+    Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'FolderPathsJson' -Value $FolderPathsJson
     if ($PreferQuiet) {
         Add-ToolkitQuotedRelayArgument -Parts $parts -Name 'PreferQuiet' -IsSwitch
     }
@@ -226,13 +228,16 @@ function Resolve-PreferredUninstallCommand {
 function Split-UninstallCommandLine {
     param([string]$Command)
 
-    $cmd = if ($null -eq $Command) { '' } else { $Command.Trim() }
+    $cmd = if ($null -eq $Command) { '' } else { [Environment]::ExpandEnvironmentVariables($Command.Trim()) }
     $exe = $null
     $args = ''
 
     if ($cmd -match '^\s*"(?<exe>[^"]+)"\s*(?<args>.*)$') {
         $exe = $Matches['exe']
         $args = $Matches['args']
+    } elseif ($cmd -match '^\s*(?<exe>[A-Za-z]:\\.+?\.(?:exe|com|bat|cmd|msi|vbs|ps1))(?:\s+(?<args>.*))?$') {
+        $exe = $Matches['exe']
+        $args = if ($Matches['args']) { $Matches['args'] } else { '' }
     } elseif ($cmd -match '^\s*(?<exe>\S+)\s*(?<args>.*)$') {
         $exe = $Matches['exe']
         $args = $Matches['args']
@@ -249,6 +254,7 @@ function Resolve-UninstallExecutablePath {
     param([string]$Exe)
 
     if ([string]::IsNullOrWhiteSpace($Exe)) { return '' }
+    $Exe = [Environment]::ExpandEnvironmentVariables($Exe.Trim().Trim('"'))
 
     if (Test-Path -LiteralPath $Exe -PathType Leaf -ErrorAction SilentlyContinue) {
         return $Exe
@@ -406,33 +412,30 @@ function Get-UninstallLeftovers {
     foreach ($root in $searchRoots) {
         if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
         Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            $dir = $_.FullName
+            $topDir = $_
+            $dir = $topDir.FullName
             $key = $dir.ToLowerInvariant()
-            if ($seen.ContainsKey($key)) { return }
-            if (-not (Test-FolderNameMatchesProduct -FolderName $_.Name -DisplayName $DisplayName -Publisher $Publisher)) {
-                return
+            if (-not $seen.ContainsKey($key) -and
+                (Test-FolderNameMatchesProduct -FolderName $topDir.Name -DisplayName $DisplayName -Publisher $Publisher) -and
+                (Test-SafeUninstallFolderPath -Path $dir)) {
+                $seen[$key] = $true
+                $candidates.Add([PSCustomObject]@{
+                    Path   = $dir
+                    Reason = 'NameMatch'
+                    Safe   = $true
+                }) | Out-Null
             }
-            if (-not (Test-SafeUninstallFolderPath -Path $dir)) { return }
-            $seen[$key] = $true
-            $candidates.Add([PSCustomObject]@{
-                Path   = $dir
-                Reason = 'NameMatch'
-                Safe   = $true
-            }) | Out-Null
-        }
 
-        # One level of publisher\product under Program* roots
-        Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            $publisherDir = $_
+            # One level of publisher\product under Program* roots
             $parentLooksLikePublisher = Test-FolderNameMatchesProduct `
-                -FolderName $publisherDir.Name `
+                -FolderName $topDir.Name `
                 -DisplayName $Publisher `
                 -Publisher $Publisher
 
-            Get-ChildItem -LiteralPath $publisherDir.FullName -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-                $dir = $_.FullName
-                $key = $dir.ToLowerInvariant()
-                if ($seen.ContainsKey($key)) { return }
+            Get-ChildItem -LiteralPath $topDir.FullName -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                $subDir = $_.FullName
+                $subKey = $subDir.ToLowerInvariant()
+                if ($seen.ContainsKey($subKey)) { return }
 
                 $leafMatchesProduct = Test-FolderNameMatchesProduct `
                     -FolderName $_.Name `
@@ -446,10 +449,10 @@ function Get-UninstallLeftovers {
                     return
                 }
 
-                if (-not (Test-SafeUninstallFolderPath -Path $dir)) { return }
-                $seen[$key] = $true
+                if (-not (Test-SafeUninstallFolderPath -Path $subDir)) { return }
+                $seen[$subKey] = $true
                 $candidates.Add([PSCustomObject]@{
-                    Path   = $dir
+                    Path   = $subDir
                     Reason = 'NestedNameMatch'
                     Safe   = $true
                 }) | Out-Null
@@ -669,19 +672,51 @@ switch ($Action) {
     }
 
     'RemoveFolder' {
-        if ([string]::IsNullOrWhiteSpace($FolderPath)) {
-            Write-Error 'FolderPath is required for RemoveFolder.'
+        $targets = [System.Collections.Generic.List[string]]::new()
+        if (-not [string]::IsNullOrWhiteSpace($FolderPathsJson)) {
+            try {
+                $parsed = $FolderPathsJson | ConvertFrom-Json
+                foreach ($item in @($parsed)) {
+                    if (-not [string]::IsNullOrWhiteSpace([string]$item)) {
+                        $targets.Add([string]$item) | Out-Null
+                    }
+                }
+            } catch {
+                Write-Error "Invalid FolderPathsJson: $($_.Exception.Message)"
+                exit 1
+            }
+        } elseif (-not [string]::IsNullOrWhiteSpace($FolderPath)) {
+            $targets.Add($FolderPath) | Out-Null
+        }
+
+        if ($targets.Count -eq 0) {
+            Write-Error 'FolderPath or FolderPathsJson is required for RemoveFolder.'
             exit 1
         }
-        try {
-            $msg = Remove-UninstallFolderSafe -Path $FolderPath
-            [PSCustomObject]@{
-                Status  = 'Completed'
-                Message = $msg
-                Path    = $FolderPath
-            } | ConvertTo-Json -Depth 2 -Compress
-        } catch {
-            Write-Error $_.Exception.Message
+
+        $removed = 0
+        $failed = 0
+        $errors = [System.Collections.Generic.List[string]]::new()
+        foreach ($target in $targets) {
+            try {
+                $null = Remove-UninstallFolderSafe -Path $target
+                $removed++
+            } catch {
+                $failed++
+                $errors.Add($_.Exception.Message) | Out-Null
+            }
+        }
+
+        [PSCustomObject]@{
+            Status       = if ($failed -eq 0) { 'Completed' } else { 'Partial' }
+            Message      = "Removed $removed folder(s); $failed failed."
+            RemovedCount = $removed
+            FailedCount  = $failed
+            Errors       = @($errors)
+            Path         = ($targets -join '; ')
+        } | ConvertTo-Json -Depth 3 -Compress
+        if ($removed -eq 0 -and $failed -gt 0) {
+            Write-Error ($errors -join '; ')
             exit 1
         }
     }

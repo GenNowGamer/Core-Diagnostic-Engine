@@ -11,6 +11,37 @@ if (-not ('CdeSmart.Reader' -as [type])) {
 
 Import-Module (Join-Path $PSScriptRoot 'PhysicalDiskCatalog.psm1') -Force -DisableNameChecking
 
+function ConvertTo-CdeSmartDriveObject {
+    param([Parameter(Mandatory)]$Drive)
+
+    $attrs = New-Object System.Collections.Generic.List[object]
+    foreach ($a in $Drive.Attributes) {
+        $attrs.Add([PSCustomObject]@{
+            Id        = $a.Id
+            Name      = $a.Name
+            Current   = $a.Current
+            Worst     = $a.Worst
+            Threshold = $a.Threshold
+            Raw       = $a.Raw
+            Status    = $a.Status
+        })
+    }
+
+    return [PSCustomObject]@{
+        Index        = $Drive.Index
+        Model        = $Drive.Model
+        Serial       = $Drive.Serial
+        Bus          = $Drive.Bus
+        Protocol     = $Drive.Protocol
+        SizeGB       = $Drive.SizeGB
+        Overall      = $Drive.Overall
+        TemperatureC = $Drive.TemperatureC
+        Supported    = $Drive.Supported
+        Note         = $Drive.Note
+        Attributes   = $attrs
+    }
+}
+
 function Get-CdeSmartDrives {
     $allowed = @{}
     foreach ($idx in (Get-CdeTestablePhysicalDiskIndices)) {
@@ -21,43 +52,18 @@ function Get-CdeSmartDrives {
     $out = New-Object System.Collections.Generic.List[object]
     foreach ($d in $list) {
         if (-not $allowed.ContainsKey([int]$d.Index)) { continue }
-        $attrs = New-Object System.Collections.Generic.List[object]
-        foreach ($a in $d.Attributes) {
-            $attrs.Add([PSCustomObject]@{
-                Id        = $a.Id
-                Name      = $a.Name
-                Current   = $a.Current
-                Worst     = $a.Worst
-                Threshold = $a.Threshold
-                Raw       = $a.Raw
-                Status    = $a.Status
-            })
-        }
-        $out.Add([PSCustomObject]@{
-            Index         = $d.Index
-            Model         = $d.Model
-            Serial        = $d.Serial
-            Bus           = $d.Bus
-            Protocol      = $d.Protocol
-            SizeGB        = $d.SizeGB
-            Overall       = $d.Overall
-            TemperatureC  = $d.TemperatureC
-            Supported     = $d.Supported
-            Note          = $d.Note
-            Attributes    = $attrs
-        })
+        $out.Add((ConvertTo-CdeSmartDriveObject -Drive $d))
     }
     return $out
 }
 
 function Get-CdeSmartDriveByIndex {
     param([int]$Index)
+    $allowed = Get-CdeTestablePhysicalDiskIndices
+    if ($allowed -notcontains $Index) { return $null }
     $d = [CdeSmart.Reader]::GetDriveByIndex($Index)
     if ($null -eq $d) { return $null }
-    foreach ($drive in (Get-CdeSmartDrives)) {
-        if ($drive.Index -eq $Index) { return $drive }
-    }
-    return $null
+    return (ConvertTo-CdeSmartDriveObject -Drive $d)
 }
 
 function Test-CdeSmartThresholds {
@@ -81,7 +87,7 @@ function Test-CdeSmartThresholds {
     $info = @($d.Attributes | Where-Object { $_.Status -eq 'Info' })
     if ($info.Count -gt 0) {
         $names = ($info | Select-Object -First 3 | ForEach-Object { $_.Name }) -join ', '
-        return ('Passed: interconnect/advisory attribute(s) noted ({0}) — not treated as media failure' -f $names)
+        return ('Passed: interconnect/advisory attribute(s) noted ({0}) - not treated as media failure' -f $names)
     }
     return 'Passed'
 }
