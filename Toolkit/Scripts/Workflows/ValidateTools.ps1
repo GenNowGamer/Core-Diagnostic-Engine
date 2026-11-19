@@ -1,10 +1,11 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Validates workflow scripts produce structured JSON reports under CDE\Runtime\Data\workflows.
 #>
 param(
-    [string]$DataRoot = ''
+    [string]$DataRoot = '',
+    [switch]$IncludeMutating
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,11 +42,19 @@ $secChecks = @(
     @{ CheckId = 'sec_security_tampering'; StepName = 'SecurityTamperingAudit' }
     @{ CheckId = 'sec_remote_access'; StepName = 'RemoteAccessAudit' }
 )
-$hijackTools = @('Scan', 'BrowserHijackRepair', 'NetworkHijackRepair', 'SecurityTamperingRepair', 'RepairAll')
+$hijackTools = if ($IncludeMutating) {
+    @('Scan', 'BrowserHijackRepair', 'NetworkHijackRepair', 'SecurityTamperingRepair', 'RepairAll')
+} else {
+    @('Scan')
+}
 $msTools = @('DefenderScan')
-$extraTools = @(
-    @{ Script = 'PostOp.ps1'; ToolName = 'DnsFlush'; WorkflowPrefix = 'PostOp' }
-)
+$extraTools = if ($IncludeMutating) {
+    @(
+        @{ Script = 'PostOp.ps1'; ToolName = 'DnsFlush'; WorkflowPrefix = 'PostOp' }
+    )
+} else {
+    @()
+}
 
 $stats = @{ Missing = 0; ParseError = 0; InvalidStructure = 0; Total = 0 }
 
@@ -60,9 +69,15 @@ function Test-WorkflowReportStructure {
         if ([string]::IsNullOrWhiteSpace([string]$step.Name)) { return $false }
         if ([string]::IsNullOrWhiteSpace([string]$step.Status)) { return $false }
     }
-    if ($Report.PSObject.Properties['Workflow'] -and $ExpectedWorkflowPrefix) {
-        $wf = [string]$Report.Workflow
-        if ($wf -notlike "$ExpectedWorkflowPrefix*") { return $false }
+    $wfProp = if ($Report.PSObject.Properties['WorkflowName']) {
+        [string]$Report.WorkflowName
+    } elseif ($Report.PSObject.Properties['Workflow']) {
+        [string]$Report.Workflow
+    } else {
+        ''
+    }
+    if ($wfProp -and $ExpectedWorkflowPrefix) {
+        if ($wfProp -notlike "$ExpectedWorkflowPrefix*") { return $false }
     }
     return $true
 }
@@ -72,16 +87,23 @@ function Run-Tool {
         [string]$ScriptFile,
         [string]$ToolName,
         [string]$WorkflowPrefix,
-        [string[]]$ExtraArgs = @()
+        [hashtable]$NamedArgs = @{}
     )
 
     Write-Host "Running $ScriptFile $ToolName..." -ForegroundColor Cyan
     $scriptPath = Join-Path $scriptDir $ScriptFile
-    $filteredArgs = @($ExtraArgs | Where-Object { $null -ne $_ -and $_ -ne '' })
-    if ($filteredArgs.Count -gt 0) {
-        & $scriptPath @filteredArgs | Out-Null
+    $startedAt = (Get-Date).AddSeconds(-2)
+    $global:LASTEXITCODE = 0
+    if ($NamedArgs -and $NamedArgs.Count -gt 0) {
+        & $scriptPath @NamedArgs | Out-Null
     } else {
         & $scriptPath -ToolName $ToolName | Out-Null
+    }
+
+    if ($null -ne $LASTEXITCODE -and [int]$LASTEXITCODE -ne 0) {
+        Write-Host "  Error: $ScriptFile $ToolName exited with code $LASTEXITCODE" -ForegroundColor Red
+        $stats.InvalidStructure++
+        return
     }
 
     $prefix = if ($WorkflowPrefix -eq 'SystemHealthCheck') { 'SystemHealthCheck' } else { "${WorkflowPrefix}_$ToolName" }
@@ -92,11 +114,12 @@ function Run-Tool {
     }
 
     $file = Get-ChildItem -LiteralPath $DataRoot -Filter "$prefix*.json" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -ge $startedAt } |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
 
     if (-not $file) {
-        Write-Host "  Error: No report found for $prefix in $DataRoot" -ForegroundColor Red
+        Write-Host "  Error: No fresh report found for $prefix in $DataRoot" -ForegroundColor Red
         $stats.Missing++
         return
     }
@@ -110,27 +133,28 @@ function Run-Tool {
             return
         }
 
+        $wfName = if ($json.PSObject.Properties['WorkflowName']) { [string]$json.WorkflowName } elseif ($json.PSObject.Properties['Workflow']) { [string]$json.Workflow } else { $prefix }
         $steps = @($json.Steps)
         if ($ToolName -and $WorkflowPrefix -ne 'SystemHealthCheck') {
             $steps = @($steps | Where-Object { [string]$_.Name -eq $ToolName })
         }
         foreach ($step in $steps) {
             $len = if ($step.Output) { [string]$step.Output.Length } else { 0 }
-            Write-Host "  [$($json.Workflow)] Step:$($step.Name)($($step.Status)) Len:$len"
+            Write-Host "  [$wfName] Step:$($step.Name)($($step.Status)) Len:$len"
         }
     } catch {
-        Write-Host "  Error: Failed to parse $($file.Name) — $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  Error: Failed to parse $($file.Name) -- $($_.Exception.Message)" -ForegroundColor Red
         $stats.ParseError++
     }
 }
 
 foreach ($check in $saChecks) {
     Run-Tool -ScriptFile 'SystemHealthCheck.ps1' -ToolName $check.StepName -WorkflowPrefix 'SystemHealthCheck' `
-        -ExtraArgs @('-SelectedChecks', $check.CheckId)
+        -NamedArgs @{ SelectedChecks = @($check.CheckId) }
 }
 foreach ($check in $secChecks) {
     Run-Tool -ScriptFile 'SystemHealthCheck.ps1' -ToolName $check.StepName -WorkflowPrefix 'SystemHealthCheck' `
-        -ExtraArgs @('-SelectedChecks', $check.CheckId)
+        -NamedArgs @{ SelectedChecks = @($check.CheckId) }
 }
 foreach ($t in $msTools) { Run-Tool -ScriptFile 'MalwareSweep.ps1' -ToolName $t -WorkflowPrefix 'MalwareSweep' }
 foreach ($t in $hijackTools) { Run-Tool -ScriptFile 'HijackRepair.ps1' -ToolName $t -WorkflowPrefix 'HijackRepair' }

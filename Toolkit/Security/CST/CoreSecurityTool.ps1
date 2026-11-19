@@ -43,7 +43,7 @@ function ConvertTo-CstPowerShellArgumentString {
         $name = [string]$entry.Key
         $value = $entry.Value
 
-        if ($value -is [switch]) {
+        if ($value -is [switch] -or $value -is [bool]) {
             if ([bool]$value) {
                 $tokens.Add("-$name") | Out-Null
             }
@@ -51,16 +51,16 @@ function ConvertTo-CstPowerShellArgumentString {
         }
 
         if ($value -is [array]) {
-            foreach ($item in $value) {
-                $tokens.Add("-$name") | Out-Null
-                $tokens.Add(('"{0}"' -f ([string]$item).Replace('"', '""'))) | Out-Null
+            $nonEmpty = @($value | Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string]$_) })
+            if ($nonEmpty.Count -gt 0) {
+                $quotedItems = @($nonEmpty | ForEach-Object { "'{0}'" -f ([string]$_).Replace("'", "''") })
+                $tokens.Add("-$name " + ($quotedItems -join ',')) | Out-Null
             }
             continue
         }
 
         if ($null -ne $value) {
-            $tokens.Add("-$name") | Out-Null
-            $tokens.Add(('"{0}"' -f ([string]$value).Replace('"', '""'))) | Out-Null
+            $tokens.Add("-$name '{0}'" -f ([string]$value).Replace("'", "''")) | Out-Null
         }
     }
 
@@ -68,9 +68,6 @@ function ConvertTo-CstPowerShellArgumentString {
 }
 
 $isElevated = Test-CstIsElevated
-if ($RequireElevation -and -not $isElevated) {
-    throw 'CoreSecurityTool requires elevated Administrator privileges for this invocation.'
-}
 
 if ($AutoElevate -and -not $isElevated) {
     $relayOutputPath = $null
@@ -88,7 +85,10 @@ if ($AutoElevate -and -not $isElevated) {
     $relaunchParameters['OutputPath'] = $OutputPath
 
     $argString = ConvertTo-CstPowerShellArgumentString -BoundParameters $relaunchParameters
-    $launchArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $argString"
+    $escapedScriptPath = $PSCommandPath.Replace("'", "''")
+    $relaunchScript = "& '$escapedScriptPath' $argString"
+    $encodedRelaunch = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($relaunchScript))
+    $launchArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encodedRelaunch"
 
     try {
         $child = Start-Process -FilePath 'powershell.exe' -ArgumentList $launchArgs -Verb RunAs -Wait -PassThru
@@ -114,6 +114,10 @@ if ($AutoElevate -and -not $isElevated) {
     }
 
     exit 0
+}
+
+if ($RequireElevation -and -not $isElevated) {
+    throw 'CoreSecurityTool requires elevated Administrator privileges for this invocation.'
 }
 
 $modulePath = Join-Path $PSScriptRoot 'CoreSecurityTool.psm1'

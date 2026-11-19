@@ -68,11 +68,14 @@ namespace ToolkitGUI.Models
                 if (_isSelected == value) return;
                 _isSelected = value;
                 OnPropertyChanged();
-                // Propagate to all children when a parent node is toggled
+                // Propagate to cleanable children only when a parent node is toggled.
                 if (IsParent)
                 {
                     foreach (var child in Children)
-                        child.IsSelected = value;
+                    {
+                        if (!child.IsProtected)
+                            child.IsSelected = value;
+                    }
                 }
             }
         }

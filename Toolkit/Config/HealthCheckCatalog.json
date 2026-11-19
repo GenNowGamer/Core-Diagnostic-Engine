@@ -339,6 +339,16 @@
       ]
     },
     {
+      "whenCheckId": "reliability_monitor",
+      "whenStatus": ["Warn", "Fail"],
+      "title": "Review Reliability Monitor timeline",
+      "reasonTemplate": "{Detail}",
+      "actions": [
+        { "type": "shell", "target": "perfmon /rel", "label": "Reliability Monitor" },
+        { "type": "cde", "target": "SystemHealth", "label": "System Health Check" }
+      ]
+    },
+    {
       "whenCheckId": "critical_events_7d",
       "whenStatus": ["Warn", "Fail"],
       "title": "Review critical events",

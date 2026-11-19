@@ -1416,6 +1416,32 @@ function Get-HijackBrowserShortcutInventory {
     return @($inventory)
 }
 
+function Test-HijackBrowserShortcutArgumentsSuspicious {
+    param([string]$Arguments)
+
+    if ([string]::IsNullOrWhiteSpace($Arguments)) { return $false }
+
+    if ($Arguments -match '(?i)(?:^|\s)--(?:load-extension|proxy-server|proxy-pac-url|user-data-dir|app|homepage)(?:=|\s|$)') {
+        return $true
+    }
+
+    $tokens = [regex]::Matches($Arguments, '"[^"]+"|\S+') | ForEach-Object { $_.Value.Trim('"') }
+    foreach ($tok in $tokens) {
+        if ([string]::IsNullOrWhiteSpace($tok)) { continue }
+        if ($tok.StartsWith('-')) {
+            if ($tok -match '^(?i)--?(?:url|homepage)=(.+)$') {
+                if (Test-HijackSuspiciousUrl -Url $Matches[1].Trim('"')) { return $true }
+            }
+            continue
+        }
+        if (Test-HijackSuspiciousUrl -Url $tok) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Test-HijackBrowserShortcutHijacked {
     param(
         [Parameter(Mandatory)][string]$BrowserLabel,
@@ -1428,7 +1454,7 @@ function Test-HijackBrowserShortcutHijacked {
     if ($TargetPath -match '(?i)\.(bat|cmd|vbs|vbe|js|jse|wsf|ps1|scr|com)(\s|$|\\)') {
         return $true
     }
-    if (-not [string]::IsNullOrWhiteSpace($Arguments) -and (Test-HijackSuspiciousUrl -Url $Arguments)) {
+    if (-not [string]::IsNullOrWhiteSpace($Arguments) -and (Test-HijackBrowserShortcutArgumentsSuspicious -Arguments $Arguments)) {
         return $true
     }
 

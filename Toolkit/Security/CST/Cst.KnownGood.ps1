@@ -209,7 +209,7 @@ function Initialize-CstKnownGoodStore {
         $sqliteRel = if ($policy.PSObject.Properties['sqlitePath'] -and -not [string]::IsNullOrWhiteSpace([string]$policy.sqlitePath)) {
             [string]$policy.sqlitePath
         } else {
-            'rules\goodware.db'
+            'goodware.db'
         }
         $sqlitePath = if ([System.IO.Path]::IsPathRooted($sqliteRel)) { $sqliteRel } else { Join-Path $rulesDir $sqliteRel }
         $dllPath = Join-Path (Join-Path $PSScriptRoot 'lib') 'Microsoft.Data.Sqlite.dll'

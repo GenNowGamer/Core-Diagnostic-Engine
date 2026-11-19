@@ -301,8 +301,11 @@ internal static class Program
             }
 
             var output = p.StandardOutput.ReadToEnd().Trim();
-            if (p.ExitCode == 0 && int.TryParse(output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(), out tempC))
+            var firstLine = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+            if (p.ExitCode == 0 && !string.IsNullOrWhiteSpace(firstLine) &&
+                double.TryParse(firstLine, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedTemp))
             {
+                tempC = (int)Math.Round(parsedTemp);
                 detail = "nvidia-smi";
                 return true;
             }

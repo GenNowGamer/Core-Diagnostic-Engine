@@ -25,7 +25,8 @@ function Invoke-ToolkitElevatedRelay {
     param(
         [Parameter(Mandatory)][string]$ScriptPath,
         [string]$ArgumentString = '',
-        [hashtable]$RelayOut = $null
+        [hashtable]$RelayOut = $null,
+        [switch]$StreamToHost
     )
 
     if (Test-ToolkitIsElevated) {
@@ -48,6 +49,7 @@ function Invoke-ToolkitElevatedRelay {
     $runId = [Guid]::NewGuid().ToString('N')
     $pidFile = Join-Path $elevDir ("cde_elev_pid_{0}.txt" -f $runId)
     $logFile = Join-Path $elevDir ("cde_elev_{0}.log" -f $runId)
+    $errLogFile = Join-Path $elevDir ("cde_elev_err_{0}.log" -f $runId)
     $exitFile = Join-Path $elevDir ("cde_elev_exit_{0}.txt" -f $runId)
     $cancelFile = Join-Path $elevDir 'cancel.flag'
     $env:CDE_ELEVATED_PID_FILE = $pidFile
@@ -55,6 +57,7 @@ function Invoke-ToolkitElevatedRelay {
     $escapedScript = $ScriptPath.Replace("'", "''")
     $escapedPidFile = $pidFile.Replace("'", "''")
     $escapedLogFile = $logFile.Replace("'", "''")
+    $escapedErrLogFile = $errLogFile.Replace("'", "''")
     $escapedExitFile = $exitFile.Replace("'", "''")
     $escapedCancelFile = $cancelFile.Replace("'", "''")
     $argSuffix = if ([string]::IsNullOrWhiteSpace($ArgumentString)) { '' } else { " $ArgumentString" }
@@ -71,6 +74,7 @@ function Invoke-ToolkitElevatedRelay {
     $targetScript = @"
 `$ErrorActionPreference = 'Continue'
 $envPrefix`$env:CDE_ELEVATED_PID_FILE = '$escapedPidFile'
+`$global:LASTEXITCODE = 0
 try {
     & '$escapedScript'$argSuffix
     `$code = if (`$null -ne `$LASTEXITCODE) { [int]`$LASTEXITCODE } else { 0 }
@@ -86,9 +90,12 @@ exit `$code
 `$ErrorActionPreference = 'Continue'
 $envPrefix`$env:CDE_ELEVATED_PID_FILE = '$escapedPidFile'
 `$sync = New-Object object
+`$errSync = New-Object object
 `$utf8NoBom = New-Object System.Text.UTF8Encoding(`$false)
 `$writer = New-Object System.IO.StreamWriter('$escapedLogFile', `$false, `$utf8NoBom)
 `$writer.AutoFlush = `$true
+`$errWriter = New-Object System.IO.StreamWriter('$escapedErrLogFile', `$false, `$utf8NoBom)
+`$errWriter.AutoFlush = `$true
 `$psi = New-Object System.Diagnostics.ProcessStartInfo
 `$psi.FileName = 'powershell.exe'
 `$psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $targetEncoded'
@@ -112,7 +119,7 @@ $envPrefix`$env:CDE_ELEVATED_PID_FILE = '$escapedPidFile'
         [System.Threading.Monitor]::Enter(`$Event.MessageData.Sync)
         try { `$Event.MessageData.Writer.WriteLine(`$EventArgs.Data) } finally { [System.Threading.Monitor]::Exit(`$Event.MessageData.Sync) }
     }
-} -MessageData @{ Sync = `$sync; Writer = `$writer }
+} -MessageData @{ Sync = `$errSync; Writer = `$errWriter }
 `$exitCode = 1
 try {
     [void]`$proc.Start()
@@ -132,6 +139,7 @@ try {
     try { Unregister-Event -SourceIdentifier `$outSub.Name -ErrorAction SilentlyContinue } catch { }
     try { Unregister-Event -SourceIdentifier `$errSub.Name -ErrorAction SilentlyContinue } catch { }
     try { `$writer.Flush(); `$writer.Dispose() } catch { }
+    try { `$errWriter.Flush(); `$errWriter.Dispose() } catch { }
     try { `$proc.Dispose() } catch { }
     Set-Content -LiteralPath '$escapedExitFile' -Value ([string]`$exitCode) -Encoding ascii -Force -ErrorAction SilentlyContinue
 }
@@ -142,37 +150,101 @@ exit `$exitCode
     $launchArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded"
 
     $byteOffset = [long]0
+    $errByteOffset = [long]0
+    $isConsoleHost = ($Host.Name -eq 'ConsoleHost')
+    $emitStdoutLine = {
+        param([string]$Line)
+        if ($StreamToHost) {
+            Write-Host $Line
+        } elseif ($isConsoleHost) {
+            [Console]::Out.WriteLine($Line)
+        } else {
+            Write-Output $Line
+        }
+    }
+    $emitStderrLine = {
+        param([string]$Line)
+        if ([string]::IsNullOrWhiteSpace($Line)) { return }
+        if ($StreamToHost) {
+            Write-Host $Line
+        } elseif ($isConsoleHost) {
+            [Console]::Error.WriteLine($Line)
+        } else {
+            Write-Warning $Line
+        }
+    }
     $readAvailableLines = {
         param([bool]$FlushRemainder)
-        if (-not (Test-Path -LiteralPath $logFile)) { return }
-        try {
-            $fs = [System.IO.FileStream]::new($logFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        if (Test-Path -LiteralPath $logFile) {
             try {
-                if ($fs.Length -le $byteOffset) { return }
-                $remaining = [int]($fs.Length - $byteOffset)
-                $buf = New-Object byte[] $remaining
-                [void]$fs.Seek($byteOffset, [System.IO.SeekOrigin]::Begin)
-                $bytesRead = $fs.Read($buf, 0, $remaining)
-                if ($bytesRead -le 0) { return }
-
-                $consumeCount = $bytesRead
-                if (-not $FlushRemainder) {
-                    $lastLf = [Array]::LastIndexOf($buf, [byte]10, $bytesRead - 1)
-                    if ($lastLf -lt 0) { return }
-                    $consumeCount = $lastLf + 1
+                $fs = [System.IO.FileStream]::new($logFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                try {
+                    if ($fs.Length -gt $byteOffset) {
+                        $remaining = [int]($fs.Length - $byteOffset)
+                        $buf = New-Object byte[] $remaining
+                        [void]$fs.Seek($byteOffset, [System.IO.SeekOrigin]::Begin)
+                        $bytesRead = $fs.Read($buf, 0, $remaining)
+                        if ($bytesRead -gt 0) {
+                            $consumeCount = $bytesRead
+                            if (-not $FlushRemainder) {
+                                $lastLf = [Array]::LastIndexOf($buf, [byte]10, $bytesRead - 1)
+                                if ($lastLf -ge 0) {
+                                    $consumeCount = $lastLf + 1
+                                } else {
+                                    $consumeCount = 0
+                                }
+                            }
+                            if ($consumeCount -gt 0) {
+                                $chunk = [System.Text.Encoding]::UTF8.GetString($buf, 0, $consumeCount)
+                                $byteOffset += $consumeCount
+                                $lines = $chunk -split "\r?\n"
+                                for ($i = 0; $i -lt $lines.Length; $i++) {
+                                    if ($i -eq $lines.Length - 1 -and $lines[$i].Length -eq 0) { continue }
+                                    & $emitStdoutLine $lines[$i]
+                                }
+                            }
+                        }
+                    }
+                } finally {
+                    $fs.Dispose()
                 }
-
-                $chunk = [System.Text.Encoding]::UTF8.GetString($buf, 0, $consumeCount)
-                $byteOffset += $consumeCount
-                $lines = $chunk -split "\r?\n"
-                for ($i = 0; $i -lt $lines.Length; $i++) {
-                    if ($i -eq $lines.Length - 1 -and $lines[$i].Length -eq 0) { continue }
-                    Write-Output $lines[$i]
+            } catch { }
+        }
+        if (Test-Path -LiteralPath $errLogFile) {
+            try {
+                $efs = [System.IO.FileStream]::new($errLogFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                try {
+                    if ($efs.Length -gt $errByteOffset) {
+                        $eremaining = [int]($efs.Length - $errByteOffset)
+                        $ebuf = New-Object byte[] $eremaining
+                        [void]$efs.Seek($errByteOffset, [System.IO.SeekOrigin]::Begin)
+                        $ebytesRead = $efs.Read($ebuf, 0, $eremaining)
+                        if ($ebytesRead -gt 0) {
+                            $econsumeCount = $ebytesRead
+                            if (-not $FlushRemainder) {
+                                $elastLf = [Array]::LastIndexOf($ebuf, [byte]10, $ebytesRead - 1)
+                                if ($elastLf -ge 0) {
+                                    $econsumeCount = $elastLf + 1
+                                } else {
+                                    $econsumeCount = 0
+                                }
+                            }
+                            if ($econsumeCount -gt 0) {
+                                $echunk = [System.Text.Encoding]::UTF8.GetString($ebuf, 0, $econsumeCount)
+                                $errByteOffset += $econsumeCount
+                                $elines = $echunk -split "\r?\n"
+                                for ($i = 0; $i -lt $elines.Length; $i++) {
+                                    if ($i -eq $elines.Length - 1 -and $elines[$i].Length -eq 0) { continue }
+                                    & $emitStderrLine $elines[$i]
+                                }
+                            }
+                        }
+                    }
+                } finally {
+                    $efs.Dispose()
                 }
-            } finally {
-                $fs.Dispose()
-            }
-        } catch { }
+            } catch { }
+        }
     }
 
     $child = $null
@@ -207,6 +279,7 @@ exit `$exitCode
             Remove-Item -LiteralPath $exitFile -Force -ErrorAction SilentlyContinue
         }
         Remove-Item -LiteralPath $logFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $errLogFile -Force -ErrorAction SilentlyContinue
     }
 
     $resultObj = [PSCustomObject]@{

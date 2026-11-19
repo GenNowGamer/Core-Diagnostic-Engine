@@ -132,6 +132,15 @@ if (-not (Test-Path -LiteralPath $gpuCliPath)) {
     Add-VerifyResult -Name 'CdeGpuDiagCli' -Passed ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 3) -Detail $gpuCliPath
 }
 
+Write-Host "`n=== CdeBehaviorCollector payload ===" -ForegroundColor Cyan
+$behaviorCliPath = Join-Path $toolkitRoot 'CDE\ToolkitGUI\bin\Release\net8.0-windows\CdeBehaviorCollector.exe'
+if (-not (Test-Path -LiteralPath $behaviorCliPath)) {
+    Add-VerifyResult -Name 'CdeBehaviorCollector' -Passed $false -Detail "Missing: $behaviorCliPath"
+} else {
+    & $behaviorCliPath probe | Out-Null
+    Add-VerifyResult -Name 'CdeBehaviorCollector' -Passed ($LASTEXITCODE -eq 0) -Detail $behaviorCliPath
+}
+
 Write-Host "`n=== GUI unit tests (dotnet test) ===" -ForegroundColor Cyan
 $slnPath = Join-Path $appDir 'ToolkitGUI.sln'
 if (Test-Path -LiteralPath $slnPath) {

@@ -61,12 +61,24 @@ namespace ToolkitGUI
         internal static string GetHardwareTestCatalogPath()
             => Path.Combine(GetToolkitRoot(), "Config", "HardwareTestCatalog.json");
 
+        internal static string NormalizeRootPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return string.Empty;
+
+            var trimmed = path.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            // Preserve the trailing separator for bare drive roots so Path.Combine stays rooted (E:\ not E:).
+            if (trimmed.Length == 2 && char.IsLetter(trimmed[0]) && trimmed[1] == ':')
+                return trimmed + Path.DirectorySeparatorChar;
+            return trimmed;
+        }
+
         private static string? TryScriptsRootFromToolkitRoot()
         {
             var tr = Environment.GetEnvironmentVariable("TOOLKIT_ROOT");
-            if (string.IsNullOrEmpty(tr))
+            if (string.IsNullOrWhiteSpace(tr))
                 return null;
-            var scripts = Path.Combine(tr.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), "Scripts");
+            var scripts = Path.Combine(NormalizeRootPath(tr), "Scripts");
             return Directory.Exists(scripts) ? scripts : null;
         }
 

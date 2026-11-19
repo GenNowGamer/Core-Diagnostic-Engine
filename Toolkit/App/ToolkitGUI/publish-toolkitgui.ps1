@@ -1,42 +1,24 @@
-﻿#!/usr/bin/env pwsh
+<#
+.SYNOPSIS
+    Delegates to the canonical publish script under Toolkit\App\Publish-ToolkitGUI.ps1.
+#>
 param(
-    [switch]$NoClean,
-    [switch]$Quiet
+    [switch]$Clean,
+    [switch]$Force
 )
-$ErrorActionPreference = "Stop"
-$ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ReleaseDir = Join-Path $ProjectDir "bin\Release"
-$OutputDir = Join-Path $ProjectDir "bin\Release\net8.0-windows"
-$StagingDir = Join-Path $ReleaseDir "publish-staging\win-x64"
-$ExePath = Join-Path $OutputDir "ToolkitGUI.exe"
 
-Write-Host "ToolkitGUI Publish Script" -ForegroundColor Cyan
+$ErrorActionPreference = 'Stop'
 
-# Ensure files are not locked by a running instance.
-Get-Process ToolkitGUI -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
-if (-not $NoClean) {
-    if (Test-Path $ReleaseDir) {
-        Remove-Item $ReleaseDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
+$canonicalScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Publish-ToolkitGUI.ps1'))
+if (-not (Test-Path -LiteralPath $canonicalScript)) {
+    throw "Canonical publish script not found: $canonicalScript"
 }
 
-# Publish to a deterministic staging folder, then mirror to launcher folder.
-dotnet publish ToolkitGUI.csproj -c Release -r win-x64 --self-contained true -o "$StagingDir" | Out-Null
+$argsList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $canonicalScript)
+if ($Clean) { $argsList += '-Clean' }
+if ($Force) { $argsList += '-Force' }
 
-if (Test-Path $OutputDir) {
-    Remove-Item $OutputDir -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
-Copy-Item -Path (Join-Path $StagingDir "*") -Destination $OutputDir -Recurse -Force
-
-if (Test-Path $ExePath) {
-    $fileInfo = Get-Item $ExePath
-    Write-Host "✅ SUCCESS" -ForegroundColor Green
-    Write-Host "Path: $($fileInfo.FullName)"
-    Write-Host "Size: $($fileInfo.Length) bytes"
-    Write-Host "Timestamp: $($fileInfo.LastWriteTime)"
-} else {
-    Write-Host "❌ FAILED" -ForegroundColor Red
+& powershell.exe @argsList
+if ($LASTEXITCODE -ne 0) {
+    throw "Canonical publish failed with exit code $LASTEXITCODE"
 }

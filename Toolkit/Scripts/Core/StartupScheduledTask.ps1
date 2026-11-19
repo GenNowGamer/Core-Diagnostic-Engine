@@ -361,7 +361,7 @@ function Get-StartupScheduledTaskDisplayPath {
     if ($ActionKind -eq 'Com' -or -not [string]::IsNullOrWhiteSpace($ClassId)) {
         $idPart = if (-not [string]::IsNullOrWhiteSpace($ClassId)) { " $ClassId" } else { '' }
         if (-not [string]::IsNullOrWhiteSpace($ComServerPath)) {
-            return "$folder$TaskName (COM$idPart → $ComServerPath)"
+            return "$folder$TaskName (COM$idPart -> $ComServerPath)"
         }
         return "$folder$TaskName (COM$idPart)"
     }

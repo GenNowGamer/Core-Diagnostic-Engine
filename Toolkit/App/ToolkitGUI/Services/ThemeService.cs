@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Media;
 
@@ -92,12 +93,42 @@ namespace ToolkitGUI.Services
             ["TextOnNeutralBrush"] = Color.FromRgb(0xE6, 0xED, 0xF5)
         };
 
+        private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+
         public static AppTheme CurrentTheme { get; private set; } = AppTheme.Light;
 
         public static event EventHandler<AppTheme>? ThemeChanged;
 
         private static string GetThemeConfigPath()
             => Path.Combine(ToolkitPaths.GetToolkitRoot(), "CDE", "Runtime", "theme.txt");
+
+        private static string? TryGetThemeConfigPath()
+        {
+            try
+            {
+                return GetThemeConfigPath();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string? GetFallbackThemeConfigPath()
+        {
+            try
+            {
+                var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (string.IsNullOrWhiteSpace(localAppData))
+                    return null;
+
+                return Path.Combine(localAppData, "CoreDiagnosticEngine", "theme.txt");
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
         public static void Initialize()
         {
@@ -109,17 +140,37 @@ namespace ToolkitGUI.Services
         {
             try
             {
-                var path = GetThemeConfigPath();
-                if (File.Exists(path))
-                {
-                    var text = File.ReadAllText(path).Trim();
-                    if (string.Equals(text, "Dark", StringComparison.OrdinalIgnoreCase))
-                        return AppTheme.Dark;
-                }
+                return LoadSavedTheme(TryGetThemeConfigPath() ?? string.Empty, GetFallbackThemeConfigPath());
             }
             catch
             {
                 // Fall back to Light theme if runtime config is unreadable.
+                return AppTheme.Light;
+            }
+        }
+
+        internal static AppTheme LoadSavedTheme(string primaryPath, string? fallbackPath)
+        {
+            if (!string.IsNullOrWhiteSpace(primaryPath) &&
+                File.Exists(primaryPath) &&
+                CanWriteExistingFile(primaryPath) &&
+                TryReadThemeFile(primaryPath, out var primaryTheme))
+            {
+                return primaryTheme;
+            }
+
+            if (!string.IsNullOrWhiteSpace(fallbackPath) &&
+                File.Exists(fallbackPath) &&
+                TryReadThemeFile(fallbackPath, out var fallbackTheme))
+            {
+                return fallbackTheme;
+            }
+
+            if (!string.IsNullOrWhiteSpace(primaryPath) &&
+                File.Exists(primaryPath) &&
+                TryReadThemeFile(primaryPath, out var readOnlyPrimaryTheme))
+            {
+                return readOnlyPrimaryTheme;
             }
 
             return AppTheme.Light;
@@ -135,15 +186,91 @@ namespace ToolkitGUI.Services
         {
             try
             {
-                var path = GetThemeConfigPath();
-                var dir = Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
-                File.WriteAllText(path, theme == AppTheme.Dark ? "Dark" : "Light");
+                SaveTheme(theme, TryGetThemeConfigPath() ?? string.Empty, GetFallbackThemeConfigPath());
             }
             catch
             {
                 // Best-effort persistence (e.g. read-only media).
+            }
+        }
+
+        internal static void SaveTheme(AppTheme theme, string primaryPath, string? fallbackPath)
+        {
+            if (TryWriteThemeFile(primaryPath, theme))
+                return;
+
+            TryWriteThemeFile(fallbackPath, theme);
+        }
+
+        private static bool TryParseTheme(string? raw, out AppTheme theme)
+        {
+            var trimmed = raw?.Trim();
+            if (string.Equals(trimmed, "Dark", StringComparison.OrdinalIgnoreCase))
+            {
+                theme = AppTheme.Dark;
+                return true;
+            }
+
+            if (string.Equals(trimmed, "Light", StringComparison.OrdinalIgnoreCase))
+            {
+                theme = AppTheme.Light;
+                return true;
+            }
+
+            theme = AppTheme.Light;
+            return false;
+        }
+
+        private static bool TryReadThemeFile(string path, out AppTheme theme)
+        {
+            theme = AppTheme.Light;
+            try
+            {
+                if (!File.Exists(path))
+                    return false;
+
+                var text = File.ReadAllText(path);
+                return TryParseTheme(text, out theme);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool CanWriteExistingFile(string path)
+        {
+            try
+            {
+                if ((File.GetAttributes(path) & FileAttributes.ReadOnly) != 0)
+                    return false;
+
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+                return stream.CanWrite;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryWriteThemeFile(string? path, AppTheme theme)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return false;
+
+            try
+            {
+                var dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+
+                File.WriteAllText(path, theme == AppTheme.Dark ? "Dark" : "Light", Utf8NoBom);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

@@ -167,7 +167,7 @@ function Load-OfflineUserHives {
 
     Write-Status -Message 'Loading offline user profile hives...' -Percent 62
 
-    $profiles = Get-ChildItem -Path $userRoot -Directory -ErrorAction SilentlyContinue
+    $profiles = @(Get-ChildItem -Path $userRoot -Directory -ErrorAction SilentlyContinue)
     $profileCount = [Math]::Max(1, $profiles.Count)
     $index = 0
 
@@ -180,7 +180,8 @@ function Load-OfflineUserHives {
         $regPath = "HKU\$hiveName"
         $pct = 62 + [int](8 * ($index / $profileCount))
 
-        if (Test-Path "$regPath") {
+        & reg.exe query "$regPath" 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
             Write-Status -Message "Profile hive already loaded: $regPath" -Percent $pct
             continue
         }
@@ -216,7 +217,7 @@ function Load-OfflineDrivers {
     $driverLoadTimeoutSec = 8
 
     $loaded = 0
-    $packages = Get-ChildItem -Path $driverStorePath -Directory -ErrorAction SilentlyContinue
+    $packages = @(Get-ChildItem -Path $driverStorePath -Directory -ErrorAction SilentlyContinue)
     $pkgCount = [Math]::Max(1, $packages.Count)
     $pkgIndex = 0
 
@@ -295,8 +296,17 @@ function Load-OfflineWindowsInstallation {
     }
 
     if ($loaded) {
-        Load-OfflineUserHives -WindowsRoot $Installation.Root
-        $driversLoaded = Load-OfflineDrivers -OfflineRoot $Installation.Root
+        try {
+            Load-OfflineUserHives -WindowsRoot $Installation.Root
+        } catch {
+            Write-Status -Message "Warning loading user hives: $($_.Exception.Message)" -Percent 70 -Warning
+        }
+        $driversLoaded = 0
+        try {
+            $driversLoaded = Load-OfflineDrivers -OfflineRoot $Installation.Root
+        } catch {
+            Write-Status -Message "Warning loading offline drivers: $($_.Exception.Message)" -Percent 94 -Warning
+        }
         Ensure-OfflineRuntimeDirectory -ToolkitRoot $ToolkitRoot | Out-Null
         $envLines = @(
             "OFFLINE_WINDOWS_ROOT=$($Installation.Root)",

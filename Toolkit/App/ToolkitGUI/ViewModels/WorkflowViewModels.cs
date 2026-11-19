@@ -642,7 +642,9 @@ namespace ToolkitGUI.ViewModels
                 }
 
                 item.StatusText = "Listing updates...";
-                var listScript = $"& '{scriptPath}' -ToolName OfflineUpdateUninstall -UpdateAction ListPackages -WindowsDir '{windowsDir}'";
+                var quotedScript = PowerShellArgumentHelper.QuoteForScriptParameter(scriptPath);
+                var quotedWinDir = PowerShellArgumentHelper.QuoteForScriptParameter(windowsDir);
+                var listScript = $"& {quotedScript} -ToolName OfflineUpdateUninstall -UpdateAction ListPackages -WindowsDir {quotedWinDir}";
                 var (json, err) = await PowerShellService.QueryAsync(listScript);
                 if (string.IsNullOrWhiteSpace(json) && !string.IsNullOrWhiteSpace(err))
                 {
@@ -753,7 +755,7 @@ namespace ToolkitGUI.ViewModels
             }
 
             var systemRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? string.Empty;
-            return systemRoot.StartsWith(@"X:\\", StringComparison.OrdinalIgnoreCase);
+            return systemRoot.StartsWith(@"X:\", StringComparison.OrdinalIgnoreCase);
         }
 
         public MalwareCleanupViewModel()
@@ -1264,7 +1266,7 @@ namespace ToolkitGUI.ViewModels
                 if (string.Equals(dialog.ScanMode, "CustomScan", StringComparison.OrdinalIgnoreCase)
                     && dialog.CustomTargetPaths.Count > 0)
                 {
-                    args += BuildNamedCliArguments("-ScanTarget", dialog.CustomTargetPaths);
+                    args += BuildCustomScanTargetCliArguments(dialog.CustomTargetPaths);
                     targetSummary = dialog.CustomTargetPaths.Count == 1
                         ? dialog.CustomTargetPaths[0]
                         : $"{dialog.CustomTargetPaths.Count} custom paths";
@@ -1391,6 +1393,27 @@ namespace ToolkitGUI.ViewModels
         private string? BuildToolParameters(string toolKey)
         {
             return $"-ToolName {toolKey}";
+        }
+
+        internal static string BuildCustomScanTargetCliArguments(IEnumerable<string> values)
+        {
+            var targets = values
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => v.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (targets.Count == 0)
+                return string.Empty;
+
+            if (targets.Count == 1)
+                return $" -ScanTarget {PowerShellArgumentHelper.QuotePathParameterForProcess(targets[0])}";
+
+            var targetsFile = Path.Combine(
+                TempFileCleanerViewModel.GetControlFileDirectory(),
+                $"cde_cst_targets_{Guid.NewGuid():N}.json");
+            File.WriteAllText(targetsFile, JsonSerializer.Serialize(targets));
+            return $" -ScanTargetsFile {PowerShellArgumentHelper.QuotePathParameterForProcess(targetsFile)}";
         }
 
         private static string BuildNamedCliArguments(string parameterName, IEnumerable<string> values)
@@ -2569,7 +2592,8 @@ namespace ToolkitGUI.ViewModels
             try
             {
                 var script = ToolkitPaths.GetWorkflowScriptPath("SmartAnalyzer.ps1");
-                var (output, error) = await PowerShellService.QueryAsync($"& '{script}' -Mode Query");
+                var quotedScript = PowerShellArgumentHelper.QuoteForScriptParameter(script);
+                var (output, error) = await PowerShellService.QueryAsync($"& {quotedScript} -Mode Query");
 
                 if (string.IsNullOrWhiteSpace(output))
                 {
@@ -3062,7 +3086,7 @@ namespace ToolkitGUI.ViewModels
             }
 
             var systemRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? string.Empty;
-            return systemRoot.StartsWith(@"X:\\", StringComparison.OrdinalIgnoreCase);
+            return systemRoot.StartsWith(@"X:\", StringComparison.OrdinalIgnoreCase);
         }
 
         public string ElapsedDisplay

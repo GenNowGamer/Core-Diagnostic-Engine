@@ -193,6 +193,9 @@ namespace ToolkitGUI.Views
                     return;
                 }
 
+                OfflineRuntimePaths.ClearOfflineProcessEnv();
+                OfflineRuntimePaths.ClearSessionFiles(ToolkitPaths.GetToolkitRoot());
+
                 var summary = string.IsNullOrWhiteSpace(result.Output)
                     ? "Offline hive unload command completed."
                     : result.Output.Trim();
@@ -283,9 +286,6 @@ function Invoke-HiveUnload {
 }
 
 $targets = [System.Collections.Generic.List[string]]::new()
-foreach ($base in @('HKLM\Offline_SOFTWARE','HKLM\Offline_SYSTEM','HKLM\Offline_SAM','HKLM\Offline_DEFAULT','HKLM\Offline_SECURITY','HKLM\Offline_COMPONENTS')) {
-    if (-not $targets.Contains($base)) { $targets.Add($base) }
-}
 
 foreach ($root in @(
     @{ Query = 'HKLM'; Prefix = 'HKEY_LOCAL_MACHINE\'; Short = 'HKLM\' },

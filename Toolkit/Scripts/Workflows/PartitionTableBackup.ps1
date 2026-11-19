@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 param(
     [int]$DiskNumber = -1,
     [string]$BackupRoot = '',
@@ -125,13 +125,28 @@ $workflow = Start-Workflow -WorkflowName 'PartitionTable_Backup' -ScriptBlock {
         })
     }
 
-    # Sector-level binary metadata backup (MBR LBA 0 + Primary GPT LBA 1..33)
+    # Sector-level binary metadata backup (MBR LBA 0 + Primary GPT LBA 1..33, aligned to logical sector size)
     $rawBinPath = Join-Path $resolvedBackupRoot "PartitionMetadataSectors_Disk${DiskNumber}_$timestamp.bin"
     try {
+        $sectorSize = 512
+        if (Get-Command Get-Disk -ErrorAction SilentlyContinue) {
+            try {
+                $dObj = Get-Disk -Number $DiskNumber -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($dObj -and $dObj.LogicalSectorSize -ge 512) {
+                    $sectorSize = [int]$dObj.LogicalSectorSize
+                }
+            } catch { }
+        }
+        $minBytes = 34 * 512
+        $alignedBytes = [int]([Math]::Ceiling($minBytes / [double]$sectorSize) * $sectorSize)
+        if ($alignedBytes -lt (6 * $sectorSize)) {
+            $alignedBytes = 6 * $sectorSize
+        }
+
         $devPath = "\\.\PhysicalDrive$DiskNumber"
         $fs = [System.IO.File]::Open($devPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
         try {
-            $buf = New-Object byte[] (34 * 512)
+            $buf = New-Object byte[] $alignedBytes
             $readBytes = $fs.Read($buf, 0, $buf.Length)
             if ($readBytes -gt 0) {
                 [System.IO.File]::WriteAllBytes($rawBinPath, $buf[0..($readBytes - 1)])

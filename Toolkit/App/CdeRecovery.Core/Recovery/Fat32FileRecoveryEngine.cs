@@ -36,6 +36,24 @@ namespace CdeRecovery.Core.Recovery
             uint rootCluster = BinaryPrimitives.ReadUInt32LittleEndian(vbr.AsSpan(0x2C, 4));
 
             if (bps < 512 || spc <= 0 || fatSizeSectors == 0 || rootCluster < 2)
+            {
+                // Fall back to FAT32 Backup Boot Sector at sector 6 (or partition.BackupBootSectorOffset)
+                long backupVbrOffset = partition.BackupBootSectorOffset > partition.PartitionStartOffset
+                    ? partition.BackupBootSectorOffset
+                    : partition.PartitionStartOffset + (6L * sectorSize);
+                if (backupVbrOffset + vbr.Length <= source.Length)
+                {
+                    await source.ReadAtAsync(backupVbrOffset, vbr, cancellationToken).ConfigureAwait(false);
+                    bps = BinaryPrimitives.ReadUInt16LittleEndian(vbr.AsSpan(0x0B, 2));
+                    spc = vbr[0x0D];
+                    reservedSectors = BinaryPrimitives.ReadUInt16LittleEndian(vbr.AsSpan(0x0E, 2));
+                    numFats = vbr[0x10];
+                    fatSizeSectors = BinaryPrimitives.ReadUInt32LittleEndian(vbr.AsSpan(0x24, 4));
+                    rootCluster = BinaryPrimitives.ReadUInt32LittleEndian(vbr.AsSpan(0x2C, 4));
+                }
+            }
+
+            if (bps < 512 || spc <= 0 || fatSizeSectors == 0 || rootCluster < 2)
                 throw new InvalidDataException("Invalid FAT32 BPB geometry; cannot scan directory tree.");
 
             int clusterSize = bps * spc;
@@ -256,12 +274,17 @@ namespace CdeRecovery.Core.Recovery
             try
             {
                 await source.ReadAtAsync(alignedOffset, sector, cancellationToken).ConfigureAwait(false);
-                uint entriesPerSector = (uint)(sectorSize / 4);
-                uint baseCluster = (uint)((alignedOffset - fatOffset) / 4);
-                for (uint i = 0; i < entriesPerSector; i++)
+                int entriesPerSector = (int)(sectorSize / 4);
+                for (int i = 0; i < entriesPerSector; i++)
                 {
-                    uint val = BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan((int)(i * 4), 4)) & 0x0FFFFFFFu;
-                    fatCache[baseCluster + i] = val;
+                    long entryFileOffset = alignedOffset + (i * 4L) - fatOffset;
+                    if (entryFileOffset < 0 || (entryFileOffset % 4) != 0)
+                        continue;
+                    long idx = entryFileOffset / 4;
+                    if (idx < 0 || idx > uint.MaxValue)
+                        continue;
+                    uint val = BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(i * 4, 4)) & 0x0FFFFFFFu;
+                    fatCache[(uint)idx] = val;
                 }
                 return fatCache.TryGetValue(cluster, out uint resolved) ? resolved : 0x0FFFFFFFu;
             }
@@ -337,7 +360,8 @@ namespace CdeRecovery.Core.Recovery
             {
                 int year = ((dosDate >> 9) & 0x7F) + 1980;
                 int month = Math.Clamp((dosDate >> 5) & 0x0F, 1, 12);
-                int day = Math.Clamp(dosDate & 0x1F, 1, 28);
+                int maxDay = DateTime.DaysInMonth(Math.Clamp(year, 1980, 2107), month);
+                int day = Math.Clamp(dosDate & 0x1F, 1, maxDay);
                 int hour = Math.Clamp((dosTime >> 11) & 0x1F, 0, 23);
                 int min = Math.Clamp((dosTime >> 5) & 0x3F, 0, 59);
                 int sec = Math.Clamp((dosTime & 0x1F) * 2, 0, 59);

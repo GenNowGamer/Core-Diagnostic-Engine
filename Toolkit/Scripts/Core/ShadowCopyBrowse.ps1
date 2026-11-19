@@ -75,6 +75,30 @@ function Get-DriveLetterFromOriginalVolume {
         return $Matches[1].ToUpperInvariant()
     }
 
+    if ($trimmed -match '^[A-Za-z]:\\?$') {
+        return $trimmed.Substring(0, 2).ToUpperInvariant()
+    }
+
+    # Resolve volume GUID path (e.g. \\?\Volume{GUID}\) via Win32_Volume
+    try {
+        if (-not $script:CimVolumeDriveMap) {
+            $script:CimVolumeDriveMap = @{}
+            $vols = @(Get-CimInstance Win32_Volume -ErrorAction SilentlyContinue)
+            foreach ($v in $vols) {
+                $devId = [string]$v.DeviceID
+                $dl = [string]$v.DriveLetter
+                if (-not [string]::IsNullOrWhiteSpace($devId) -and -not [string]::IsNullOrWhiteSpace($dl)) {
+                    $normId = $devId.Trim().TrimEnd('\').ToUpperInvariant()
+                    $script:CimVolumeDriveMap[$normId] = (Normalize-DriveQualifier -Drive $dl)
+                }
+            }
+        }
+        $lookupKey = $trimmed.TrimEnd('\').ToUpperInvariant()
+        if ($script:CimVolumeDriveMap.ContainsKey($lookupKey)) {
+            return $script:CimVolumeDriveMap[$lookupKey]
+        }
+    } catch { }
+
     return $null
 }
 
@@ -199,29 +223,32 @@ function Get-ShadowCopiesForDrive {
     $normalizedDrive = Normalize-DriveQualifier -Drive $Drive
     if (-not $normalizedDrive) {
         return @($all | ForEach-Object {
+            $volName = [string]$_.VolumeName
+            $resolvedDrive = Get-DriveLetterFromOriginalVolume -OriginalVolume $volName
             [PSCustomObject]@{
                 ID           = [string]$_.ID
                 InstallDate  = (Get-ShadowCopyInstallDateText $_.InstallDate)
                 DeviceObject = [string]$_.DeviceObject
-                VolumeName   = [string]$_.VolumeName
-                Drive        = $normalizedDrive
+                VolumeName   = $volName
+                Drive        = if ($resolvedDrive) { $resolvedDrive } else { '' }
                 Source       = 'cim'
             }
         })
     }
 
-    return @($all | Where-Object {
-        $vol = [string]$_.VolumeName
-        $vol -match [regex]::Escape($normalizedDrive) -or $vol -match [regex]::Escape($normalizedDrive.TrimEnd(':'))
-    } | ForEach-Object {
+    return @($all | ForEach-Object {
+        $volName = [string]$_.VolumeName
+        $resolvedDrive = Get-DriveLetterFromOriginalVolume -OriginalVolume $volName
         [PSCustomObject]@{
             ID           = [string]$_.ID
             InstallDate  = (Get-ShadowCopyInstallDateText $_.InstallDate)
             DeviceObject = [string]$_.DeviceObject
-            VolumeName   = [string]$_.VolumeName
-            Drive        = $normalizedDrive
+            VolumeName   = $volName
+            Drive        = if ($resolvedDrive) { $resolvedDrive } else { '' }
             Source       = 'cim'
         }
+    } | Where-Object {
+        $_.Drive -ieq $normalizedDrive
     })
 }
 

@@ -81,16 +81,21 @@ function Get-RobocopySummaryCounts {
     param([string]$Output)
 
     $result = [PSCustomObject]@{
-        FilesTotal  = -1
-        FilesCopied = -1
+        FilesTotal   = -1
+        FilesCopied  = -1
+        FilesSkipped = -1
     }
 
     if ([string]::IsNullOrWhiteSpace($Output)) {
         return $result
     }
 
-    if ($Output -match 'Files\s*:\s*(\d+)\s+(\d+)') {
-        $result.FilesTotal = [int]$Matches[1]
+    if ($Output -match 'Files\s*:\s*(\d+)\s+(\d+)\s+(\d+)') {
+        $result.FilesTotal   = [int]$Matches[1]
+        $result.FilesCopied  = [int]$Matches[2]
+        $result.FilesSkipped = [int]$Matches[3]
+    } elseif ($Output -match 'Files\s*:\s*(\d+)\s+(\d+)') {
+        $result.FilesTotal  = [int]$Matches[1]
         $result.FilesCopied = [int]$Matches[2]
     }
 
@@ -134,6 +139,7 @@ function Invoke-RobocopyBackup {
 
         $roboSource = Format-RobocopyPathArgument -Path $BackupSource
         $roboDest = Format-RobocopyPathArgument -Path $dest
+        $xdSystemVolumeInfo = Format-RobocopyPathArgument -Path 'System Volume Information'
 
         # Use data/timestamps/attributes only to avoid requiring backup audit privileges.
         $roboArgs = @(
@@ -147,7 +153,7 @@ function Invoke-RobocopyBackup {
             '/MT:8',
             '/XD',
             '$RECYCLE.BIN',
-            'System Volume Information',
+            $xdSystemVolumeInfo,
             '/NP'
         )
         if ($Mirror) {
@@ -162,7 +168,7 @@ function Invoke-RobocopyBackup {
                 '/MT:8',
                 '/XD',
                 '$RECYCLE.BIN',
-                'System Volume Information',
+                $xdSystemVolumeInfo,
                 '/NP'
             )
         }
@@ -185,7 +191,7 @@ function Invoke-RobocopyBackup {
         }
         $counts = Get-RobocopySummaryCounts -Output $output
         $success = $proc.ExitCode -le 7
-        $noFilesCopied = (-not $DryRun) -and $counts.FilesCopied -eq 0 -and $counts.FilesTotal -gt 0
+        $noFilesCopied = (-not $DryRun) -and $counts.FilesCopied -eq 0 -and $counts.FilesSkipped -le 0 -and $counts.FilesTotal -gt 0
         if ($noFilesCopied) {
             $success = $false
             Write-Log 'Robocopy finished with exit code 0 but copied no files. A destination path with spaces may have been split into a folder plus file filter.' -Level Warning

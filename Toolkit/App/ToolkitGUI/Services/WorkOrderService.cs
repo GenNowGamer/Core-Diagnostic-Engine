@@ -297,7 +297,7 @@ namespace ToolkitGUI.Services
                     ["KeyFindings"] = new JsonArray(),
                     ["ReportJson"] = string.Empty,
                     ["ReportHtml"] = string.Empty,
-                    ["Environment"] = Directory.Exists(@"X:\Windows\System32") ? "WinPE" : "Windows",
+                    ["Environment"] = ToolkitGUI.ViewModels.PowerShellService.IsWinPeEnvironment() ? "WinPE" : "Windows",
                     ["EventKind"] = eventKind,
                     ["DisplayLabel"] = displayLabel,
                     ["SourceArtifact"] = sourceArtifact ?? string.Empty
@@ -381,7 +381,7 @@ namespace ToolkitGUI.Services
                 ["ClientName"] = form.ClientName ?? string.Empty,
                 ["ClientPhone"] = form.ClientPhone ?? string.Empty,
                 ["TechnicianNotes"] = form.TechnicianNotes ?? string.Empty,
-                ["EnvironmentHistory"] = new JsonArray(Environment.GetEnvironmentVariable("CDE_WINPE") == "1" ? "WinPE" : "Windows"),
+                ["EnvironmentHistory"] = new JsonArray(ToolkitGUI.ViewModels.PowerShellService.IsWinPeEnvironment() ? "WinPE" : "Windows"),
                 ["Runs"] = new JsonArray()
             };
 
@@ -407,10 +407,12 @@ namespace ToolkitGUI.Services
             var root = JsonNode.Parse(File.ReadAllText(active.WorkOrderPath)) as JsonObject
                 ?? throw new InvalidOperationException("Work order file is invalid.");
 
-            // Export PDF first. On failure the on-disk Status stays Open and the pointer remains.
-            var pdfPath = ExportFinalReport(root, active.CaseId);
+            var closedAt = DateTime.Now.ToString("o");
             root["Status"] = "Closed";
-            root["ClosedAt"] = DateTime.Now.ToString("o");
+            root["ClosedAt"] = closedAt;
+
+            // Export PDF with Closed status and ClosedAt populated. On failure the on-disk file stays Open and the pointer remains.
+            var pdfPath = ExportFinalReport(root, active.CaseId);
             root["FinalReportPdf"] = pdfPath;
             File.WriteAllText(active.WorkOrderPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 

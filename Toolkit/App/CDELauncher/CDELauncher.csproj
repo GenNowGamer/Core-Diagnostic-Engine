@@ -8,6 +8,7 @@
     <ApplicationIcon>Assets\cde_brand.ico</ApplicationIcon>
     <AssemblyName>CDE</AssemblyName>
     <RootNamespace>CDELauncher</RootNamespace>
+    <Version>1.0.14</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

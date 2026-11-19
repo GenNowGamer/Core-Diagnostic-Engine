@@ -55,10 +55,13 @@ function Get-JsonArrayInput {
         [string]$FilePath
     )
 
-    $raw = if (-not [string]::IsNullOrWhiteSpace($FilePath) -and (Test-Path -LiteralPath $FilePath)) {
-        Get-Content -LiteralPath $FilePath -Raw
+    if (-not [string]::IsNullOrWhiteSpace($FilePath)) {
+        if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
+            throw "Input JSON file not found: $FilePath"
+        }
+        $raw = Get-Content -LiteralPath $FilePath -Raw
     } else {
-        $Json
+        $raw = $Json
     }
 
     if ([string]::IsNullOrWhiteSpace($raw)) {
@@ -68,6 +71,11 @@ function Get-JsonArrayInput {
     try {
         $parsed = $raw | ConvertFrom-Json
     } catch {
+        $source = if (-not [string]::IsNullOrWhiteSpace($FilePath)) { $FilePath } else { 'inline JSON' }
+        throw "Failed to parse JSON input from ${source}: $($_.Exception.Message)"
+    }
+
+    if ($null -eq $parsed) {
         return @()
     }
 
@@ -85,16 +93,23 @@ function Normalize-PathString {
         return ''
     }
 
-    $candidate = [string]$Path
+    $candidate = ([string]$Path).Trim()
     if ($candidate -match '^[A-Za-z]:$') {
-        $candidate = "${candidate}\\"
+        $candidate = "${candidate}\"
     }
 
     try {
-        return [System.IO.Path]::GetFullPath($candidate).TrimEnd('\\')
+        $normalized = [System.IO.Path]::GetFullPath($candidate).TrimEnd('\', '/')
     } catch {
-        return $candidate.Trim().TrimEnd('\\')
+        $normalized = $candidate.TrimEnd('\', '/')
     }
+
+    # Preserve the trailing separator on bare drive roots so Test-Path / Join-Path stay rooted (C:\ not C:).
+    if ($normalized -match '^[A-Za-z]:$') {
+        return "${normalized}\"
+    }
+
+    return $normalized
 }
 
 function Get-DriveLetterFromPath {
@@ -170,13 +185,16 @@ function Add-ScanLocation {
 
         $normalized = Normalize-PathString -Path $Path
         if ([string]::IsNullOrWhiteSpace($normalized)) { return }
-        if (-not (Test-Path -LiteralPath $normalized)) { return }
+
+        $rootInfo = [System.IO.DirectoryInfo]::new($normalized)
+        if (-not $rootInfo.Exists) { return }
+        if (($rootInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return }
         if (-not $Seen.Add($normalized)) { return }
 
         $fileCount = 0
         $bytes = 0L
         $stack = [System.Collections.Generic.Stack[System.IO.DirectoryInfo]]::new()
-        $stack.Push([System.IO.DirectoryInfo]::new($normalized))
+        $stack.Push($rootInfo)
         while ($stack.Count -gt 0) {
             $dir = $stack.Pop()
             try {
@@ -233,12 +251,26 @@ function Invoke-Scan {
                     @{ Rel = 'AppData\Local\Microsoft\Office\15.0\OfficeServiceCache'; Cat = 'Microsoft Office Service Cache' },
                     @{ Rel = 'AppData\Local\Google\Chrome\User Data\Default\Cache'; Cat = 'Chrome Cache' },
                     @{ Rel = 'AppData\Local\Google\Chrome\User Data\Default\GPUCache'; Cat = 'User Chrome GPU Cache' },
-                    @{ Rel = 'AppData\Roaming\Mozilla\Firefox\Profiles'; Cat = 'Firefox Cache' }
+                    @{ Rel = 'AppData\Local\Microsoft\Edge\User Data\Default\Cache'; Cat = 'Edge Cache' },
+                    @{ Rel = 'AppData\Local\Microsoft\Edge\User Data\Default\GPUCache'; Cat = 'Edge GPU Cache' }
                 )
 
                 foreach ($target in $targets) {
                     Add-ScanLocation -Locations $locations -Seen $seenPaths -Path (Join-Path $user.FullName $target.Rel) -Category $target.Cat -UserAccount $user.Name -ProfileGroup $user.Name -DiscoverySource 'DynamicProfile'
                 }
+
+                # Firefox cache lives under AppData\Local\Mozilla\Firefox\Profiles\<profile>\cache2 (never Roaming\Profiles).
+                try {
+                    $ffProfilesRoot = Join-Path $user.FullName 'AppData\Local\Mozilla\Firefox\Profiles'
+                    $ffRootInfo = [System.IO.DirectoryInfo]::new($ffProfilesRoot)
+                    if ($ffRootInfo.Exists -and (($ffRootInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0)) {
+                        foreach ($profileDir in $ffRootInfo.EnumerateDirectories()) {
+                            if (($profileDir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+                            $ffCachePath = Join-Path $profileDir.FullName 'cache2'
+                            Add-ScanLocation -Locations $locations -Seen $seenPaths -Path $ffCachePath -Category 'Firefox Cache' -UserAccount $user.Name -ProfileGroup $user.Name -DiscoverySource 'DynamicProfile'
+                        }
+                    }
+                } catch {}
             }
         }
 
@@ -252,34 +284,39 @@ function Invoke-Scan {
         Add-ScanLocation -Locations $locations -Seen $seenPaths -Path (Join-Path $root '$Recycle.Bin') -Category 'Recycle Bin' -UserAccount 'SYSTEM' -ProfileGroup 'Other Directories' -DiscoverySource 'DynamicDriveRoot'
     }
 
-    $locations | ConvertTo-Json -Depth 4
+    ConvertTo-Json -InputObject @($locations) -Depth 4
 }
 
-function Test-IsUnavailableForDeletionException {
+function Get-RemovalFailureCategory {
     param([System.Management.Automation.ErrorRecord]$ErrorRecord)
 
-    $message = [string]$ErrorRecord.Exception.Message
-    if ($message -match 'being used by another process') { return $true }
-    if ($message -match 'cannot access the file.*because it is being used') { return $true }
-    if ($message -match 'Access to the path .* is denied\.?') { return $true }
-
     $exception = $ErrorRecord.Exception
-    if ($exception -is [System.UnauthorizedAccessException]) { return $true }
-    if ($exception -is [System.IO.IOException] -and $message -match 'is denied') { return $true }
-
+    $message = [string]$exception.Message
     $inner = $exception.InnerException
-    if ($null -ne $inner) {
-        $innerMessage = [string]$inner.Message
-        if ($innerMessage -match 'being used by another process') { return $true }
-        if ($innerMessage -match 'cannot access the file.*because it is being used') { return $true }
-        if ($innerMessage -match 'Access to the path .* is denied\.?') { return $true }
-        if ($inner -is [System.UnauthorizedAccessException]) { return $true }
+    $innerMessage = if ($null -ne $inner) { [string]$inner.Message } else { '' }
+    $win32 = $exception.HResult -band 0xFFFF
+    $innerWin32 = if ($null -ne $inner) { $inner.HResult -band 0xFFFF } else { 0 }
+
+    if ($message -match 'being used by another process' -or
+        $message -match 'cannot access the file.*because it is being used' -or
+        $innerMessage -match 'being used by another process' -or
+        $innerMessage -match 'cannot access the file.*because it is being used' -or
+        $win32 -in @(0x0020, 0x0021) -or
+        $innerWin32 -in @(0x0020, 0x0021)) {
+        return 'InUse'
     }
 
-    $win32 = $exception.HResult -band 0xFFFF
-    if ($win32 -in @(0x0020, 0x0021, 0x0005)) { return $true }
+    if ($exception -is [System.UnauthorizedAccessException] -or
+        $inner -is [System.UnauthorizedAccessException] -or
+        $message -match 'Access to the path .* is denied\.?' -or
+        $innerMessage -match 'Access to the path .* is denied\.?' -or
+        ($exception -is [System.IO.IOException] -and $message -match 'is denied') -or
+        $win32 -eq 0x0005 -or
+        $innerWin32 -eq 0x0005) {
+        return 'AccessDenied'
+    }
 
-    return $false
+    return 'Failed'
 }
 
 function Register-RemovalFailure {
@@ -287,20 +324,81 @@ function Register-RemovalFailure {
         [string]$ItemPath,
         [System.Management.Automation.ErrorRecord]$ErrorRecord,
         [ref]$FailedCount,
-        [ref]$SkippedInUseCount
+        [ref]$SkippedInUseCount,
+        [ref]$SkippedAccessDeniedCount
     )
 
-    if (Test-IsUnavailableForDeletionException -ErrorRecord $ErrorRecord) {
-        $SkippedInUseCount.Value++
-        return
+    switch (Get-RemovalFailureCategory -ErrorRecord $ErrorRecord) {
+        'InUse' {
+            $SkippedInUseCount.Value++
+        }
+        'AccessDenied' {
+            $SkippedAccessDeniedCount.Value++
+        }
+        default {
+            $FailedCount.Value++
+            Write-Log "[WARN] Failed to remove ${ItemPath}: $($ErrorRecord.Exception.Message)" -Level Warning
+        }
+    }
+}
+
+function Get-SafeCleanupEntries {
+    param([Parameter(Mandatory)][string]$RootPath)
+
+    $files = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+    $dirs = [System.Collections.Generic.List[System.IO.DirectoryInfo]]::new()
+    $accessDeniedCount = 0
+
+    $rootInfo = [System.IO.DirectoryInfo]::new($RootPath)
+    if (-not $rootInfo.Exists -or (($rootInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+        return [PSCustomObject]@{
+            Files             = $files
+            Directories       = $dirs
+            AccessDeniedCount = $accessDeniedCount
+        }
     }
 
-    $FailedCount.Value++
-    Write-Log "[WARN] Failed to remove ${ItemPath}: $($ErrorRecord.Exception.Message)" -Level Warning
+    $stack = [System.Collections.Generic.Stack[System.IO.DirectoryInfo]]::new()
+    $stack.Push($rootInfo)
+
+    while ($stack.Count -gt 0) {
+        $current = $stack.Pop()
+        try {
+            if (($current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                continue
+            }
+
+            foreach ($file in $current.EnumerateFiles()) {
+                $files.Add($file)
+            }
+
+            foreach ($subDir in $current.EnumerateDirectories()) {
+                if (($subDir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    continue
+                }
+                $dirs.Add($subDir)
+                $stack.Push($subDir)
+            }
+        } catch [System.UnauthorizedAccessException] {
+            $accessDeniedCount++
+        } catch {
+            Write-Log "[WARN] Skipping unreadable directory $($current.FullName): $($_.Exception.Message)" -Level Warning
+        }
+    }
+
+    return [PSCustomObject]@{
+        Files             = $files
+        Directories       = $dirs
+        AccessDeniedCount = $accessDeniedCount
+    }
 }
 
 function Invoke-Clean {
     $selected = Get-JsonArrayInput -Json $PathsJson -FilePath $PathsFile
+    if (@($selected).Count -eq 0) {
+        throw 'No target paths were provided to clean.'
+    }
+
     $whitelistRaw = Get-JsonArrayInput -Json $WhitelistJson -FilePath $WhitelistFile
     $allowed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
@@ -311,9 +409,14 @@ function Invoke-Clean {
         }
     }
 
+    if ($allowed.Count -eq 0) {
+        throw 'No whitelisted paths were provided for cleanup validation.'
+    }
+
     $totalDeleted = 0
     $totalFailed = 0
     $totalSkippedInUse = 0
+    $totalSkippedAccessDenied = 0
     $totalBytes = 0L
     $totalScannedBytes = 0L
     $skippedProtected = 0
@@ -326,11 +429,11 @@ function Invoke-Clean {
         if ([string]::IsNullOrWhiteSpace($path)) {
             $skippedInvalid++
             $folderResults.Add([PSCustomObject]@{
-                Path = [string]$entry
-                Status = 'SkippedInvalid'
+                Path         = [string]$entry
+                Status       = 'SkippedInvalid'
                 DeletedItems = 0
-                FreedBytes = 0
-                Message = 'Skipped invalid path.'
+                FreedBytes   = 0
+                Message      = 'Skipped invalid path.'
             })
             continue
         }
@@ -339,11 +442,11 @@ function Invoke-Clean {
             Write-Log "[WARN] Skipping non-whitelisted path: $path" -Level Warning
             $skippedInvalid++
             $folderResults.Add([PSCustomObject]@{
-                Path = $path
-                Status = 'SkippedInvalid'
+                Path         = $path
+                Status       = 'SkippedInvalid'
                 DeletedItems = 0
-                FreedBytes = 0
-                Message = 'Skipped non-whitelisted path.'
+                FreedBytes   = 0
+                Message      = 'Skipped non-whitelisted path.'
             })
             continue
         }
@@ -353,11 +456,11 @@ function Invoke-Clean {
             Write-Log "[WARN] Skipping protected path ${path}: $($protection.Reason)" -Level Warning
             $skippedProtected++
             $folderResults.Add([PSCustomObject]@{
-                Path = $path
-                Status = 'SkippedProtected'
+                Path         = $path
+                Status       = 'SkippedProtected'
                 DeletedItems = 0
-                FreedBytes = 0
-                Message = "Skipped protected path: $($protection.Reason)"
+                FreedBytes   = 0
+                Message      = "Skipped protected path: $($protection.Reason)"
             })
             continue
         }
@@ -365,108 +468,146 @@ function Invoke-Clean {
         if (-not (Test-Path -LiteralPath $path)) {
             $skippedMissing++
             $folderResults.Add([PSCustomObject]@{
-                Path = $path
-                Status = 'SkippedMissing'
+                Path         = $path
+                Status       = 'SkippedMissing'
                 DeletedItems = 0
-                FreedBytes = 0
-                Message = 'Skipped missing path.'
+                FreedBytes   = 0
+                Message      = 'Skipped missing path.'
+            })
+            continue
+        }
+
+        $rootDirInfo = [System.IO.DirectoryInfo]::new($path)
+        if (-not $rootDirInfo.Exists) {
+            $skippedMissing++
+            $folderResults.Add([PSCustomObject]@{
+                Path         = $path
+                Status       = 'SkippedMissing'
+                DeletedItems = 0
+                FreedBytes   = 0
+                Message      = 'Skipped missing directory.'
+            })
+            continue
+        }
+
+        if (($rootDirInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-Log "[WARN] Skipping reparse point / junction ${path}" -Level Warning
+            $skippedProtected++
+            $folderResults.Add([PSCustomObject]@{
+                Path         = $path
+                Status       = 'SkippedProtected'
+                DeletedItems = 0
+                FreedBytes   = 0
+                Message      = 'Skipped reparse point / junction for safety.'
             })
             continue
         }
 
         try {
-            $fileItems = @(Get-ChildItem -LiteralPath $path -File -Recurse -Force -ErrorAction SilentlyContinue)
-            $dirItems  = @(Get-ChildItem -LiteralPath $path -Directory -Recurse -Force -ErrorAction SilentlyContinue)
-
-            $bytesRaw = ($fileItems | Measure-Object Length -Sum -ErrorAction SilentlyContinue).Sum
-            $scannedBytes = if ($null -eq $bytesRaw) { 0L } else { [long]$bytesRaw }
+            $entries = Get-SafeCleanupEntries -RootPath $path
+            $scannedBytes = 0L
+            foreach ($file in $entries.Files) {
+                try { $scannedBytes += [long]$file.Length } catch {}
+            }
 
             $removedCount = 0
             $failedCount = 0
             $skippedInUseCount = 0
+            $skippedAccessDeniedCount = [int]$entries.AccessDeniedCount
             $freedBytes = 0L
-            foreach ($item in ($fileItems | Sort-Object FullName -Descending)) {
+
+            foreach ($file in ($entries.Files | Sort-Object FullName -Descending)) {
                 try {
-                    $fileLength = [long]$item.Length
-                    Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop
+                    $fileLength = [long]$file.Length
+                    if (($file.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+                        $file.Attributes = [System.IO.FileAttributes]::Normal
+                    }
+                    $file.Delete()
                     $removedCount++
                     $freedBytes += $fileLength
                 } catch {
-                    Register-RemovalFailure -ItemPath $item.FullName -ErrorRecord $_ `
-                        -FailedCount ([ref]$failedCount) -SkippedInUseCount ([ref]$skippedInUseCount)
+                    Register-RemovalFailure -ItemPath $file.FullName -ErrorRecord $_ `
+                        -FailedCount ([ref]$failedCount) `
+                        -SkippedInUseCount ([ref]$skippedInUseCount) `
+                        -SkippedAccessDeniedCount ([ref]$skippedAccessDeniedCount)
                 }
             }
 
-            foreach ($item in ($dirItems | Sort-Object FullName -Descending)) {
+            foreach ($dir in ($entries.Directories | Sort-Object { $_.FullName.Length } -Descending)) {
                 try {
-                    if (-not (Test-Path -LiteralPath $item.FullName)) { continue }
-                    $hasRemainingChildren = @([System.IO.Directory]::EnumerateFileSystemEntries($item.FullName)).Count -gt 0
-                    if ($hasRemainingChildren) { continue }
-                    Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop
+                    if (-not [System.IO.Directory]::Exists($dir.FullName)) { continue }
+                    $hasRemaining = $false
+                    foreach ($unused in [System.IO.Directory]::EnumerateFileSystemEntries($dir.FullName)) {
+                        $hasRemaining = $true
+                        break
+                    }
+                    if ($hasRemaining) { continue }
+                    if (($dir.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+                        $dir.Attributes = [System.IO.FileAttributes]::Directory
+                    }
+                    $dir.Delete($false)
                 } catch {
-                    Register-RemovalFailure -ItemPath $item.FullName -ErrorRecord $_ `
-                        -FailedCount ([ref]$failedCount) -SkippedInUseCount ([ref]$skippedInUseCount)
+                    Register-RemovalFailure -ItemPath $dir.FullName -ErrorRecord $_ `
+                        -FailedCount ([ref]$failedCount) `
+                        -SkippedInUseCount ([ref]$skippedInUseCount) `
+                        -SkippedAccessDeniedCount ([ref]$skippedAccessDeniedCount)
                 }
             }
-
-            try {
-                Get-ChildItem -LiteralPath $path -Force -ErrorAction SilentlyContinue |
-                    Sort-Object FullName -Descending |
-                    ForEach-Object {
-                        try {
-                            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-                        } catch {}
-                    }
-            } catch {}
 
             $totalBytes += $freedBytes
             $totalScannedBytes += $scannedBytes
             $totalDeleted += $removedCount
             $totalFailed += $failedCount
             $totalSkippedInUse += $skippedInUseCount
+            $totalSkippedAccessDenied += $skippedAccessDeniedCount
             $folderFreedText = Format-SizeHuman -Bytes $freedBytes
-            $folderStatus = if ($failedCount -eq 0) { 'Cleaned' } else { 'CleanedWithWarnings' }
+            $folderStatus = if ($failedCount -gt 0 -or $skippedAccessDeniedCount -gt 0) { 'CleanedWithWarnings' } else { 'Cleaned' }
             $folderMessage = "Freed $folderFreedText, Deleted $removedCount item(s)."
             if ($skippedInUseCount -gt 0) {
                 $folderMessage += " $skippedInUseCount skipped (in use)."
+            }
+            if ($skippedAccessDeniedCount -gt 0) {
+                $folderMessage += " $skippedAccessDeniedCount skipped (access denied)."
             }
             if ($failedCount -gt 0) {
                 $folderMessage += " $failedCount failed."
             }
             $folderResults.Add([PSCustomObject]@{
-                Path = $path
-                Status = $folderStatus
-                DeletedItems = $removedCount
-                FailedItems = $failedCount
-                SkippedInUse = $skippedInUseCount
-                FreedBytes = [long]$freedBytes
-                ScannedBytes = [long]$scannedBytes
-                Message = $folderMessage
+                Path                = $path
+                Status              = $folderStatus
+                DeletedItems        = $removedCount
+                FailedItems         = $failedCount
+                SkippedInUse        = $skippedInUseCount
+                SkippedAccessDenied = $skippedAccessDeniedCount
+                FreedBytes          = [long]$freedBytes
+                ScannedBytes        = [long]$scannedBytes
+                Message             = $folderMessage
             })
         } catch {
             Write-Log "[WARN] Failed to clean ${path}: $($_.Exception.Message)" -Level Warning
             $folderResults.Add([PSCustomObject]@{
-                Path = $path
-                Status = 'Warn'
+                Path         = $path
+                Status       = 'Warn'
                 DeletedItems = 0
-                FreedBytes = 0
-                Message = "Cleanup warning: $($_.Exception.Message)"
+                FreedBytes   = 0
+                Message      = "Cleanup warning: $($_.Exception.Message)"
             })
         }
     }
 
     [PSCustomObject]@{
-        DeletedItems = $totalDeleted
-        FailedItems = $totalFailed
-        SkippedInUse = $totalSkippedInUse
-        FreedBytes = [long]$totalBytes
-        ScannedBytes = [long]$totalScannedBytes
-        FreedMb = [math]::Round($totalBytes / 1MB, 1)
-        PathsCount = @($selected).Count
-        SkippedProtected = $skippedProtected
-        SkippedInvalid = $skippedInvalid
-        SkippedMissing = $skippedMissing
-        FolderResults = @($folderResults)
+        DeletedItems        = $totalDeleted
+        FailedItems         = $totalFailed
+        SkippedInUse        = $totalSkippedInUse
+        SkippedAccessDenied = $totalSkippedAccessDenied
+        FreedBytes          = [long]$totalBytes
+        ScannedBytes        = [long]$totalScannedBytes
+        FreedMb             = [math]::Round($totalBytes / 1MB, 1)
+        PathsCount          = @($selected).Count
+        SkippedProtected    = $skippedProtected
+        SkippedInvalid      = $skippedInvalid
+        SkippedMissing      = $skippedMissing
+        FolderResults       = @($folderResults)
     }
 }
 
@@ -481,15 +622,28 @@ try {
             $workflow = Start-Workflow -WorkflowName 'TempFileCleaner_Clean' -ScriptBlock {
                 param($r)
 
-                $summary = Invoke-Clean
+                try {
+                    $summary = Invoke-Clean
+                } catch {
+                    $msg = $_.Exception.Message
+                    $r.Errors.Add($msg)
+                    $r.Steps.Add([PSCustomObject]@{
+                        Name   = 'TempFileClean'
+                        Status = 'Fail'
+                        Output = "Cleanup failed: $msg"
+                    })
+                    return
+                }
+
                 $freedText = Format-SizeHuman -Bytes ([long]$summary.FreedBytes)
-                $topStatus = if ($summary.FailedItems -gt 0) { 'Warn' } else { 'Pass' }
+                $topStatus = if ($summary.FailedItems -gt 0 -or $summary.SkippedInvalid -gt 0 -or $summary.SkippedMissing -gt 0 -or $summary.PathsCount -eq 0) { 'Warn' } else { 'Pass' }
                 $failedSuffix = if ($summary.FailedItems -gt 0) { " Failed: $($summary.FailedItems)." } else { '' }
                 $inUseSuffix = if ($summary.SkippedInUse -gt 0) { " In-use: $($summary.SkippedInUse)." } else { '' }
+                $accessSuffix = if ($summary.SkippedAccessDenied -gt 0) { " Access denied: $($summary.SkippedAccessDenied)." } else { '' }
                 $r.Steps.Add([PSCustomObject]@{
-                    Name = 'TempFileClean'
+                    Name   = 'TempFileClean'
                     Status = $topStatus
-                    Output = "Cleaned $($summary.DeletedItems) items and freed ~$freedText across $($summary.PathsCount) selected location(s). Skipped: protected=$($summary.SkippedProtected), invalid=$($summary.SkippedInvalid), missing=$($summary.SkippedMissing).$inUseSuffix$failedSuffix"
+                    Output = "Cleaned $($summary.DeletedItems) items and freed ~$freedText across $($summary.PathsCount) selected location(s). Skipped: protected=$($summary.SkippedProtected), invalid=$($summary.SkippedInvalid), missing=$($summary.SkippedMissing).$inUseSuffix$accessSuffix$failedSuffix"
                 })
 
                 foreach ($folder in @($summary.FolderResults)) {
@@ -503,7 +657,7 @@ try {
                     }
 
                     $r.Steps.Add([PSCustomObject]@{
-                        Name = 'Folder Cleanup'
+                        Name   = 'Folder Cleanup'
                         Status = $stepStatus
                         Output = [string]$folder.Message
                         Detail = [string]$folder.Path
@@ -511,8 +665,12 @@ try {
                 }
             }
 
+            $null = Set-WorkflowOverallHealth -WorkflowResult $workflow
             $workflow | ConvertTo-Json -Depth 10
             Generate-Report -WorkflowResult $workflow | Out-Null
+            if ($workflow.Status -eq 'Failed') {
+                exit 1
+            }
         }
         default {
             throw "Unsupported action: $Action"

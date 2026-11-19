@@ -591,12 +591,15 @@ function Invoke-ProcessCstCustomScan {
         }
     }
 
+    $global:LASTEXITCODE = 0
     $output = (& $cstScript -Operation Scan -Mode CustomScan -Target $target -EmitJson -MaxMinutes 3 2>&1 | Out-String)
+    $exitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
+    $json = Get-CstLastJsonObjectFromText -Text $output
     return [PSCustomObject]@{
         Available = $true
-        Success   = ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2)
+        Success   = (-not [string]::IsNullOrWhiteSpace($json)) -and ($exitCode -eq 0 -or $exitCode -eq 1 -or $exitCode -eq 2)
         Output    = $output.Trim()
-        ExitCode  = $LASTEXITCODE
+        ExitCode  = $exitCode
     }
 }
 
@@ -695,8 +698,9 @@ function Invoke-PathCstScan {
     }
 
     $maxMinutes = if ($hasDirectory -or $resolved.Count -gt 1) { 8 } else { 3 }
+    $global:LASTEXITCODE = 0
     $raw = (& $cstScript -Operation Scan -Mode CustomScan -Target @($resolved.ToArray()) -EmitJson -MaxMinutes $maxMinutes 2>&1 | Out-String)
-    $exitCode = $LASTEXITCODE
+    $exitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
     $json = Get-CstLastJsonObjectFromText -Text $raw
     if ([string]::IsNullOrWhiteSpace($json)) {
         return [PSCustomObject]@{
@@ -743,8 +747,9 @@ function Invoke-StartupEntryCstScan {
         }
     }
 
+    $global:LASTEXITCODE = 0
     $raw = (& $cstScript -Operation Scan -StartupEntryMetadataPath $MetadataPath -EmitJson -MaxMinutes 3 2>&1 | Out-String)
-    $exitCode = $LASTEXITCODE
+    $exitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
     $json = Get-CstLastJsonObjectFromText -Text $raw
     if ([string]::IsNullOrWhiteSpace($json)) {
         return [PSCustomObject]@{

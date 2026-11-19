@@ -27,11 +27,12 @@ namespace ToolkitGUI.ViewModels
                 try
                 {
                     if (!drive.IsReady) continue;
-                    var root = drive.RootDirectory.FullName.TrimEnd('\\');
-                    if (root.Equals("X:", StringComparison.OrdinalIgnoreCase)) continue;
-                    var winDir = Path.Combine(root, "Windows");
+                    var rootPath = drive.RootDirectory.FullName;
+                    var rootDisplay = rootPath.TrimEnd('\\');
+                    if (rootDisplay.Equals("X:", StringComparison.OrdinalIgnoreCase)) continue;
+                    var winDir = Path.Combine(ToolkitPaths.NormalizeRootPath(rootPath), "Windows");
                     if (!Directory.Exists(winDir)) continue;
-                    results.Add(new WindowsInstallTarget(root, winDir));
+                    results.Add(new WindowsInstallTarget(rootDisplay, winDir));
                 }
                 catch { /* skip unreadable drives */ }
             }
@@ -89,7 +90,7 @@ namespace ToolkitGUI.ViewModels
             var offlineRoot = Environment.GetEnvironmentVariable("OFFLINE_WINDOWS_ROOT");
             if (!string.IsNullOrWhiteSpace(offlineRoot))
             {
-                var winDir = Path.Combine(offlineRoot.TrimEnd('\\'), "Windows");
+                var winDir = Path.Combine(ToolkitPaths.NormalizeRootPath(offlineRoot), "Windows");
                 if (Directory.Exists(winDir)) return winDir;
             }
 

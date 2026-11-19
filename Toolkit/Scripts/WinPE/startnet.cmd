@@ -16,30 +16,31 @@ cls
 :: Check all lettered drives for CDE signature in autorun.inf
 :: ---------------------------------------------------------------
 set CDE_ROOT=
+set FALLBACK_ACTIVE=0
 
-for %%d in (A B C D E F G H I J K L M N O P Q R S T U V W) do (
+for %%d in (A B C D E F G H I J K L M N O P Q R S T U V W Y Z) do (
     if exist "%%d:\autorun.inf" (
         findstr /C:"CDE Diagnostic Suite" "%%d:\autorun.inf" >nul 2>&1
         if not errorlevel 1 (
-            if "%CDE_ROOT%"=="" set CDE_ROOT=%%d:
+            if not defined CDE_ROOT set CDE_ROOT=%%d:
         )
     )
 )
 
 :: Fallback: search by ToolkitGUI presence
-if "%CDE_ROOT%"=="" (
-    for %%d in (A B C D E F G H I J K L M N O P Q R S T U V W) do (
+if not defined CDE_ROOT (
+    for %%d in (A B C D E F G H I J K L M N O P Q R S T U V W Y Z) do (
         if exist "%%d:\CDE\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.exe" (
-            if "%CDE_ROOT%"=="" set CDE_ROOT=%%d:
+            if not defined CDE_ROOT set CDE_ROOT=%%d:
         )
     )
 )
 
 :: Fallback: search by CDE.exe presence
-if "%CDE_ROOT%"=="" (
-    for %%d in (A B C D E F G H I J K L M N O P Q R S T U V W) do (
+if not defined CDE_ROOT (
+    for %%d in (A B C D E F G H I J K L M N O P Q R S T U V W Y Z) do (
         if exist "%%d:\CDE.exe" (
-            if "%CDE_ROOT%"=="" set CDE_ROOT=%%d:
+            if not defined CDE_ROOT set CDE_ROOT=%%d:
         )
     )
 )
@@ -52,8 +53,9 @@ if "%CDE_ROOT%"=="" (
 )
 
 :: Export TOOLKIT_ROOT for child processes and PowerShell scripts
-set TOOLKIT_ROOT=%CDE_ROOT%
-setx TOOLKIT_ROOT %CDE_ROOT% >nul 2>&1
+if "%CDE_ROOT:~-1%"=="\" set CDE_ROOT=%CDE_ROOT:~0,-1%
+set TOOLKIT_ROOT=%CDE_ROOT%\
+setx TOOLKIT_ROOT "%CDE_ROOT%\" >nul 2>&1
 
 :: ---------------------------------------------------------------
 :: AUTO-LAUNCH CDE TOOLKIT GUI
@@ -75,6 +77,7 @@ if not exist "%TOOLKITGUI_EXE%" (
     echo  %TOOLKITGUI_EXE%
     echo.
     echo  Falling back to text menu...
+    set FALLBACK_ACTIVE=1
     timeout /t 3 >nul
     goto FALLBACK_MENU
 )
@@ -176,6 +179,7 @@ echo Opening WinPE Command Prompt...
 echo Type EXIT to return to CDE Boot Menu.
 echo.
 cmd.exe /k "prompt CDE-PE $P$G && echo CDE WinPE Shell  -  TOOLKIT_ROOT=%TOOLKIT_ROOT% && echo."
+if "%FALLBACK_ACTIVE%"=="1" goto FALLBACK_MENU
 goto RECOVERY_MENU
 
 :: ---------------------------------------------------------------
@@ -186,7 +190,8 @@ cls
 echo Opening PowerShell (WinPE)...
 echo Type exit to return to CDE Boot Menu.
 echo.
-X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NoLogo -Command "& { Write-Host 'CDE WinPE PowerShell' -ForegroundColor Cyan; Write-Host \"TOOLKIT_ROOT = $env:TOOLKIT_ROOT\" -ForegroundColor Yellow; $host.UI.RawUI.WindowTitle = 'CDE WinPE PowerShell' }" ; X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NoLogo
+X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NoLogo -Command "& { Write-Host 'CDE WinPE PowerShell' -ForegroundColor Cyan; Write-Host \"TOOLKIT_ROOT = $env:TOOLKIT_ROOT\" -ForegroundColor Yellow; $host.UI.RawUI.WindowTitle = 'CDE WinPE PowerShell' }" & X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NoLogo
+if "%FALLBACK_ACTIVE%"=="1" goto FALLBACK_MENU
 goto RECOVERY_MENU
 
 :: ---------------------------------------------------------------
@@ -199,6 +204,7 @@ wpeinit
 echo.
 echo Network initialization complete.
 pause
+if "%FALLBACK_ACTIVE%"=="1" goto FALLBACK_MENU
 goto RECOVERY_MENU
 
 :: ---------------------------------------------------------------

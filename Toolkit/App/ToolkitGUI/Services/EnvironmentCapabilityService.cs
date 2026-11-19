@@ -23,12 +23,24 @@ namespace ToolkitGUI.Services
                 if (_matrix != null && string.Equals(_matrixPath, path, StringComparison.OrdinalIgnoreCase))
                     return _matrix;
 
-                if (!File.Exists(path))
-                    throw new FileNotFoundException("Environment capability matrix not found.", path);
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        if (JsonNode.Parse(File.ReadAllText(path)) is JsonObject root)
+                        {
+                            _matrix = root;
+                            _matrixPath = path;
+                            return _matrix;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Fall back to empty matrix so IsActionSupported defaults to supported instead of crashing the UI.
+                }
 
-                var root = JsonNode.Parse(File.ReadAllText(path)) as JsonObject
-                    ?? throw new InvalidOperationException("Capability matrix root must be an object.");
-                _matrix = root;
+                _matrix = new JsonObject();
                 _matrixPath = path;
                 return _matrix;
             }
@@ -113,22 +125,8 @@ namespace ToolkitGUI.Services
             return "supported";
         }
 
-        private static bool IsWinPe()
-        {
-            try
-            {
-                if (string.Equals(Environment.GetEnvironmentVariable("SystemDrive"), "X:", StringComparison.OrdinalIgnoreCase))
-                    return true;
-                if (Environment.GetEnvironmentVariable("WINPE") == "1")
-                    return true;
-            }
-            catch
-            {
-                // ignore
-            }
-
-            return false;
-        }
+        private static bool IsWinPe() =>
+            ToolkitGUI.ViewModels.PowerShellService.IsWinPeEnvironment();
 
         private static bool IsOfflineRegistryLoaded()
             => string.Equals(Environment.GetEnvironmentVariable("OFFLINE_REGISTRY_LOADED"), "1", StringComparison.Ordinal);

@@ -554,6 +554,8 @@ function Get-PeLinkerTimestamp {
             $signature = [System.Text.Encoding]::ASCII.GetString($signatureBytes)
             if ($signature -ne "PE`0`0") { return $null }
 
+            # COFF FileHeader: +0 Machine (uint16), +2 NumberOfSections (uint16), +4 TimeDateStamp (uint32)
+            $null = $reader.ReadBytes(4)
             $timestamp = $reader.ReadUInt32()
             if ($timestamp -eq 0) { return $null }
 

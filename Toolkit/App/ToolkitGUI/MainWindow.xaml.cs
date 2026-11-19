@@ -73,8 +73,7 @@ namespace ToolkitGUI
                 return;
             }
 
-            if (TryFindResource("BackgroundDarkBrush") is System.Windows.Media.Brush brush)
-                Background = brush;
+            SetResourceReference(BackgroundProperty, "BackgroundDarkBrush");
 
             if (Content is Border shellBorder)
                 shellBorder.CornerRadius = default;
@@ -288,7 +287,9 @@ namespace ToolkitGUI
                 var dlg = new UnmountOnCloseDialog { Owner = this };
                 if (dlg.ShowDialog() == true)
                 {
-                    await PowerShellService.ExecuteAsync(SettingsView.GetOfflineHiveCleanupScript());
+                    await PowerShellService.ExecuteAsync(SettingsView.GetOfflineHiveCleanupScript(throwOnFailure: false));
+                    OfflineRuntimePaths.ClearOfflineProcessEnv();
+                    OfflineRuntimePaths.ClearSessionFiles(ToolkitPaths.GetToolkitRoot());
                     _closingConfirmed = true;
                     Close();
                 }
@@ -387,7 +388,7 @@ namespace ToolkitGUI
             }
         }
         private static bool IsWinPe() =>
-            Directory.Exists(@"X:\Windows\System32");
+            ToolkitGUI.ViewModels.PowerShellService.IsWinPeEnvironment();
         private static bool IsOfflineOsLoaded() =>
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OFFLINE_WINDOWS_ROOT"));
     }

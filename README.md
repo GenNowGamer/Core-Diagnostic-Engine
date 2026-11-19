@@ -274,7 +274,7 @@ CDE is designed with clean architectural boundaries separating the user interfac
 │  StartupManager     │  HijackRepair.ps1        │  PostOpCleanup.ps1    │
 ├────────────────────────────────────────────────────────────────────────┤
 │                      STANDALONE DIAGNOSTIC HELPERS                     │
-│    CdeCpuSimdCli.exe (SIMD)    │    CdeGpuDiagCli.exe (DirectX/Vulkan) │
+│  CdeCpuSimdCli.exe │ CdeGpuDiagCli.exe │ CdeBehaviorCollector.exe      │
 ├────────────────────────────────────────────────────────────────────────┤
 │                         BARE-METAL UEFI ENGINE                         │
 │       rEFInd Boot Manager      │      Core Hardware Utility (CHU)      │
@@ -283,11 +283,11 @@ CDE is designed with clean architectural boundaries separating the user interfac
 ```
 
 * **WPF Frontend (`ToolkitGUI`):**  
-  Built on .NET 8 (C#) using standard Windows Presentation Foundation controls. Features full-screen responsive layouts, dark theme styling, live script progress streaming, and high-DPI scaling. Runs with `requireAdministrator` manifest elevation.
+  Built on .NET 8 (C#) using standard Windows Presentation Foundation controls. Features full-screen responsive layouts, persistent Light and Dark theme styling, live script progress streaming, and high-DPI scaling. Runs with `requireAdministrator` manifest elevation.
 * **PowerShell Orchestration Core (`Toolkit.Core.psm1`):**  
   Encapsulates common hardware detection, offline registry mounting, file system safety, and logging utilities. All scripts are strictly standardized to **UTF-8 with BOM** for flawless execution across Windows PowerShell 5.1 and modern PowerShell runtimes.
 * **Diagnostic CLI Companions:**  
-  Lightweight, self-contained .NET executables (`CdeCpuSimdCli.exe`, `CdeGpuDiagCli.exe`) companion-published alongside the GUI to execute low-level instruction sweeps and graphics driver API handshakes that cannot be performed reliably via standard scripting APIs.
+  Lightweight, self-contained .NET executables (`CdeCpuSimdCli.exe`, `CdeGpuDiagCli.exe`, `CdeBehaviorCollector.exe`) companion-published alongside the GUI to execute low-level instruction sweeps, graphics driver API handshakes, and modern ETW operational channel collection that cannot be performed reliably via standard scripting APIs.
 * **Pre-Boot UEFI Subsystem:**  
   Composed of rEFInd as the primary UEFI boot selector, chainloading into custom EDK2-built diagnostic payloads (`CoreDiag.efi`) or standard WinPE loaders.
 
@@ -303,7 +303,8 @@ Core-Diagnostic-Engine/
 │   │   ├── CdeRecovery.Core/       # Native C# partition, file system & imaging recovery engine
 │   │   ├── CdeCpuSimdCli/          # SIMD instruction diagnostic CLI helper
 │   │   ├── CdeGpuDiagCli/          # GPU functional diagnostic CLI helper
-│   │   ├── UserGuideGenerator/     # Markdown-to-PDF documentation generator
+│   │   ├── CdeBehaviorCollector/   # ETW & Security/Operational event behavior collector CLI
+│   │   ├── UserGuideGenerator/     # Markdown-to-PDF documentation & work-order report generator
 │   │   └── Publish-ToolkitGUI.ps1  # Canonical build and staging script
 │   ├── Config/
 │   │   ├── HealthCheckCatalog.json # Diagnostic checks, categories & presets
@@ -360,11 +361,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "Toolkit\App\Publish-Toolkit
 ```
 
 The build pipeline will:
-1. Restore dependencies and compile `ToolkitGUI.sln` in Release configuration.
-2. Publish `ToolkitGUI.exe` as a self-contained 64-bit binary into `Toolkit\App\ToolkitGUI\bin\Release\net8.0-windows\`.
-3. Compile and publish `CdeCpuSimdCli` and `CdeGpuDiagCli` into the deployment directory.
-4. Generate the canonical operator manual `HALP\CDE_User_Guide.pdf` from source markdown files using QuestPDF.
-5. Stage the primary launcher executable as `Toolkit\CDE.exe`.
+1. Restore dependencies and compile `ToolkitGUI.sln` in Release configuration (stamping the canonical version from `VERSION.json`).
+2. Publish `ToolkitGUI.exe` as a self-contained 64-bit binary into `Toolkit\App\ToolkitGUI\bin\Release\net8.0-windows\` and mirror it to `Toolkit\CDE\ToolkitGUI\bin\Release\net8.0-windows\`.
+3. Compile and publish `CdeCpuSimdCli`, `CdeGpuDiagCli`, `CdeBehaviorCollector`, and `UserGuideGenerator` into the deployment directory.
+4. Synchronize Core Security Tool (`Security\CST\`) scripts, rules, baselines, and SQLite runtime libraries from the CST source tree.
+5. Generate the canonical operator manual `HALP\CDE_User_Guide.pdf` (mirrored to `Toolkit\CDE_User_Guide.pdf`) from source markdown files using QuestPDF.
+6. Stage the primary launcher executable as `Toolkit\CDE.exe`.
 
 ---
 

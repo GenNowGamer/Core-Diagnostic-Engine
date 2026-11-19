@@ -1583,13 +1583,12 @@ namespace ToolkitGUI.Views
 
         private IEnumerable<FileItem> GetSelectedItems(Pane pane)
         {
-            // Prefer ListView highlight when present so confirm dialogs match what the user last clicked.
-            var listView = GetItemsListView(pane);
-            var highlighted = listView.SelectedItems.Cast<FileItem>().ToList();
-            if (highlighted.Count > 0)
-                return highlighted;
+            var checkedItems = GetAllItems(pane).Where(i => i.IsChecked).ToList();
+            if (checkedItems.Count > 0)
+                return checkedItems;
 
-            return GetAllItems(pane).Where(i => i.IsChecked);
+            var listView = GetItemsListView(pane);
+            return listView.SelectedItems.Cast<FileItem>().ToList();
         }
 
         private IEnumerable<FileItem> GetAllItems(Pane pane)

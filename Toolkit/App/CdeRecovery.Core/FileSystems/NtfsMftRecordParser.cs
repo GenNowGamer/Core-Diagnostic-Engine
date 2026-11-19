@@ -187,7 +187,7 @@ namespace CdeRecovery.Core.FileSystems
             long fnSize = 0;
 
             bool hasDataAttr = false;
-            bool isResidentData = true;
+            bool isResidentData = false;
             bool isCompressed = false;
             bool isEncrypted = false;
             int compressionUnitClusters = 16;
@@ -230,7 +230,10 @@ namespace CdeRecovery.Core.FileSystems
                     if (valLen >= 36 && pos + valOff + 36 <= working.Length)
                     {
                         uint fileAttrs = BinaryPrimitives.ReadUInt32LittleEndian(working.AsSpan(pos + valOff + 32, 4));
-                        if ((fileAttrs & 0x0800u) != 0) isCompressed = true;
+                        // Note: Do not set isCompressed from $STANDARD_INFORMATION FILE_ATTRIBUTE_COMPRESSED (0x0800),
+                        // because files in a compressed directory can carry that attribute even when their unnamed
+                        // $DATA stream is stored uncompressed (or resident). Actual LZNT1 stream compression is
+                        // governed by the $DATA attribute header flag (0x0001) and non-resident compression unit.
                         if ((fileAttrs & 0x4000u) != 0) isEncrypted = true;
                     }
                 }
@@ -295,7 +298,6 @@ namespace CdeRecovery.Core.FileSystems
                     ushort attrFlags = pos + 14 <= working.Length
                         ? BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 12, 2))
                         : (ushort)0;
-                    if ((attrFlags & 0x0001) != 0) isCompressed = true;
                     if ((attrFlags & 0x4000) != 0) isEncrypted = true;
 
                     if (nonResident == 0 && pos + 24 <= working.Length)
@@ -318,6 +320,11 @@ namespace CdeRecovery.Core.FileSystems
                         if (compUnitExp > 0 && compUnitExp < 16)
                         {
                             compressionUnitClusters = 1 << compUnitExp;
+                            if ((attrFlags & 0x0001) != 0) isCompressed = true;
+                        }
+                        else if ((attrFlags & 0x0001) != 0)
+                        {
+                            isCompressed = true;
                         }
                         dataAllocSize = BinaryPrimitives.ReadInt64LittleEndian(working.AsSpan(pos + 0x28, 8));
                         dataRealSize = BinaryPrimitives.ReadInt64LittleEndian(working.AsSpan(pos + 0x30, 8));
@@ -440,7 +447,9 @@ namespace CdeRecovery.Core.FileSystems
                     ushort attrFlags = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 12, 2));
                     if ((attrFlags & 0x0001) != 0) isCompressed = true;
 
-                    bestStartingVcn = BinaryPrimitives.ReadInt64LittleEndian(working.AsSpan(pos + 0x10, 8));
+                    long attrStartVcn = BinaryPrimitives.ReadInt64LittleEndian(working.AsSpan(pos + 0x10, 8));
+                    if (runs.Count == 0 || attrStartVcn < bestStartingVcn)
+                        bestStartingVcn = attrStartVcn;
                     ushort runOff = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 0x20, 2));
                     ushort compUnitExp = BinaryPrimitives.ReadUInt16LittleEndian(working.AsSpan(pos + 0x22, 2));
                     if (compUnitExp > 0 && compUnitExp < 16)

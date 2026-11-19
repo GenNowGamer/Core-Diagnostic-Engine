@@ -34,6 +34,10 @@ internal static class Program
         }
 
         cdeRoot = cdeRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (cdeRoot.Length == 2 && char.IsLetter(cdeRoot[0]) && cdeRoot[1] == ':')
+        {
+            cdeRoot += Path.DirectorySeparatorChar;
+        }
         var toolkitExe = Path.Combine(cdeRoot, "CDE", "ToolkitGUI", "bin", "Release", "net8.0-windows", "ToolkitGUI.exe");
 
         if (!File.Exists(toolkitExe))

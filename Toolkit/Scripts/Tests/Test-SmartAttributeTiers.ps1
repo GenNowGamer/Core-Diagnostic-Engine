@@ -12,8 +12,8 @@ if ($cs -notmatch 'IsInterconnectAta') {
     Write-Error 'Expected IsInterconnectAta in CdeSmartReader.cs'
     exit 1
 }
-if ($cs -notmatch 'id == 199 && a\.Raw >= 100') {
-    Write-Error 'Expected CRC elevation threshold for attr 199'
+if ($cs -notmatch 'else if \(IsInterconnectAta\(id\) && a\.Raw > 0\)\s*\{(?:\s*//[^\r\n]*)?\s*st = "Info";') {
+    Write-Error 'Expected interconnect attributes (188/199) to be tiered as Info'
     exit 1
 }
 if ($cs -notmatch 'mediaErrors >= 10') {

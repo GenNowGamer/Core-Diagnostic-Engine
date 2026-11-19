@@ -42,7 +42,8 @@ namespace CdeRecovery.Core.Recovery
                 progress?.Report($"Exporting ({index}/{filesToExport.Count}): {file.ReconstructedPath} ({file.DisplaySize})...");
 
                 string relPath = string.IsNullOrWhiteSpace(file.ReconstructedPath) ? file.FileName : file.ReconstructedPath;
-                string targetPath = ToLongPath(Path.Combine(fullDestRoot, relPath));
+                string sanitizedRelPath = SanitizeRelativeExportPath(relPath, file.FileName, file.MftRecordNumber);
+                string targetPath = ToLongPath(Path.Combine(fullDestRoot, sanitizedRelPath));
                 string? parentDir = Path.GetDirectoryName(targetPath);
                 if (!string.IsNullOrWhiteSpace(parentDir))
                     Directory.CreateDirectory(parentDir);
@@ -134,12 +135,13 @@ namespace CdeRecovery.Core.Recovery
                                         sha256.AppendData(chunkBuffer, 0, validDataLen);
                                         bytesWrittenForFile += validDataLen;
                                     }
-                                    catch
+                                    catch (Exception chunkEx) when (chunkEx is not OperationCanceledException)
                                     {
                                         // Bad sector inside chunk: salvage sector-by-sector and zero-fill only unreadable sectors
                                         int chunkProcessed = 0;
                                         while (chunkProcessed < validDataLen)
                                         {
+                                            cancellationToken.ThrowIfCancellationRequested();
                                             int secValid = Math.Min(sectorSize, validDataLen - chunkProcessed);
                                             long secDiskOffset = currentDiskOffset + chunkProcessed;
                                             try
@@ -149,7 +151,7 @@ namespace CdeRecovery.Core.Recovery
                                                 await outStream.WriteAsync(secBuf.AsMemory(0, secValid), cancellationToken).ConfigureAwait(false);
                                                 sha256.AppendData(secBuf, 0, secValid);
                                             }
-                                            catch (Exception secEx)
+                                            catch (Exception secEx) when (secEx is not OperationCanceledException)
                                             {
                                                 unreadableSectors++;
                                                 if (string.IsNullOrEmpty(errorDetail))
@@ -182,7 +184,10 @@ namespace CdeRecovery.Core.Recovery
                     catch { }
 
                     string hashHex = Convert.ToHexString(sha256.GetHashAndReset());
-                    string status = unreadableSectors == 0 && !file.HasTornWriteWarning
+                    bool isTruncated = file.SizeBytes > 0 && bytesWrittenForFile < file.SizeBytes;
+                    if (isTruncated && string.IsNullOrEmpty(errorDetail))
+                        errorDetail = $"Truncated export: wrote {bytesWrittenForFile:N0} of {file.SizeBytes:N0} expected bytes.";
+                    string status = (unreadableSectors == 0 && !file.HasTornWriteWarning && !isTruncated)
                         ? "Verified"
                         : "Partial (Unreadable Sectors)";
 
@@ -236,6 +241,35 @@ namespace CdeRecovery.Core.Recovery
             await File.WriteAllTextAsync(manifestPath, json, cancellationToken).ConfigureAwait(false);
 
             return manifest;
+        }
+
+        private static string SanitizeRelativeExportPath(string relPath, string fallbackName, long recordNumber)
+        {
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var parts = (relPath ?? string.Empty)
+                .Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+            var cleanParts = new List<string>(parts.Length);
+
+            foreach (var rawPart in parts)
+            {
+                string trimmed = rawPart.Trim();
+                if (string.IsNullOrEmpty(trimmed) || trimmed == "." || trimmed == "..")
+                    continue;
+
+                var chars = trimmed.Select(c => invalidChars.Contains(c) ? '_' : c).ToArray();
+                string sanitized = new string(chars).TrimEnd('.', ' ');
+                if (!string.IsNullOrEmpty(sanitized))
+                    cleanParts.Add(sanitized);
+            }
+
+            if (cleanParts.Count == 0)
+            {
+                var fallbackChars = (fallbackName ?? string.Empty).Select(c => invalidChars.Contains(c) ? '_' : c).ToArray();
+                string safeFallback = new string(fallbackChars).TrimEnd('.', ' ');
+                return string.IsNullOrWhiteSpace(safeFallback) ? $"recovered_{recordNumber}.bin" : safeFallback;
+            }
+
+            return Path.Combine(cleanParts.ToArray());
         }
 
         private static string ToLongPath(string path)
@@ -327,9 +361,10 @@ namespace CdeRecovery.Core.Recovery
                 }
 
                 byte[] toWriteBytes;
-                if (!hasTrailingSparse && nonSparseClusters == unitClusters)
+                long expectedUnitClusters = (expectedUnitOut + clusterSize - 1) / clusterSize;
+                if (!hasTrailingSparse && (nonSparseClusters == unitClusters || nonSparseClusters >= expectedUnitClusters))
                 {
-                    // Incompressible unit stored uncompressed
+                    // Incompressible unit stored uncompressed (including final partial unit)
                     toWriteBytes = rawBuf;
                 }
                 else

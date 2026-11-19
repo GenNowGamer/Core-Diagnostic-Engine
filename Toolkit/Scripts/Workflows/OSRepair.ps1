@@ -38,8 +38,8 @@ if ($ToolName -eq 'OfflineUpdateUninstall' -and $UpdateAction -eq 'ListPackages'
         elseif ($cur -and $line -match '^\s*Install Time\s*:\s*(.+?)\s*$') { $cur.InstallTime = $Matches[1] }
     }
     if ($cur) { $packages += $cur }
-    $packages = $packages | Where-Object { $_.State -match 'Installed' -and $_.ReleaseType -match 'Update' }
-    @($packages) | ConvertTo-Json -Depth 3
+    $packages = @($packages | Where-Object { $_.State -match 'Installed' -and $_.ReleaseType -match 'Update' })
+    ConvertTo-Json -InputObject @($packages) -Depth 3 -Compress
     return
 }
 
@@ -754,26 +754,53 @@ function Invoke-WindowsUpdateRepair {
 
     Write-Log "Stopping Windows Update services..."
     foreach ($svc in @('wuauserv', 'cryptSvc', 'bits', 'msiserver')) {
-        $r.Steps.Add((Invoke-CommandCaptured -FilePath 'sc' -ArgumentList @('stop', $svc) -StepName "Stop_$svc"))
+        try {
+            $svcObj = Get-Service -Name $svc -ErrorAction SilentlyContinue
+            if ($null -eq $svcObj -or $svcObj.Status -eq 'Stopped') {
+                $r.Steps.Add([PSCustomObject]@{ Name="Stop_$svc"; Status='Pass'; ExitCode=0; Output="Service '$svc' is already stopped." })
+            } else {
+                Stop-Service -Name $svc -Force -ErrorAction Stop
+                $r.Steps.Add([PSCustomObject]@{ Name="Stop_$svc"; Status='Pass'; ExitCode=0; Output="Stopped service '$svc'." })
+            }
+        } catch {
+            $r.Steps.Add([PSCustomObject]@{ Name="Stop_$svc"; Status='Warn'; ExitCode=1; Output="Could not stop service '$svc': $($_.Exception.Message)" })
+        }
     }
 
     $winDir = if (-not [string]::IsNullOrWhiteSpace($WindowsDir)) { $WindowsDir } elseif (-not [string]::IsNullOrWhiteSpace($env:SystemRoot)) { $env:SystemRoot } else { 'C:\Windows' }
     foreach ($folder in @((Join-Path $winDir 'SoftwareDistribution'), (Join-Path $winDir 'System32\catroot2'))) {
-        if (Test-Path $folder) {
-            $backup = "${folder}.old_$(Get-Date -Format 'yyyyMMddHHmmss')"
+        if (Test-Path -LiteralPath $folder) {
+            $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+            $leafName = Split-Path -Path $folder -Leaf
+            $newLeafName = "${leafName}.old_${stamp}"
+            $backup = Join-Path (Split-Path -Path $folder -Parent) $newLeafName
             try {
-                Rename-Item -Path $folder -NewName $backup -ErrorAction Stop
-                $r.Steps.Add([PSCustomObject]@{ Name='RenameFolder'; Status='Pass'; Output="Renamed $folder to $backup" })
-                Write-Log "Renamed: $folder"
+                Rename-Item -LiteralPath $folder -NewName $newLeafName -Force -ErrorAction Stop
+                $r.Steps.Add([PSCustomObject]@{ Name="Rename_$leafName"; Status='Pass'; Output="Renamed $folder to $backup" })
+                Write-Log "Renamed: $folder -> $backup"
             } catch {
-                $r.Steps.Add([PSCustomObject]@{ Name='RenameFolder'; Status='Warn'; Output="Could not rename ${folder}: $_" })
+                $r.Steps.Add([PSCustomObject]@{ Name="Rename_$leafName"; Status='Warn'; Output="Could not rename ${folder}: $($_.Exception.Message)" })
             }
         }
     }
 
     Write-Log "Restarting Windows Update services..."
     foreach ($svc in @('wuauserv', 'cryptSvc', 'bits', 'msiserver')) {
-        $r.Steps.Add((Invoke-CommandCaptured -FilePath 'sc' -ArgumentList @('start', $svc) -StepName "Start_$svc"))
+        try {
+            $svcObj = Get-Service -Name $svc -ErrorAction SilentlyContinue
+            if ($null -ne $svcObj -and $svcObj.Status -eq 'Running') {
+                $r.Steps.Add([PSCustomObject]@{ Name="Start_$svc"; Status='Pass'; ExitCode=0; Output="Service '$svc' is already running." })
+            } elseif ($svc -eq 'msiserver') {
+                # msiserver is an on-demand Windows Installer service; starting it when idle is optional
+                Start-Service -Name $svc -ErrorAction SilentlyContinue
+                $r.Steps.Add([PSCustomObject]@{ Name="Start_$svc"; Status='Pass'; ExitCode=0; Output="Service '$svc' ready (on-demand)." })
+            } else {
+                Start-Service -Name $svc -ErrorAction Stop
+                $r.Steps.Add([PSCustomObject]@{ Name="Start_$svc"; Status='Pass'; ExitCode=0; Output="Started service '$svc'." })
+            }
+        } catch {
+            $r.Steps.Add([PSCustomObject]@{ Name="Start_$svc"; Status='Warn'; ExitCode=1; Output="Could not start service '$svc': $($_.Exception.Message)" })
+        }
     }
 
     Write-Log "Windows Update components reset."

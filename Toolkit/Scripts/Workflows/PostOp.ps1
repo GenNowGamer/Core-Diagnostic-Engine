@@ -71,7 +71,7 @@ function Get-BrowserCacheTargetPaths {
                 }
         }
 
-        $firefoxProfiles = Join-Path $rootSet.AppData 'Mozilla\Firefox\Profiles'
+        $firefoxProfiles = Join-Path $rootSet.LocalAppData 'Mozilla\Firefox\Profiles'
         if (Test-Path -LiteralPath $firefoxProfiles) {
             Get-ChildItem -LiteralPath $firefoxProfiles -Directory -ErrorAction SilentlyContinue |
                 ForEach-Object {
@@ -139,7 +139,11 @@ function Invoke-TempCleanup {
     }
 
     Write-Log "Total freed: ~$(Format-SizeHuman -Bytes $totalBytes)"
-    $status = Get-ToolkitWorkflowStepStatus -Succeeded $totalDeleted -Skipped $totalLocked
+    $status = if ($totalDeleted -eq 0 -and $totalLocked -eq 0) {
+        'Pass'
+    } else {
+        Get-ToolkitWorkflowStepStatus -Succeeded $totalDeleted -Skipped $totalLocked
+    }
     Add-ToolkitWorkflowStep -WorkflowResult $r -Name 'TempCleanup' -Status $status `
         -Output "Removed $totalDeleted file(s) (~$(Format-SizeHuman -Bytes $totalBytes)), $totalLocked locked/remaining"
 }
@@ -273,10 +277,17 @@ function Invoke-RestoreDefaultServices {
 
 function Invoke-CmdAssoc {
     param([string]$CommandLine)
-    $output = & cmd.exe /c $CommandLine 2>&1
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & cmd.exe /c $CommandLine 2>&1
+        $exitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
     $text = (($output | ForEach-Object { [string]$_ }) -join "`n").Trim()
     return [PSCustomObject]@{
-        ExitCode = $LASTEXITCODE
+        ExitCode = $exitCode
         Output   = $text
     }
 }

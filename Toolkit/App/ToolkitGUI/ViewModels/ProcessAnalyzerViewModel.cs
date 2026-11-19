@@ -198,6 +198,7 @@ namespace ToolkitGUI.ViewModels
         }
 
         private static string ScriptPath => WorkflowViewModelBase.GetScriptPath("ProcessAnalyzer.ps1");
+        private static string QuotedScriptPath => PowerShellArgumentHelper.QuoteForScriptParameter(ScriptPath);
 
         public bool CanViewSnapshotReport => Processes.Count > 0;
 
@@ -280,7 +281,7 @@ namespace ToolkitGUI.ViewModels
                 var sampleMs = InvestigationMode ? InvestigationSampleMs : NormalSampleMs;
                 var deep = DeepScanEnabled ? "-DeepScan" : string.Empty;
                 var (json, psErr) = await PowerShellService.QueryAsync(
-                    $"& '{ScriptPath}' -Action List -SampleMs {sampleMs} {deep}");
+                    $"& {QuotedScriptPath} -Action List -SampleMs {sampleMs} {deep}");
 
                 if (gen != Volatile.Read(ref _loadGeneration))
                     return;
@@ -424,7 +425,7 @@ namespace ToolkitGUI.ViewModels
             try
             {
                 var (json, _) = await PowerShellService.QueryAsync(
-                    $"& '{ScriptPath}' -Action Detail -TargetPid {entry.Pid}");
+                    $"& {QuotedScriptPath} -Action Detail -TargetPid {entry.Pid}");
 
                 if (loadId != _detailLoadSerial)
                     return;
@@ -715,7 +716,7 @@ namespace ToolkitGUI.ViewModels
             {
                 _preserveSelectedPid = null;
                 StatusText = $"Terminating PID {p.Pid}...";
-                var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' -Action Kill -TargetPid {p.Pid}");
+                var result = await PowerShellService.ExecuteAsync($"& {QuotedScriptPath} -Action Kill -TargetPid {p.Pid}");
                 if (!result.Success)
                 {
                     StatusText = $"Terminate failed: {FormatExecError(result)}";
@@ -871,7 +872,7 @@ namespace ToolkitGUI.ViewModels
             var sampleMs = InvestigationMode ? InvestigationSampleMs : NormalSampleMs;
             var deep = DeepScanEnabled ? "-DeepScan" : string.Empty;
             var result = await PowerShellService.ExecuteAsync(
-                $"& '{ScriptPath}' -Action Export -SampleMs {sampleMs} {deep} -OutputPath '{EscapePsSingleQuoted(path)}' -Format Csv");
+                $"& {QuotedScriptPath} -Action Export -SampleMs {sampleMs} {deep} -OutputPath '{EscapePsSingleQuoted(path)}' -Format Csv");
             if (!result.Success)
                 throw new InvalidOperationException(FormatExecError(result));
         }
@@ -897,7 +898,7 @@ namespace ToolkitGUI.ViewModels
             {
                 StatusText = "Running CST custom scan on selected file...";
                 var result = await PowerShellService.ExecuteAsync(
-                    $"& '{ScriptPath}' -Action CstScan -TargetPath '{EscapePsSingleQuoted(path)}'");
+                    $"& {QuotedScriptPath} -Action CstScan -TargetPath '{EscapePsSingleQuoted(path)}'");
 
                 if (!result.Success)
                 {

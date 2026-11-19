@@ -82,6 +82,7 @@ namespace ToolkitGUI.ViewModels
         }
 
         private static string ScriptPath => WorkflowViewModelBase_GetScriptPath("StartupManager.ps1");
+        private static string QuotedScriptPath => PowerShellArgumentHelper.QuoteForScriptParameter(ScriptPath);
 
         public ICommand RefreshCommand   => new RelayCommand(async () => await RefreshAsync());
         public ICommand EnableCommand    => new RelayCommand<StartupEntry>(async e => await ToggleEntryAsync(e, true));
@@ -126,7 +127,7 @@ namespace ToolkitGUI.ViewModels
                 var includeWindowsTasks = string.Equals(action, "ListStartupItems", StringComparison.OrdinalIgnoreCase)
                     && IncludeWindowsScheduledTasks;
                 var includeArg = includeWindowsTasks ? " -IncludeWindowsScheduledTasks" : string.Empty;
-                var (json, psErr) = await PowerShellService.QueryAsync($"& '{ScriptPath}' -Action {action}{includeArg}");
+                var (json, psErr) = await PowerShellService.QueryAsync($"& {QuotedScriptPath} -Action {action}{includeArg}");
                 if (gen != _loadGeneration) return;
                 if (!string.IsNullOrEmpty(psErr)) { StatusText = $"PS Error: {psErr}"; return; }
                 var entries = string.IsNullOrWhiteSpace(json) ? null
@@ -161,7 +162,7 @@ namespace ToolkitGUI.ViewModels
             StatusText = "Loading services...";
             try
             {
-                var (json, psErr) = await PowerShellService.QueryAsync($"& '{ScriptPath}' -Action ListServices");
+                var (json, psErr) = await PowerShellService.QueryAsync($"& {QuotedScriptPath} -Action ListServices");
                 if (gen != _loadGeneration) return;
                 if (!string.IsNullOrEmpty(psErr) && string.IsNullOrWhiteSpace(json))
                 {
@@ -320,7 +321,7 @@ namespace ToolkitGUI.ViewModels
             {
                 var actionArgs = BuildStartupActionArgs(e, action);
                 var result = await PowerShellService.ExecuteAsync(
-                    $"& '{ScriptPath}' {actionArgs}");
+                    $"& {QuotedScriptPath} {actionArgs}");
                 if (!result.Success)
                 {
                     StatusText = $"{action} failed: {FormatExecError(result)}";
@@ -388,7 +389,7 @@ namespace ToolkitGUI.ViewModels
             {
                 var actionArgs = BuildStartupActionArgs(e, "Delete");
                 var result = await PowerShellService.ExecuteAsync(
-                    $"& '{ScriptPath}' {actionArgs}");
+                    $"& {QuotedScriptPath} {actionArgs}");
                 if (!result.Success)
                 {
                     StatusText = $"Delete failed: {FormatExecError(result)}";
@@ -479,7 +480,7 @@ namespace ToolkitGUI.ViewModels
             try
             {
                 var actionArgs = BuildWinlogonActionArgs(e, "ResetWinlogonEntry");
-                var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {actionArgs}");
+                var result = await PowerShellService.ExecuteAsync($"& {QuotedScriptPath} {actionArgs}");
                 if (!result.Success)
                 {
                     StatusText = $"Reset failed: {FormatExecError(result)}";
@@ -524,7 +525,7 @@ namespace ToolkitGUI.ViewModels
             try
             {
                 var actionArgs = BuildWinlogonActionArgs(e, "UndoWinlogonEntry");
-                var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {actionArgs}");
+                var result = await PowerShellService.ExecuteAsync($"& {QuotedScriptPath} {actionArgs}");
                 if (!result.Success)
                 {
                     StatusText = $"Undo failed: {FormatExecError(result)}";
@@ -643,7 +644,7 @@ namespace ToolkitGUI.ViewModels
                 StatusText = $"{action}: {s.ServiceName}...";
                 var previousStatus = s.Status;
                 var result = await PowerShellService.ExecuteAsync(
-                    $"& '{ScriptPath}' -Action {action} -ServiceName '{escapedServiceName}'");
+                    $"& {QuotedScriptPath} -Action {action} -ServiceName '{escapedServiceName}'");
                 if (!result.Success)
                 {
                     var errorText = FormatExecError(result);
@@ -762,7 +763,7 @@ namespace ToolkitGUI.ViewModels
                 var escapedServiceName = EscapePs(s.ServiceName);
                 StatusText = $"DeleteService: {s.ServiceName}...";
                 var result = await PowerShellService.ExecuteAsync(
-                    $"& '{ScriptPath}' -Action DeleteService -ServiceName '{escapedServiceName}'");
+                    $"& {QuotedScriptPath} -Action DeleteService -ServiceName '{escapedServiceName}'");
                 if (!result.Success)
                 {
                     var errorText = FormatExecError(result);
@@ -801,7 +802,7 @@ namespace ToolkitGUI.ViewModels
                 var escapedServiceName = EscapePs(s.ServiceName);
 
                 var result = await PowerShellService.ExecuteAsync(
-                    $"& '{ScriptPath}' -Action SetStartType -ServiceName '{escapedServiceName}' -StartType '{EscapePs(s.StartupType)}'");
+                    $"& {QuotedScriptPath} -Action SetStartType -ServiceName '{escapedServiceName}' -StartType '{EscapePs(s.StartupType)}'");
                 if (!result.Success)
                 {
                     var errorText = FormatExecError(result);
@@ -1277,9 +1278,10 @@ namespace ToolkitGUI.ViewModels
             try
             {
                 var script = WorkflowViewModelBase_GetScriptPath("ProcessAnalyzer.ps1");
+                var quotedScript = PowerShellArgumentHelper.QuoteForScriptParameter(script);
                 var escapedPath = path.Replace("'", "''");
                 var result = await PowerShellService.ExecuteAsync(
-                    $"& '{script}' -Action CstScan -TargetPath '{escapedPath}'");
+                    $"& {quotedScript} -Action CstScan -TargetPath '{escapedPath}'");
 
                 if (!result.Success)
                 {
@@ -1427,15 +1429,81 @@ namespace ToolkitGUI.ViewModels
         public ObservableCollection<TempCleanerLiveFindingGroupViewModel> LiveFindingGroups { get; } = new();
 
         private readonly HashSet<string> _lastScannedPaths = new(StringComparer.OrdinalIgnoreCase);
+        private string _scanStatusText = "Ready \u2014 click Scan to inspect temporary locations.";
+        private string _footerSummaryText = "Select one or more locations after scanning, then click Clean Selected.";
+        private bool _isScanning;
 
         private static string ScriptPath => GetScriptPath("TempFileCleaner.ps1");
+
+        public string ScanStatusText
+        {
+            get => _scanStatusText;
+            set { _scanStatusText = value; OnPropertyChanged(); }
+        }
+
+        public string FooterSummaryText
+        {
+            get => _footerSummaryText;
+            set { _footerSummaryText = value; OnPropertyChanged(); }
+        }
+
+        public bool IsScanning
+        {
+            get => _isScanning;
+            set
+            {
+                if (_isScanning == value) return;
+                _isScanning = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanOperate));
+            }
+        }
+
+        public bool CanOperate => !IsRunning && !IsScanning;
 
         public ICommand ScanCommand  => new RelayCommand(async () => await ScanAsync());
         public ICommand CleanCommand => new RelayCommand(async () => await CleanAsync());
 
         public TempFileCleanerViewModel()
         {
+            PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(IsRunning))
+                    OnPropertyChanged(nameof(CanOperate));
+            };
             InitializeDrives();
+        }
+
+        internal static string BuildCleanArguments(string pathsFile, string whitelistFile)
+            => $"-Action Clean -PathsFile {PowerShellArgumentHelper.QuotePathParameterForProcess(pathsFile)} -WhitelistFile {PowerShellArgumentHelper.QuotePathParameterForProcess(whitelistFile)}";
+
+        internal static string GetControlFileDirectory()
+        {
+            try
+            {
+                var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (!string.IsNullOrWhiteSpace(localAppData))
+                {
+                    var dir = Path.Combine(localAppData, "CoreDiagnosticEngine", "TempCleanerState");
+                    Directory.CreateDirectory(dir);
+                    return dir;
+                }
+            }
+            catch
+            {
+                // Fall back to internal runtime data directory when LocalApplicationData is unavailable.
+            }
+
+            try
+            {
+                var internalDir = Path.Combine(ReportPathHelper.GetInternalDataRoot(), "tempcleaner");
+                Directory.CreateDirectory(internalDir);
+                return internalDir;
+            }
+            catch
+            {
+                return Path.GetTempPath();
+            }
         }
 
         private void InitializeDrives()
@@ -1480,37 +1548,40 @@ namespace ToolkitGUI.ViewModels
                 .ToList();
         }
 
-        public async Task ScanAsync()
+        public Task ScanAsync() => ScanInternalAsync(preserveWorkflowWindowState: false);
+
+        private async Task ScanInternalAsync(bool preserveWorkflowWindowState)
         {
-            if (IsRunning)
+            if (IsRunning || IsScanning)
                 return;
 
             if (PowerShellService.IsWinPeEnvironment())
             {
-                StatusText = "Not applicable in WinPE (live Windows temp cleanup only).";
+                ScanStatusText = "Not applicable in WinPE (live Windows temp cleanup only).";
                 return;
             }
 
             var selectedDrives = GetSelectedDriveRoots();
             if (selectedDrives.Count == 0)
             {
-                StatusText = "Select at least one drive to scan.";
+                ScanStatusText = "Select at least one drive to scan.";
                 return;
             }
 
-            IsRunning = true;
-            StatusText = "Scanning...";
-            LogText = string.Empty;
+            IsScanning = true;
+            ScanStatusText = "Scanning...";
+            if (!preserveWorkflowWindowState)
+                LogText = string.Empty;
             Folders.Clear();
             _lastScannedPaths.Clear();
 
-            var drivesFile = Path.Combine(Path.GetTempPath(), $"cde_tempcleaner_drives_{Guid.NewGuid():N}.json");
+            var drivesFile = Path.Combine(GetControlFileDirectory(), $"cde_tempcleaner_drives_{Guid.NewGuid():N}.json");
 
             try
             {
                 File.WriteAllText(drivesFile, JsonConvert.SerializeObject(selectedDrives));
-                var (json, psErr) = await PowerShellService.QueryAsync($"& '{ScriptPath}' -Action Scan -DrivesFile '{drivesFile.Replace("'", "''")}'");
-                if (!string.IsNullOrEmpty(psErr)) { StatusText = $"PS Error: {psErr}"; return; }
+                var (json, psErr) = await PowerShellService.QueryAsync($"& '{ScriptPath.Replace("'", "''")}' -Action Scan -DrivesFile '{drivesFile.Replace("'", "''")}'");
+                if (!string.IsNullOrEmpty(psErr)) { ScanStatusText = $"PS Error: {psErr}"; return; }
                 if (!string.IsNullOrWhiteSpace(json))
                 {
                     var flat = JsonConvert.DeserializeObject<TempFolder[]>(
@@ -1578,24 +1649,24 @@ namespace ToolkitGUI.ViewModels
                 }
                 var allLeaves  = Folders.SelectMany(p => p.Children).ToList();
                 var totalBytes = allLeaves.Sum(f => f.Bytes);
-                StatusText = $"{allLeaves.Count} locations found  |  {SizeDisplayFormatter.FormatBytes(totalBytes)} total";
+                ScanStatusText = $"{allLeaves.Count} locations found  |  {SizeDisplayFormatter.FormatBytes(totalBytes)} total";
             }
-            catch (Exception ex) { StatusText = $"Error: {ex.Message}"; }
+            catch (Exception ex) { ScanStatusText = $"Error: {ex.Message}"; }
             finally
             {
-                try { File.Delete(drivesFile); } catch { }
-                IsRunning = false;
+                try { if (File.Exists(drivesFile)) File.Delete(drivesFile); } catch { }
+                IsScanning = false;
             }
         }
 
         private async Task CleanAsync()
         {
-            if (IsRunning)
+            if (IsRunning || IsScanning)
                 return;
 
             if (_lastScannedPaths.Count == 0)
             {
-                StatusText = "Run a scan before cleaning.";
+                ScanStatusText = "Run a scan before cleaning.";
                 return;
             }
 
@@ -1608,7 +1679,7 @@ namespace ToolkitGUI.ViewModels
                 .ToList();
             if (selected.Count == 0)
             {
-                StatusText = "No cleanable locations selected (protected paths are skipped).";
+                ScanStatusText = "No cleanable locations selected (protected paths are skipped).";
                 return;
             }
 
@@ -1619,17 +1690,17 @@ namespace ToolkitGUI.ViewModels
                     "Files in the selected folders will be permanently deleted. Protected paths are skipped by the script.",
                     defaultNo: true))
             {
-                StatusText = "Clean cancelled";
+                ScanStatusText = "Clean cancelled";
                 return;
             }
 
-            // Write selected paths to a temp file
-            // Windows command-line quote-stripping when passed to powershell.exe -File.
+            // Store control files outside %TEMP% so User Temp scans/cleans do not interfere with them.
+            var controlDir = GetControlFileDirectory();
             var tempFile = Path.Combine(
-                Path.GetTempPath(),
+                controlDir,
                 $"cde_tempcleaner_{Guid.NewGuid():N}.json");
             var whitelistFile = Path.Combine(
-                Path.GetTempPath(),
+                controlDir,
                 $"cde_tempcleaner_whitelist_{Guid.NewGuid():N}.json");
 
             try
@@ -1639,7 +1710,7 @@ namespace ToolkitGUI.ViewModels
 
                 await RunWorkflowAsync(
                     ScriptPath,
-                    $"-Action Clean -PathsFile '{tempFile.Replace("'", "''")}' -WhitelistFile '{whitelistFile.Replace("'", "''")}'",
+                    BuildCleanArguments(tempFile, whitelistFile),
                     "Temporary File Cleanup",
                     "Remove the selected temporary locations and review the cleanup results in a dedicated execution window.");
 
@@ -1647,7 +1718,8 @@ namespace ToolkitGUI.ViewModels
             }
             catch (Exception ex)
             {
-                StatusText = $"Clean error: {ex.Message}";
+                ScanStatusText = $"Clean error: {ex.Message}";
+                FooterSummaryText = $"Last cleanup error: {ex.Message}";
                 return;
             }
             finally
@@ -1656,78 +1728,83 @@ namespace ToolkitGUI.ViewModels
                 try { if (File.Exists(whitelistFile)) File.Delete(whitelistFile); } catch { }
             }
 
-            // Re-scan after clean when at least one drive remains checked.
+            // Re-scan after clean without overwriting the open WorkflowExecutionWindow's status or log stream.
             if (GetSelectedDriveRoots().Count > 0)
             {
-                await ScanAsync();
+                await ScanInternalAsync(preserveWorkflowWindowState: true);
             }
             else
             {
                 Folders.Clear();
                 _lastScannedPaths.Clear();
-                StatusText = "Clean complete. Select a drive to scan again.";
+                ScanStatusText = "Clean complete. Select a drive to scan again.";
             }
         }
 
         private void LoadCleanupStructuredResults()
         {
             LiveFindingGroups.Clear();
-            if (string.IsNullOrWhiteSpace(ReportJsonPath) || !File.Exists(ReportJsonPath))
+            string? cleanStepOutput = null;
+
+            if (!string.IsNullOrWhiteSpace(ReportJsonPath) && File.Exists(ReportJsonPath))
             {
-                return;
-            }
-
-            try
-            {
-                var json = File.ReadAllText(ReportJsonPath);
-                var report = System.Text.Json.JsonSerializer.Deserialize<WorkflowExecutionReport>(json, new System.Text.Json.JsonSerializerOptions
+                try
                 {
-                    PropertyNameCaseInsensitive = true
-                });
-
-                var steps = report?.Steps
-                    ?.Where(step => string.Equals(step.Name, "Folder Cleanup", StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                if (steps == null || !steps.Any())
-                {
-                    return;
-                }
-
-                var group = new TempCleanerLiveFindingGroupViewModel("Folder Cleanup Results");
-                foreach (var step in steps)
-                {
-                    var severity = string.Equals(step.Status, "Pass", StringComparison.OrdinalIgnoreCase)
-                        ? "Cleaned"
-                        : "Skipped";
-
-                    var location = string.IsNullOrWhiteSpace(step.Detail) ? "(No folder path reported)" : step.Detail;
-                    var name = Path.GetFileName(location.TrimEnd('\\'));
-                    if (string.IsNullOrWhiteSpace(name))
+                    var json = File.ReadAllText(ReportJsonPath);
+                    var report = System.Text.Json.JsonSerializer.Deserialize<WorkflowExecutionReport>(json, new System.Text.Json.JsonSerializerOptions
                     {
-                        name = location;
-                    }
-
-                    group.AddFinding(new TempCleanerLiveFindingItemViewModel
-                    {
-                        Name = name,
-                        Type = "Folder",
-                        Severity = severity,
-                        Location = location,
-                        Evidence = string.IsNullOrWhiteSpace(step.Output) ? "No cleanup detail provided." : step.Output,
-                        Detector = "TempFileCleaner",
-                        SeverityBrush = string.Equals(step.Status, "Pass", StringComparison.OrdinalIgnoreCase)
-                            ? new SolidColorBrush(Color.FromRgb(0x0D, 0x7A, 0x3E))
-                            : new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00))
+                        PropertyNameCaseInsensitive = true
                     });
-                }
 
-                LiveFindingGroups.Add(group);
+                    cleanStepOutput = report?.Steps
+                        ?.FirstOrDefault(step => string.Equals(step.Name, "TempFileClean", StringComparison.OrdinalIgnoreCase))
+                        ?.Output;
+
+                    var steps = report?.Steps
+                        ?.Where(step => string.Equals(step.Name, "Folder Cleanup", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    if (steps != null && steps.Any())
+                    {
+                        var group = new TempCleanerLiveFindingGroupViewModel("Folder Cleanup Results");
+                        foreach (var step in steps)
+                        {
+                            var severity = string.Equals(step.Status, "Pass", StringComparison.OrdinalIgnoreCase)
+                                ? "Cleaned"
+                                : "Skipped";
+
+                            var location = string.IsNullOrWhiteSpace(step.Detail) ? "(No folder path reported)" : step.Detail;
+                            var name = Path.GetFileName(location.TrimEnd('\\'));
+                            if (string.IsNullOrWhiteSpace(name))
+                            {
+                                name = location;
+                            }
+
+                            group.AddFinding(new TempCleanerLiveFindingItemViewModel
+                            {
+                                Name = name,
+                                Type = "Folder",
+                                Severity = severity,
+                                Location = location,
+                                Evidence = string.IsNullOrWhiteSpace(step.Output) ? "No cleanup detail provided." : step.Output,
+                                Detector = "TempFileCleaner",
+                                SeverityBrush = string.Equals(step.Status, "Pass", StringComparison.OrdinalIgnoreCase)
+                                    ? new SolidColorBrush(Color.FromRgb(0x0D, 0x7A, 0x3E))
+                                    : new SolidColorBrush(Color.FromRgb(0x92, 0x68, 0x00))
+                            });
+                        }
+
+                        LiveFindingGroups.Add(group);
+                    }
+                }
+                catch
+                {
+                    // Leave structured findings empty if parsing fails; fallback text remains in execution window.
+                }
             }
-            catch
-            {
-                // Leave structured findings empty if parsing fails; fallback text remains in execution window.
-            }
+
+            var summaryFallback = !string.IsNullOrWhiteSpace(ResultSummary) ? ResultSummary : "Cleanup finished.";
+            FooterSummaryText = $"Last cleanup: {(!string.IsNullOrWhiteSpace(cleanStepOutput) ? cleanStepOutput : summaryFallback)}";
         }
     }
 
@@ -1815,6 +1892,7 @@ namespace ToolkitGUI.ViewModels
         }
 
         private static string ScriptPath => WorkflowViewModelBase.GetScriptPath("UninstallManager.ps1");
+        private static string QuotedScriptPath => PowerShellArgumentHelper.QuoteForScriptParameter(ScriptPath);
 
         public ICommand RefreshCommand      => new RelayCommand(async () => await LoadAsync());
         public ICommand UninstallCommand    => new RelayCommand<InstalledProgram>(async p => await UninstallAsync(p));
@@ -1833,7 +1911,7 @@ namespace ToolkitGUI.ViewModels
             StatusText = "Loading installed programs...";
             try
             {
-                var (json, psErr) = await PowerShellService.QueryAsync($"& '{ScriptPath}' -Action List");
+                var (json, psErr) = await PowerShellService.QueryAsync($"& {QuotedScriptPath} -Action List");
                 if (!string.IsNullOrEmpty(psErr)) { StatusText = $"PS Error: {psErr}"; IsLoading = false; return; }
                 var progs = string.IsNullOrWhiteSpace(json) ? null
                     : JsonConvert.DeserializeObject<InstalledProgram[]>(
@@ -1887,7 +1965,7 @@ namespace ToolkitGUI.ViewModels
             {
                 StatusText = $"Uninstalling {p.Name} ({methodHint})...";
                 var uninstallArgs = BuildUninstallArgs(p, "Uninstall", preferQuiet: true, removeInstallFolder: false);
-                var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {uninstallArgs}");
+                var result = await PowerShellService.ExecuteAsync($"& {QuotedScriptPath} {uninstallArgs}");
                 if (!result.Success)
                 {
                     StatusText = $"Uninstall failed: {FormatExecError(result)}";
@@ -1897,6 +1975,16 @@ namespace ToolkitGUI.ViewModels
                 }
 
                 var action = TryParseUninstallActionResult(result.Output);
+                if (action != null && (!action.Success || action.ExitCode != 0))
+                {
+                    StatusText = !string.IsNullOrWhiteSpace(action.Message)
+                        ? action.Message
+                        : $"Uninstall failed or was cancelled for {p.Name} (exit code {action.ExitCode})";
+                    await PromptLeftoverCleanupAsync(p, afterFailedUninstall: true);
+                    await LoadAsync();
+                    return;
+                }
+
                 StatusText = action?.Message ?? $"Uninstaller finished: {p.Name}";
 
                 await PromptLeftoverCleanupAsync(p, afterFailedUninstall: false);
@@ -1971,7 +2059,7 @@ namespace ToolkitGUI.ViewModels
                     : $"Force removing ARP entry for {p.Name}...";
 
                 var forceArgs = BuildUninstallArgs(p, "ForceRemove", preferQuiet: false, removeInstallFolder: removeFolder);
-                var result = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {forceArgs}");
+                var result = await PowerShellService.ExecuteAsync($"& {QuotedScriptPath} {forceArgs}");
                 if (!result.Success)
                 {
                     StatusText = $"Force remove failed: {FormatExecError(result)}";
@@ -2073,7 +2161,7 @@ namespace ToolkitGUI.ViewModels
                 + $"-DisplayName '{EscapePs(p.Name)}' "
                 + $"-Publisher '{EscapePs(p.Publisher)}'";
 
-            var (json, err) = await PowerShellService.QueryAsync($"& '{ScriptPath}' {inspectArgs}");
+            var (json, err) = await PowerShellService.QueryAsync($"& {QuotedScriptPath} {inspectArgs}");
             if (!string.IsNullOrEmpty(err) && string.IsNullOrWhiteSpace(json))
             {
                 StatusText = $"{StatusText} Leftover check failed: {err}";
@@ -2146,7 +2234,7 @@ namespace ToolkitGUI.ViewModels
 
             var folderPathsJson = JsonConvert.SerializeObject(folders.Select(f => f.Path).ToList());
             var removeArgs = $"-Action RemoveFolder -FolderPathsJson '{EscapePs(folderPathsJson)}'";
-            var removeResult = await PowerShellService.ExecuteAsync($"& '{ScriptPath}' {removeArgs}");
+            var removeResult = await PowerShellService.ExecuteAsync($"& {QuotedScriptPath} {removeArgs}");
             var batchJson = ExtractJsonObject(removeResult.Output ?? string.Empty);
             if (!string.IsNullOrWhiteSpace(batchJson))
             {
@@ -2235,25 +2323,12 @@ namespace ToolkitGUI.ViewModels
         }
 
         private static string ScriptPath => GetScriptPath("FastFixes.ps1");
+        private static string QuotedScriptPath => PowerShellArgumentHelper.QuoteForScriptParameter(ScriptPath);
 
         public ICommand LoadFixesCommand => new RelayCommand(async () => await LoadFixesAsync());
         public ICommand ApplyFixCommand  => new RelayCommand<FastFix>(async f => await ApplyFixAsync(f));
 
-        private static bool IsWinPeMode()
-        {
-            try
-            {
-                using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\MiniNT");
-                if (key != null) return true;
-            }
-            catch
-            {
-                // Ignore registry lookup failures and continue with fallbacks.
-            }
-
-            var systemRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? string.Empty;
-            return systemRoot.StartsWith(@"X:\", StringComparison.OrdinalIgnoreCase);
-        }
+        private static bool IsWinPeMode() => PowerShellService.IsWinPeEnvironment();
 
         public async Task LoadFixesAsync()
         {
@@ -2261,7 +2336,7 @@ namespace ToolkitGUI.ViewModels
             StatusText = "Loading fixes...";
             try
             {
-                var (json, psErr) = await PowerShellService.QueryAsync($"& '{ScriptPath}' -Action List");
+                var (json, psErr) = await PowerShellService.QueryAsync($"& {QuotedScriptPath} -Action List");
                 if (!string.IsNullOrEmpty(psErr)) { StatusText = $"PS Error: {psErr}"; return; }
                 AllFixes.Clear();
                 Categories.Clear();

@@ -1,24 +1,24 @@
+<#
+.SYNOPSIS
+    Delegates to the canonical publish script under Toolkit\App\Publish-ToolkitGUI.ps1.
+#>
 param(
-    [string]$Configuration = "Release"
+    [switch]$Clean,
+    [switch]$Force
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 
-$projPath = Join-Path $PSScriptRoot "ToolkitGUI.csproj"
-$outDir = Join-Path $PSScriptRoot "bin\Release\net8.0-windows"
+$canonicalScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Publish-ToolkitGUI.ps1'))
+if (-not (Test-Path -LiteralPath $canonicalScript)) {
+    throw "Canonical publish script not found: $canonicalScript"
+}
 
-Write-Host "Publishing ToolkitGUI self-contained to standardized path..." -ForegroundColor Cyan
-Write-Host "  Project: $projPath"
-Write-Host "  Output : $outDir"
+$argsList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $canonicalScript)
+if ($Clean) { $argsList += '-Clean' }
+if ($Force) { $argsList += '-Force' }
 
-dotnet publish "$projPath" -c $Configuration -r win-x64 --self-contained true -o "$outDir" /p:PublishSingleFile=false /p:AppendRuntimeIdentifierToOutputPath=false
+& powershell.exe @argsList
 if ($LASTEXITCODE -ne 0) {
-    throw "dotnet publish failed."
+    throw "Canonical publish failed with exit code $LASTEXITCODE"
 }
-
-$nestedRidDir = Join-Path $outDir "win-x64"
-if (Test-Path $nestedRidDir) {
-    Remove-Item -Recurse -Force $nestedRidDir
-}
-
-Write-Host "Publish complete." -ForegroundColor Green

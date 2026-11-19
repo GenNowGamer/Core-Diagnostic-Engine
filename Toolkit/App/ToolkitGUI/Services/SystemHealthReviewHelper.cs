@@ -165,7 +165,28 @@ namespace ToolkitGUI.Services
                     IsExternal = true,
                     Command = new RelayCommand(() =>
                     {
-                        Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+                        try
+                        {
+                            var fileName = target;
+                            var arguments = string.Empty;
+                            var spaceIdx = target.IndexOf(' ');
+                            if (spaceIdx > 0 && !target.Contains("://", StringComparison.Ordinal) && !target.StartsWith("ms-settings:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                fileName = target[..spaceIdx].Trim();
+                                arguments = target[(spaceIdx + 1)..].Trim();
+                            }
+
+                            var psi = new ProcessStartInfo(fileName)
+                            {
+                                Arguments = arguments,
+                                UseShellExecute = true
+                            };
+                            Process.Start(psi);
+                        }
+                        catch
+                        {
+                            // Best-effort shell launch
+                        }
                         return Task.CompletedTask;
                     })
                 };

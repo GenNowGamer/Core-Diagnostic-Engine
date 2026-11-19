@@ -16,17 +16,21 @@ $ErrorActionPreference = 'Stop'
 
 $appDir = Split-Path $MyInvocation.MyCommand.Path -Parent
 $toolkitRoot = [System.IO.Path]::GetFullPath((Join-Path $appDir '..'))
+$version = '1.0.14'
 $versionPath = Join-Path $toolkitRoot 'VERSION.json'
 if (Test-Path -LiteralPath $versionPath) {
     $versionDoc = Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json
-    $version = [string]$versionDoc.version
+    if (-not [string]::IsNullOrWhiteSpace([string]$versionDoc.version)) {
+        $version = [string]$versionDoc.version
+    }
     if (-not [string]::IsNullOrWhiteSpace($version)) {
         $globalIni = Join-Path $toolkitRoot 'Config\global.ini'
         if (Test-Path -LiteralPath $globalIni) {
             $ini = Get-Content -LiteralPath $globalIni -Raw
-            $ini = $ini -replace '(?m)^Version=.*$', "Version=$version"
-            $ini = $ini -replace '(?m)^BuildDate=.*$', "BuildDate=$(Get-Date -Format 'yyyy-MM-dd')"
-            Set-Content -LiteralPath $globalIni -Value $ini -Encoding UTF8
+            $ini = $ini -replace '(?m)^Version=[^\r\n]*', "Version=$version"
+            $ini = $ini -replace '(?m)^BuildDate=[^\r\n]*', "BuildDate=$(Get-Date -Format 'yyyy-MM-dd')"
+            $ini = ($ini -replace "(`r?`n)+$", "`r`n")
+            [System.IO.File]::WriteAllText($globalIni, $ini, (New-Object System.Text.UTF8Encoding($false)))
             Write-Host ("Synced global.ini version to {0}" -f $version) -ForegroundColor Cyan
         }
 
@@ -63,6 +67,15 @@ if (-not (Test-Path -LiteralPath $launcherProjectPath)) {
 if ($Clean) {
     dotnet clean $projectPath -c Release | Out-Host
     dotnet clean $launcherProjectPath -c Release | Out-Host
+    foreach ($cliProj in @(
+        (Join-Path $PSScriptRoot 'CdeCpuSimdCli\CdeCpuSimdCli.csproj'),
+        (Join-Path $PSScriptRoot 'CdeGpuDiagCli\CdeGpuDiagCli.csproj'),
+        (Join-Path $PSScriptRoot 'CdeBehaviorCollector\CdeBehaviorCollector.csproj')
+    )) {
+        if (Test-Path -LiteralPath $cliProj) {
+            dotnet clean $cliProj -c Release | Out-Host
+        }
+    }
 }
 
 $beforeWrite = $null
@@ -80,6 +93,7 @@ $publishArgs = @(
     '-r', 'win-x64',
     '--self-contained', 'true',
     '-o', $publishDir,
+    "-p:Version=$version",
     '-p:AppendTargetFrameworkToOutputPath=false',
     '-p:AppendRuntimeIdentifierToOutputPath=false'
 )
@@ -129,6 +143,7 @@ $cdeSimdCliArgs = @(
     '-r', 'win-x64',
     '--self-contained', 'true',
     '-o', $publishDir,
+    "-p:Version=$version",
     '-p:AppendTargetFrameworkToOutputPath=false',
     '-p:AppendRuntimeIdentifierToOutputPath=false'
 )
@@ -161,6 +176,7 @@ $cdeGpuDiagCliArgs = @(
     '-r', 'win-x64',
     '--self-contained', 'true',
     '-o', $publishDir,
+    "-p:Version=$version",
     '-p:AppendTargetFrameworkToOutputPath=false',
     '-p:AppendRuntimeIdentifierToOutputPath=false'
 )
@@ -193,6 +209,7 @@ $cdeBehaviorCollectorArgs = @(
     '-r', 'win-x64',
     '--self-contained', 'true',
     '-o', $publishDir,
+    "-p:Version=$version",
     '-p:AppendTargetFrameworkToOutputPath=false',
     '-p:AppendRuntimeIdentifierToOutputPath=false'
 )
@@ -220,6 +237,7 @@ $launcherArgs = @(
     '-r', 'win-x64',
     '--self-contained', 'true',
     '-o', $launcherPublishDir,
+    "-p:Version=$version",
     '-p:PublishSingleFile=true',
     '-p:EnableCompressionInSingleFile=false',
     '-p:PublishReadyToRun=true',
@@ -263,7 +281,7 @@ Write-Host ("Fallback launcher: {0}" -f $fallbackLauncherBat)
 $cdeGuiPayloadDir = Join-Path $PSScriptRoot '..\CDE\ToolkitGUI\bin\Release\net8.0-windows'
 $cdeGuiPayloadDir = [System.IO.Path]::GetFullPath($cdeGuiPayloadDir)
 Write-Host "`nSyncing GUI payload to: $cdeGuiPayloadDir" -ForegroundColor Cyan
-robocopy $publishDir $cdeGuiPayloadDir /E /IS /IT /NP | Out-Host
+robocopy $publishDir $cdeGuiPayloadDir /MIR /IS /IT /NP | Out-Host
 # Robocopy: 0-7 = success (including extra files at destination); 8+ = failure.
 if ($LASTEXITCODE -ge 8) {
     throw "Robocopy GUI payload sync failed with exit code $LASTEXITCODE"
@@ -319,7 +337,11 @@ $srcBaselines = Join-Path $cstSourceDir 'rules\baselines'
 $dstBaselines = Join-Path $cstRulesDir 'baselines'
 if (Test-Path -LiteralPath $srcBaselines) {
     New-Item -ItemType Directory -Path $dstBaselines -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $srcBaselines '*') -Destination $dstBaselines -Recurse -Force
+    $staleNestedBaselines = Join-Path $dstBaselines 'baselines'
+    if (Test-Path -LiteralPath $staleNestedBaselines) {
+        Remove-Item -LiteralPath $staleNestedBaselines -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Copy-Item -Path (Join-Path $srcBaselines '*') -Destination $dstBaselines -Recurse -Force
     Write-Host '  Synced: rules\baselines\**'
 }
 # NSRL goodware.db is dev-only (Core Security Tool\CST\rules\). Not shipped to Toolkit/USB (FAT32 4GB limit, long publish).
@@ -334,7 +356,11 @@ $srcCstLib = Join-Path $cstSourceDir 'lib'
 $dstCstLib = Join-Path $cstRuntimeDir 'lib'
 if (Test-Path -LiteralPath $srcCstLib) {
     New-Item -ItemType Directory -Path $dstCstLib -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $srcCstLib '*') -Destination $dstCstLib -Recurse -Force
+    $staleNestedLib = Join-Path $dstCstLib 'lib'
+    if (Test-Path -LiteralPath $staleNestedLib) {
+        Remove-Item -LiteralPath $staleNestedLib -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Copy-Item -Path (Join-Path $srcCstLib '*') -Destination $dstCstLib -Recurse -Force
     Write-Host '  Synced: lib\**'
 }
 Write-Host 'CST runtime sync complete.' -ForegroundColor Green
@@ -365,7 +391,18 @@ if (-not (Test-Path -LiteralPath $userGuideSource)) {
 
 Write-Host "`nGenerating User Guide PDF..." -ForegroundColor Cyan
 New-Item -ItemType Directory -Path $halpDir -Force | Out-Null
-dotnet run --project $userGuideProject -c Release -- $toolkitRoot $userGuideSource $userGuidePdf | Out-Host
+dotnet publish $userGuideProject -c Release -r win-x64 --self-contained true -o $publishDir "-p:Version=$version" -p:AppendTargetFrameworkToOutputPath=false -p:AppendRuntimeIdentifierToOutputPath=false | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "UserGuideGenerator publish failed with exit code $LASTEXITCODE"
+}
+$userGuideExe = Join-Path $publishDir 'UserGuideGenerator.exe'
+foreach ($ugFile in @('UserGuideGenerator.exe', 'UserGuideGenerator.dll', 'UserGuideGenerator.deps.json', 'UserGuideGenerator.runtimeconfig.json', 'Markdig.dll')) {
+    $srcUg = Join-Path $publishDir $ugFile
+    if (Test-Path -LiteralPath $srcUg) {
+        Copy-Item -LiteralPath $srcUg -Destination (Join-Path $cdeGuiPayloadDir $ugFile) -Force
+    }
+}
+& $userGuideExe $toolkitRoot $userGuideSource $userGuidePdf | Out-Host
 if ($LASTEXITCODE -ne 0) {
     throw "User guide PDF generation failed with exit code $LASTEXITCODE"
 }

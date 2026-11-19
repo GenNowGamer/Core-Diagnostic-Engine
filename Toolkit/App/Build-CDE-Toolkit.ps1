@@ -20,15 +20,24 @@ $appDir = Split-Path $MyInvocation.MyCommand.Path -Parent
 $toolkitRoot = [System.IO.Path]::GetFullPath((Join-Path $appDir '..'))
 
 if ($BuildChu) {
-    $chuScript = Join-Path $toolkitRoot 'Scripts\BUILD_CHU_UEFI.ps1'
-    if (-not (Test-Path -LiteralPath $chuScript)) {
-        throw "CHU build script not found: $chuScript"
-    }
-
-    $manifestPath = Join-Path $toolkitRoot 'Tools\tools_manifest.json'
-    & $chuScript -CdeManifestPath $manifestPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "BUILD_CHU_UEFI.ps1 failed with exit code $LASTEXITCODE"
+    $chuCandidates = @(
+        (Join-Path $toolkitRoot 'Scripts\BUILD_CHU_UEFI.ps1'),
+        [System.IO.Path]::GetFullPath((Join-Path $toolkitRoot '..\..\Core Hardware Utility\BUILD_CHU_UEFI.ps1')),
+        [System.IO.Path]::GetFullPath((Join-Path $toolkitRoot '..\Core Hardware Utility\BUILD_CHU_UEFI.ps1'))
+    )
+    $chuScript = $chuCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($chuScript) {
+        $manifestPath = Join-Path $toolkitRoot 'Tools\tools_manifest.json'
+        & $chuScript -CdeManifestPath $manifestPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "BUILD_CHU_UEFI.ps1 failed with exit code $LASTEXITCODE"
+        }
+    } else {
+        Write-Warning "BUILD_CHU_UEFI.ps1 not found; refreshing existing boot artifacts manifest instead."
+        $ensureScript = Join-Path $toolkitRoot 'Tools\Ensure-BootArtifacts.ps1'
+        if (Test-Path -LiteralPath $ensureScript) {
+            & $ensureScript
+        }
     }
 }
 
@@ -53,7 +62,7 @@ if (-not [string]::IsNullOrWhiteSpace($UsbDrive)) {
     }
 
     $drive = $UsbDrive.Trim().TrimEnd(':')
-    cmd.exe /c "`"$syncBat`" $drive`:"
+    cmd.exe /c "`"$syncBat`" --elevated ${drive}: --yes --nopause"
     if ($LASTEXITCODE -ne 0) {
         throw "SyncUSB.bat failed with exit code $LASTEXITCODE"
     }

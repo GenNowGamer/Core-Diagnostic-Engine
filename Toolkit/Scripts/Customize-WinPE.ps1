@@ -13,7 +13,12 @@ if (-not $isAdmin) {
     $argsList = "-NoProfile -ExecutionPolicy Bypass -NoExit -File `"$PSCommandPath`""
     if ($PSBoundParameters.Count -gt 0) {
         foreach ($key in $PSBoundParameters.Keys) {
-            $argsList += " -$key `"$($PSBoundParameters[$key])`""
+            $val = $PSBoundParameters[$key]
+            if ($val -is [switch]) {
+                if ($val.IsPresent) { $argsList += " -$key" }
+            } else {
+                $argsList += " -$key `"$val`""
+            }
         }
     }
     Start-Process powershell.exe -ArgumentList $argsList -Verb RunAs
@@ -107,6 +112,9 @@ if (Test-Path $adkMedia) {
         Write-OK "Staged Boot folder (BCD, boot.sdi) from ADK"
     }
     if (-not (Test-Path "$CDE_ROOT\EFI\microsoft") -and (Test-Path "$adkMedia\EFI\microsoft")) {
+        if (-not (Test-Path "$CDE_ROOT\EFI")) {
+            New-Item -ItemType Directory -Path "$CDE_ROOT\EFI" -Force | Out-Null
+        }
         Copy-Item "$adkMedia\EFI\microsoft" "$CDE_ROOT\EFI\microsoft" -Recurse -Force
         Write-OK "Staged EFI\microsoft from ADK"
     }
@@ -131,6 +139,14 @@ if (Test-Path $adkOscdimg) {
     if (Test-Path $adkEtfsboot -and -not (Test-Path "$halpDir\etfsboot.com")) {
         Copy-Item $adkEtfsboot "$halpDir\etfsboot.com" -Force
         Write-OK "Staged etfsboot.com to HALP\"
+    }
+    $adkOscdimgDir = Split-Path -Parent $adkOscdimg
+    foreach ($efiBinName in @('efisys_noprompt.bin', 'efisys.bin')) {
+        $efiBinSrc = Join-Path $adkOscdimgDir $efiBinName
+        if ((Test-Path $efiBinSrc) -and -not (Test-Path "$halpDir\$efiBinName")) {
+            Copy-Item $efiBinSrc "$halpDir\$efiBinName" -Force
+            Write-OK "Staged $efiBinName to HALP\"
+        }
     }
 }
 
@@ -185,6 +201,13 @@ if (-not (Test-Path $ocPath)) {
     exit 1
 }
 
+function Invoke-DismDiscardAndFail {
+    param([string]$Message)
+    Write-Host "  Discarding mounted WinPE image at $MOUNT_DIR ..." -ForegroundColor Yellow
+    Dism /Unmount-Image /MountDir:"$MOUNT_DIR" /Discard | Out-Null
+    Write-Fail $Message
+}
+
 # WinPE-StorageWMI requires WMI/NetFx/Scripting/PowerShell first (Microsoft OC dependency chain).
 $packages = @('WinPE-WMI', 'WinPE-NetFx', 'WinPE-Scripting', 'WinPE-PowerShell', 'WinPE-StorageWMI')
 foreach ($pkg in $packages) {
@@ -198,7 +221,7 @@ foreach ($pkg in $packages) {
         else {
             Write-Host "  --- DISM output for $pkg ---" -ForegroundColor Yellow
             $out | ForEach-Object { Write-Host "  $_" }
-            Write-Fail "Failed to add $pkg (exit $LASTEXITCODE)"
+            Invoke-DismDiscardAndFail "Failed to add $pkg (exit $LASTEXITCODE)"
         }
     } else { Write-Host "    $pkg OK" -ForegroundColor Green }
 
@@ -210,7 +233,7 @@ foreach ($pkg in $packages) {
             if (-not $msg) {
                 Write-Host "  --- DISM output for $pkg en-us ---" -ForegroundColor Yellow
                 $out | ForEach-Object { Write-Host "  $_" }
-                Write-Fail "Failed to add $pkg en-us (exit $LASTEXITCODE)"
+                Invoke-DismDiscardAndFail "Failed to add $pkg en-us (exit $LASTEXITCODE)"
             }
         }
     }
@@ -222,7 +245,7 @@ Write-OK "PowerShell components added"
 # ---------------------------------------------------------------
 Write-Step "Injecting startnet.cmd..."
 $targetDir = "$MOUNT_DIR\Windows\System32"
-if (-not (Test-Path $targetDir)) { Write-Fail "Target dir not found: $targetDir (WIM may be wrong index)" }
+if (-not (Test-Path $targetDir)) { Invoke-DismDiscardAndFail "Target dir not found: $targetDir (WIM may be wrong index)" }
 
 # Backup original startnet.cmd
 $origStartnet = "$targetDir\startnet.cmd"
@@ -274,6 +297,11 @@ $psModDest   = "$MOUNT_DIR\Windows\System32\WindowsPowerShell\v1.0\Modules\CDECo
 if (Test-Path "$psModSource\Toolkit.Core.psm1") {
     New-Item $psModDest -ItemType Directory -Force | Out-Null
     Copy-Item "$psModSource\Toolkit.Core.psm1" "$psModDest\CDECore.psm1" -Force
+    foreach ($companion in @('OfflineRuntime.ps1', 'WorkOrder.ps1', 'Toolkit.Elevation.psm1')) {
+        if (Test-Path "$psModSource\$companion") {
+            Copy-Item "$psModSource\$companion" "$psModDest\$companion" -Force
+        }
+    }
     # Create module manifest stub
     $manifest  = "@{"
     $manifest += "`n    ModuleVersion = '1.0.0'"

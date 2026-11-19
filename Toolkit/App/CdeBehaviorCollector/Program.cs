@@ -84,18 +84,32 @@ internal sealed class CollectorApplication
 
         var results = channels.Select(channel =>
         {
-            try
-            {
-                var exists = EventLog.Exists(channel);
-                return new ChannelProbe(channel, exists, exists ? null : "Channel unavailable");
-            }
-            catch (Exception ex)
-            {
-                return new ChannelProbe(channel, false, ex.Message);
-            }
+            var (available, note) = ProbeChannel(channel);
+            return new ChannelProbe(channel, available, note);
         }).ToArray();
 
         return new CollectorProbe(Environment.MachineName, DateTime.UtcNow, results);
+    }
+
+    private static (bool Available, string? Note) ProbeChannel(string channelName)
+    {
+        try
+        {
+            _ = EventLogSession.GlobalSession.GetLogInformation(channelName, PathType.LogName);
+            return (true, null);
+        }
+        catch (EventLogNotFoundException)
+        {
+            return (false, "Channel unavailable");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return (false, $"Access denied: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
     }
 
     private static BehaviorEnvelope Collect(CollectOptions options)
@@ -480,12 +494,6 @@ internal sealed class CollectorApplication
         var beforeCount = artifacts.Count;
         try
         {
-            if (!EventLog.Exists(logName))
-            {
-                channelResults.Add(new ChannelResult(logicalChannel, "Unavailable", 0, "Event log unavailable."));
-                return;
-            }
-
             var query = new EventLogQuery(logName, PathType.LogName, $"*[System[EventID={eventId}]]")
             {
                 ReverseDirection = true
@@ -675,7 +683,8 @@ internal sealed class CollectorApplication
     private static void CollectOptionalSysmon(DateTime sinceUtc, int maxEvents, List<BehaviorArtifact> artifacts, List<ChannelResult> channelResults)
     {
         const string sysmonLog = "Microsoft-Windows-Sysmon/Operational";
-        if (!EventLog.Exists(sysmonLog))
+        var (sysmonAvailable, _) = ProbeChannel(sysmonLog);
+        if (!sysmonAvailable)
         {
             channelResults.Add(new ChannelResult("Sysmon", "Unavailable", 0, "Sysmon operational log not present; skipped."));
             return;

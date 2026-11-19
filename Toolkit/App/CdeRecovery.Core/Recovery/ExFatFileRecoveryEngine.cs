@@ -30,6 +30,19 @@ namespace CdeRecovery.Core.Recovery
 
             string oem = Encoding.ASCII.GetString(vbr, 3, 8);
             if (!string.Equals(oem, "EXFAT   ", StringComparison.Ordinal))
+            {
+                // Fall back to exFAT Backup Boot Sector at sector 12 (or partition.BackupBootSectorOffset)
+                long backupVbrOffset = partition.BackupBootSectorOffset > partition.PartitionStartOffset
+                    ? partition.BackupBootSectorOffset
+                    : partition.PartitionStartOffset + (12L * sectorSize);
+                if (backupVbrOffset + vbr.Length <= source.Length)
+                {
+                    await source.ReadAtAsync(backupVbrOffset, vbr, cancellationToken).ConfigureAwait(false);
+                    oem = Encoding.ASCII.GetString(vbr, 3, 8);
+                }
+            }
+
+            if (!string.Equals(oem, "EXFAT   ", StringComparison.Ordinal))
                 throw new InvalidDataException("Invalid exFAT boot sector signature.");
 
             uint fatOffsetSectors = BinaryPrimitives.ReadUInt32LittleEndian(vbr.AsSpan(0x50, 4));
@@ -150,7 +163,8 @@ namespace CdeRecovery.Core.Recovery
                     {
                         if (startCluster >= 2 && startCluster < maxCluster && visitedDirs.Add(startCluster))
                         {
-                            int dirClusNeed = dataLength > 0 ? (int)Math.Min(512, (dataLength + clusterSize - 1) / clusterSize) : 512;
+                            int maxDirCap = isDeleted ? Math.Max(4, (2 * 1024 * 1024) / Math.Max(4096, clusterSize)) : 512;
+                            int dirClusNeed = dataLength > 0 ? (int)Math.Min(maxDirCap, (dataLength + clusterSize - 1) / clusterSize) : Math.Min(32, maxDirCap);
                             dirQueue.Enqueue((startCluster, relPath, childNoFatChain, isDeleted, dirClusNeed));
                         }
                         continue;
@@ -257,12 +271,17 @@ namespace CdeRecovery.Core.Recovery
             try
             {
                 await source.ReadAtAsync(alignedOffset, sector, cancellationToken).ConfigureAwait(false);
-                uint entriesPerSector = (uint)(sectorSize / 4);
-                uint baseCluster = (uint)((alignedOffset - fatOffset) / 4);
-                for (uint i = 0; i < entriesPerSector; i++)
+                int entriesPerSector = (int)(sectorSize / 4);
+                for (int i = 0; i < entriesPerSector; i++)
                 {
-                    uint val = BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan((int)(i * 4), 4));
-                    fatCache[baseCluster + i] = val;
+                    long entryFileOffset = alignedOffset + (i * 4L) - fatOffset;
+                    if (entryFileOffset < 0 || (entryFileOffset % 4) != 0)
+                        continue;
+                    long idx = entryFileOffset / 4;
+                    if (idx < 0 || idx > uint.MaxValue)
+                        continue;
+                    uint val = BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(i * 4, 4));
+                    fatCache[(uint)idx] = val;
                 }
                 return fatCache.TryGetValue(cluster, out uint resolved) ? resolved : 0xFFFFFFFFu;
             }
@@ -305,7 +324,8 @@ namespace CdeRecovery.Core.Recovery
             {
                 int year = (int)(((ts >> 25) & 0x7F) + 1980);
                 int month = (int)Math.Clamp((ts >> 21) & 0x0F, 1, 12);
-                int day = (int)Math.Clamp((ts >> 16) & 0x1F, 1, 28);
+                int maxDay = DateTime.DaysInMonth(Math.Clamp(year, 1980, 2107), month);
+                int day = (int)Math.Clamp((ts >> 16) & 0x1F, 1, maxDay);
                 int hour = (int)Math.Clamp((ts >> 11) & 0x1F, 0, 23);
                 int min = (int)Math.Clamp((ts >> 5) & 0x3F, 0, 59);
                 int sec = (int)Math.Clamp((ts & 0x1F) * 2, 0, 59);

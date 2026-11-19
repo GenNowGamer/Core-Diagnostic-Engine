@@ -547,7 +547,7 @@ namespace ToolkitGUI.Services
             var toolkitRootFromEnv = Environment.GetEnvironmentVariable("TOOLKIT_ROOT");
             if (!string.IsNullOrWhiteSpace(toolkitRootFromEnv))
             {
-                candidates.Add(Path.Combine(toolkitRootFromEnv.TrimEnd('\\', '/'), "Security", "CST", "CoreSecurityTool.ps1"));
+                candidates.Add(Path.Combine(ToolkitPaths.NormalizeRootPath(toolkitRootFromEnv), "Security", "CST", "CoreSecurityTool.ps1"));
             }
 
             var toolkitRoot = ToolkitPaths.GetToolkitRoot();

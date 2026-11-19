@@ -39,6 +39,7 @@ Toolkit/boot/bootfix.bin
 Toolkit/boot/bootsect.exe
 Toolkit/HALP/oscdimg.exe
 Toolkit/Diagnostics/Memory/WinMemoryDiag/memtest.efi
+Toolkit/Tools/Boot/WinMemoryDiag/memtest.efi
 Toolkit/EFI/CDE/memtest.efi
 Toolkit/Diagnostics/Memory/MemTest86/memtest86-usb.img
 Toolkit/Diagnostics/Memory/MemTest86/imageUSB.exe

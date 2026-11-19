@@ -16,6 +16,17 @@ namespace ToolkitGUI
     {
         protected override async void OnStartup(StartupEventArgs e)
         {
+            if (e.Args.Length >= 3 && string.Equals(e.Args[0], "--export-workorder-pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                var ok = WorkOrderReportPdfService.TryGenerateFromJsonFile(e.Args[1], e.Args[2], out var pdfError);
+                if (!ok && !string.IsNullOrWhiteSpace(pdfError))
+                {
+                    Console.Error.WriteLine(pdfError);
+                }
+                Environment.Exit(ok ? 0 : 1);
+                return;
+            }
+
             DispatcherUnhandledException += OnDispatcherException;
             AppDomain.CurrentDomain.UnhandledException += OnDomainException;
 
@@ -99,7 +110,8 @@ namespace ToolkitGUI
                 }
                 else if (!IsWinPeRuntime())
                 {
-                    TryApplyOfflineEnvFile();
+                    // Live Windows should never inherit a stale WinPE offline_env.txt from a USB drive.
+                    OfflineRuntimePaths.ClearOfflineProcessEnv();
                 }
 
                 OfflineRuntimePaths.SyncOfflineRegistryLoadedEnv();
@@ -179,7 +191,7 @@ namespace ToolkitGUI
         }
 
         private static bool IsWinPeRuntime() =>
-            Directory.Exists(@"X:\Windows\System32");
+            ToolkitGUI.ViewModels.PowerShellService.IsWinPeEnvironment();
 
         private static async Task ShowStartupSplashAsync()
         {

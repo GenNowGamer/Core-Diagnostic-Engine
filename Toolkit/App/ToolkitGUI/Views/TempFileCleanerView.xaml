@@ -30,10 +30,10 @@
                 <controls:ResponsiveToolbar HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Button Content="🔍  Scan" Style="{StaticResource ActionButtonStyle}"
                             Command="{Binding ScanCommand}" Padding="18,9" Margin="0,0,8,6"
-                            IsEnabled="{Binding IsIdle}"/>
+                            IsEnabled="{Binding CanOperate}"/>
                     <Button Content="🗑  Clean Selected" Style="{StaticResource ActionButtonStyle}"
                             Command="{Binding CleanCommand}" Padding="18,9" Margin="0,0,0,6"
-                            IsEnabled="{Binding IsIdle}"/>
+                            IsEnabled="{Binding CanOperate}"/>
                 </controls:ResponsiveToolbar>
             </Grid>
         </Border>
@@ -68,11 +68,11 @@
             <controls:ResponsiveToolbar VerticalAlignment="Center">
                 <TextBlock Text="STATUS" FontSize="10" FontWeight="Bold"
                            Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,14,6"/>
-                <TextBlock Text="{Binding StatusText}" FontSize="13" FontWeight="SemiBold"
+                <TextBlock Text="{Binding ScanStatusText}" FontSize="13" FontWeight="SemiBold"
                            Foreground="{DynamicResource AccentBlueBrush}" VerticalAlignment="Center" Margin="0,0,20,6"/>
                 <ProgressBar IsIndeterminate="True" Width="140" Height="6" VerticalAlignment="Center" Margin="0,0,0,6"
                              Foreground="{DynamicResource AccentBlueBrush}" BorderThickness="0"
-                             Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}"/>
+                             Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}"/>
             </controls:ResponsiveToolbar>
         </Border>
 
@@ -273,7 +273,10 @@
         <!-- Summary footer -->
         <Border Grid.Row="4" Background="{DynamicResource BackgroundMidBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="14,10">
-            <TextBlock x:Name="SummaryText" FontSize="13" FontWeight="SemiBold"
+            <TextBlock x:Name="SummaryText"
+                       Text="{Binding FooterSummaryText}"
+                       FontSize="13"
+                       FontWeight="SemiBold"
                        Foreground="{DynamicResource TextSecondaryBrush}"/>
         </Border>
     </Grid>

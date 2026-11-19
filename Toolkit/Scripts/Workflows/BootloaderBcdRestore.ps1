@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 param(
     [string]$TargetDrive = '',
     [string]$EfiBackupPath = '',
@@ -59,29 +59,33 @@ $workflow = Start-Workflow -WorkflowName 'Bootloader_BCDRestore' -ScriptBlock {
     }
 
     if ($efiBackup) {
-        if (Test-Path -LiteralPath $target.EfiBcdPath -PathType Leaf) {
-            $step = Invoke-BcdEditImport -BcdStorePath $target.EfiBcdPath -ImportPath $efiBackup.FullName -StepName 'RestoreEFI_BCD'
+        $efiDest = $target.EfiBcdPath
+        $efiDestRoot = Split-Path -Qualifier $efiDest -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath ($efiDestRoot + '\') -PathType Container) {
+            $step = Invoke-BcdEditImport -BcdStorePath $efiDest -ImportPath $efiBackup.FullName -StepName 'RestoreEFI_BCD'
             Add-BootloaderStep -Result $r -Step $step
         } else {
             Add-BootloaderStep -Result $r -Step ([PSCustomObject]@{
                 Name = 'RestoreEFI_BCD'
                 Status = 'Warn'
                 ExitCode = 1
-                Output = "EFI destination not found at $($target.EfiBcdPath)"
+                Output = "EFI destination volume not found at $($target.EfiBcdPath)"
             })
         }
     }
 
     if ($biosBackup) {
-        if (Test-Path -LiteralPath $target.BiosBcdPath -PathType Leaf) {
-            $step = Invoke-BcdEditImport -BcdStorePath $target.BiosBcdPath -ImportPath $biosBackup.FullName -StepName 'RestoreBIOS_BCD'
+        $biosDest = $target.BiosBcdPath
+        $biosDestRoot = Split-Path -Qualifier $biosDest -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath ($biosDestRoot + '\') -PathType Container) {
+            $step = Invoke-BcdEditImport -BcdStorePath $biosDest -ImportPath $biosBackup.FullName -StepName 'RestoreBIOS_BCD'
             Add-BootloaderStep -Result $r -Step $step
         } else {
             Add-BootloaderStep -Result $r -Step ([PSCustomObject]@{
                 Name = 'RestoreBIOS_BCD'
                 Status = 'Warn'
                 ExitCode = 1
-                Output = "BIOS destination not found at $($target.BiosBcdPath)"
+                Output = "BIOS destination volume not found at $($target.BiosBcdPath)"
             })
         }
     }

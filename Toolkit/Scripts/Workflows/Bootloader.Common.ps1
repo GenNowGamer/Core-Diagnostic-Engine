@@ -1,11 +1,11 @@
 $ErrorActionPreference = 'Stop'
 
-function global:Get-EnvironmentMode {
-    # X:\ is the WinPE RAM drive - always present in any WinPE environment
-    if (Test-Path 'X:\' -ErrorAction SilentlyContinue) { return 'WinPE' }
-    # MiniNT registry key is set by the WinPE loader
-    if (Test-Path 'HKLM:\System\CurrentControlSet\Control\MiniNT' -ErrorAction SilentlyContinue) { return 'WinPE' }
-    return 'Windows'
+if (-not (Get-Command Get-EnvironmentMode -ErrorAction SilentlyContinue)) {
+    function global:Get-EnvironmentMode {
+        if (Test-Path 'HKLM:\System\CurrentControlSet\Control\MiniNT' -ErrorAction SilentlyContinue) { return 'WinPE' }
+        if ($env:SystemDrive -ieq 'X:' -or ($env:SystemRoot -and $env:SystemRoot.StartsWith('X:\', [System.StringComparison]::OrdinalIgnoreCase))) { return 'WinPE' }
+        return 'Windows'
+    }
 }
 
 function global:Get-CommandCaptureText {
@@ -111,27 +111,94 @@ function global:Invoke-BootsectOnBootloaderTarget {
     return Invoke-BootloaderCommandCaptured -FilePath 'bootsect.exe' -ArgumentList $argumentList.ToArray() -StepName $StepName
 }
 
+function global:Test-IsToolkitMediaDriveRoot {
+    param([string]$DriveRoot)
+
+    if ([string]::IsNullOrWhiteSpace($DriveRoot)) {
+        return $false
+    }
+
+    $clean = Normalize-DriveRoot -DriveRoot $DriveRoot
+    if ($clean -ieq 'X:') {
+        return $true
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:TOOLKIT_ROOT)) {
+        try {
+            $tkQualifier = Split-Path -Path $env:TOOLKIT_ROOT -Qualifier -ErrorAction SilentlyContinue
+            if (-not [string]::IsNullOrWhiteSpace($tkQualifier) -and
+                (Normalize-DriveRoot -DriveRoot $tkQualifier) -ieq $clean) {
+                $tkWin = Join-Path ($clean + '\') 'Windows\System32\winload.efi'
+                if (-not (Test-Path -LiteralPath $tkWin -PathType Leaf)) {
+                    return $true
+                }
+            }
+        } catch { }
+    }
+
+    $autorun = Join-Path ($clean + '\') 'autorun.inf'
+    $cdeGuiDir = Join-Path ($clean + '\') 'CDE\ToolkitGUI'
+    $winLoad = Join-Path ($clean + '\') 'Windows\System32\winload.efi'
+    if (-not (Test-Path -LiteralPath $winLoad -PathType Leaf)) {
+        if (Test-Path -LiteralPath $cdeGuiDir -PathType Container) {
+            return $true
+        }
+        if (Test-Path -LiteralPath $autorun -PathType Leaf) {
+            try {
+                $raw = Get-Content -LiteralPath $autorun -Raw -ErrorAction SilentlyContinue
+                if ($raw -match 'CDE Diagnostic Suite') {
+                    return $true
+                }
+            } catch { }
+        }
+    }
+
+    return $false
+}
+
 function global:Get-EfiSystemVolumes {
     $volumes = [System.Collections.Generic.List[object]]::new()
+    $seenRoots = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+
+    $espDriveRoots = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    if (Get-Command Get-Partition -ErrorAction SilentlyContinue) {
+        try {
+            $espPartitions = @(Get-Partition -ErrorAction SilentlyContinue | Where-Object {
+                ($_.GptType -and $_.GptType.ToString() -ieq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}') -or
+                ($_.Type -eq 'System')
+            })
+            foreach ($part in $espPartitions) {
+                $partRoot = Ensure-PartitionDriveLetter -Partition $part
+                if (-not [string]::IsNullOrWhiteSpace($partRoot) -and -not (Test-IsToolkitMediaDriveRoot -DriveRoot $partRoot)) {
+                    [void]$espDriveRoots.Add($partRoot)
+                }
+            }
+        } catch { }
+    }
 
     foreach ($drive in [System.IO.DriveInfo]::GetDrives()) {
         try {
             if (-not $drive.IsReady) { continue }
             $root = $drive.RootDirectory.FullName.TrimEnd('\')
             if ($root -like 'X:*') { continue }
+            if (Test-IsToolkitMediaDriveRoot -DriveRoot $root) { continue }
 
             $efiBcd = Join-Path $root 'EFI\Microsoft\Boot\BCD'
-            if (-not (Test-Path -LiteralPath $efiBcd -PathType Leaf)) { continue }
+            $hasBcd = Test-Path -LiteralPath $efiBcd -PathType Leaf
+            $isEsp = $espDriveRoots.Contains($root)
+            if (-not $hasBcd -and -not $isEsp) { continue }
 
             $windowsDir = Join-Path $root 'Windows'
             $hasWindows = Test-Path -LiteralPath $windowsDir -PathType Container
 
-            $volumes.Add([PSCustomObject]@{
-                DriveRoot   = $root
-                EfiBcdPath  = $efiBcd
-                HasWindows  = $hasWindows
-                WindowsDir  = if ($hasWindows) { $windowsDir } else { '' }
-            }) | Out-Null
+            if ($seenRoots.Add($root)) {
+                $volumes.Add([PSCustomObject]@{
+                    DriveRoot   = $root
+                    EfiBcdPath  = $efiBcd
+                    HasWindows  = $hasWindows
+                    WindowsDir  = if ($hasWindows) { $windowsDir } else { '' }
+                }) | Out-Null
+            }
         } catch {
             continue
         }
@@ -158,6 +225,13 @@ function global:Get-BootloaderTargets {
             $efiInfo = Resolve-TargetEfiBcdPath -WindowsDriveRoot $root.TrimEnd('\')
             if ($efiInfo -and (Test-Path -LiteralPath $efiInfo.EfiBcdPath -PathType Leaf)) {
                 $efiBcd = $efiInfo.EfiBcdPath
+            }
+
+            if (-not (Test-Path -LiteralPath $biosBcd -PathType Leaf)) {
+                $biosInfo = Resolve-TargetBiosBcdPath -WindowsDriveRoot $root.TrimEnd('\')
+                if ($biosInfo -and (Test-Path -LiteralPath $biosInfo.BiosBcdPath -PathType Leaf)) {
+                    $biosBcd = $biosInfo.BiosBcdPath
+                }
             }
 
             $score = 0
@@ -504,6 +578,53 @@ function global:Resolve-TargetEfiBcdPath {
     }
 }
 
+function global:Resolve-TargetBiosBcdPath {
+    param([Parameter(Mandatory)][string]$WindowsDriveRoot)
+
+    $windowsRoot = Normalize-DriveRoot -DriveRoot $WindowsDriveRoot
+    $onWindows = Join-Path ($windowsRoot + '\') 'Boot\BCD'
+    if (Test-Path -LiteralPath $onWindows -PathType Leaf) {
+        return [PSCustomObject]@{
+            BiosDriveRoot = $windowsRoot
+            BiosBcdPath   = $onWindows
+            Source        = 'WindowsVolume'
+            Mounted       = $true
+        }
+    }
+
+    $letter = $windowsRoot.TrimEnd(':')
+    if ($letter.Length -eq 1 -and (Get-Command Get-Partition -ErrorAction SilentlyContinue)) {
+        try {
+            $winPart = Get-Partition -DriveLetter $letter -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($winPart) {
+                $sysParts = @(Get-Partition -DiskNumber $winPart.DiskNumber -ErrorAction SilentlyContinue |
+                    Where-Object { $_.IsActive -or $_.IsSystem })
+                foreach ($sp in $sysParts) {
+                    $sysRoot = Ensure-PartitionDriveLetter -Partition $sp
+                    if ($sysRoot -and -not (Test-IsToolkitMediaDriveRoot -DriveRoot $sysRoot)) {
+                        $candBcd = Join-Path ($sysRoot + '\') 'Boot\BCD'
+                        if (Test-Path -LiteralPath $candBcd -PathType Leaf) {
+                            return [PSCustomObject]@{
+                                BiosDriveRoot = $sysRoot
+                                BiosBcdPath   = $candBcd
+                                Source        = 'ActiveSystemPartition'
+                                Mounted       = $true
+                            }
+                        }
+                    }
+                }
+            }
+        } catch { }
+    }
+
+    return [PSCustomObject]@{
+        BiosDriveRoot = $windowsRoot
+        BiosBcdPath   = $onWindows
+        Source        = 'NotFound'
+        Mounted       = $false
+    }
+}
+
 function global:Get-BcdBackupInventory {
     param([Parameter(Mandatory)][string]$BackupRoot)
 
@@ -614,32 +735,42 @@ function global:Invoke-BcdEditImport {
         }
     }
 
-    if (-not (Test-Path -LiteralPath $BcdStorePath -PathType Leaf)) {
-        return [PSCustomObject]@{
-            Name     = $StepName
-            Status   = 'Warn'
-            ExitCode = 1
-            Output   = "BCD destination not found: $BcdStorePath"
+    $destExists = Test-Path -LiteralPath $BcdStorePath -PathType Leaf
+    $destParent = Split-Path -Parent $BcdStorePath
+    $destRoot = if ($destParent) { Split-Path -Qualifier $destParent -ErrorAction SilentlyContinue } else { '' }
+    if (-not $destExists) {
+        if ([string]::IsNullOrWhiteSpace($destRoot) -or -not (Test-Path -LiteralPath ($destRoot + '\') -PathType Container)) {
+            return [PSCustomObject]@{
+                Name     = $StepName
+                Status   = 'Warn'
+                ExitCode = 1
+                Output   = "BCD destination volume not found: $BcdStorePath"
+            }
         }
     }
 
     $safetyPath = "$BcdStorePath.preimport_$(Get-Date -Format 'yyyyMMdd_HHmmss').bak"
     try {
-        Copy-Item -LiteralPath $BcdStorePath -Destination $safetyPath -Force -ErrorAction Stop
-        Clear-BcdStoreFileAttributes -Path $BcdStorePath
+        if ($destExists) {
+            Copy-Item -LiteralPath $BcdStorePath -Destination $safetyPath -Force -ErrorAction Stop
+            Clear-BcdStoreFileAttributes -Path $BcdStorePath
+        } elseif (-not [string]::IsNullOrWhiteSpace($destParent) -and -not (Test-Path -LiteralPath $destParent -PathType Container)) {
+            New-Item -ItemType Directory -Path $destParent -Force -ErrorAction Stop | Out-Null
+        }
         Copy-Item -LiteralPath $ImportPath -Destination $BcdStorePath -Force -ErrorAction Stop
         $size = (Get-Item -LiteralPath $BcdStorePath -ErrorAction Stop).Length
         if ($size -lt 1) {
             throw 'Restored BCD store is empty after copy.'
         }
 
+        $safetyNote = if ($destExists) { "Safety snapshot: $safetyPath" } else { 'Destination BCD did not exist prior to restore (created new).' }
         return [PSCustomObject]@{
             Name     = $StepName
             Status   = 'Pass'
             ExitCode = 0
             Output   = @(
                 "Restored BCD store from $ImportPath ($size bytes)."
-                "Safety snapshot: $safetyPath"
+                $safetyNote
                 'Offline stores are restored by file copy because bcdedit /import applies only to the active system store.'
             ) -join "`n"
         }

@@ -1124,7 +1124,8 @@ function Invoke-HijackRepairSelectedFindings {
     $skippedCount = 0
 
     foreach ($finding in $selected) {
-        if (-not $finding.repairable) {
+        $allowConfirmedHostsRestore = ([string]$finding.repairAction -eq 'network.hosts.restore' -and [bool]$script:HijackConfirmHostsRestore)
+        if (-not $finding.repairable -and -not $allowConfirmedHostsRestore) {
             $skippedCount++
             $details.Add("Skipped (review only): $($finding.name)") | Out-Null
             continue
@@ -1144,7 +1145,7 @@ function Invoke-HijackRepairSelectedFindings {
     }
 
     if (Get-Command Invoke-PostOpDnsFlush -ErrorAction SilentlyContinue) {
-        $hadNetwork = @($selected | Where-Object { [string]$_.category -eq 'Network' -and $_.repairable }).Count -gt 0
+        $hadNetwork = @($selected | Where-Object { [string]$_.category -eq 'Network' -and ($_.repairable -or ([string]$_.repairAction -eq 'network.hosts.restore' -and [bool]$script:HijackConfirmHostsRestore)) }).Count -gt 0
         if ($hadNetwork) {
             $dns = Invoke-PostOpDnsFlush
             $details.Add([string]$dns.Output) | Out-Null

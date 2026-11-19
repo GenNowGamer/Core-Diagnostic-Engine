@@ -121,10 +121,11 @@ namespace CdeRecovery.Core.Recovery
                 catch { }
             }
 
+            long effectiveMaxRecords = maxRecords <= 0 ? long.MaxValue : maxRecords;
             if (!rec0Loaded)
             {
                 long maxPossible = (source.Length - mftOffset) / recordSize;
-                mftExtents.Add((mftOffset, Math.Min(maxRecords, maxPossible)));
+                mftExtents.Add((mftOffset, Math.Min(effectiveMaxRecords, maxPossible)));
             }
 
             var directories = new Dictionary<long, RecoverableFileItem>();
@@ -139,7 +140,6 @@ namespace CdeRecovery.Core.Recovery
             long globalRecordIndex = 0;
             int consecutiveEmptyRecords = 0;
 
-            long effectiveMaxRecords = maxRecords <= 0 ? long.MaxValue : maxRecords;
             foreach (var extent in mftExtents)
             {
                 long recordsRemainingInExtent = Math.Min(extent.RecordCount, effectiveMaxRecords - globalRecordIndex);

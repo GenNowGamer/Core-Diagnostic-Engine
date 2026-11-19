@@ -65,7 +65,8 @@ namespace CdeRecovery.Core.Imaging
             int blockSize = Math.Max(scrapeSectorSize, (copyBlockSizeBytes / scrapeSectorSize) * scrapeSectorSize);
 
             ImagingJobManifest manifest;
-            if (File.Exists(mapPath) && File.Exists(fullImgPath))
+            bool isResumingExistingJob = File.Exists(mapPath) && File.Exists(fullImgPath);
+            if (isResumingExistingJob)
             {
                 string existingJson = await File.ReadAllTextAsync(mapPath, cancellationToken).ConfigureAwait(false);
                 manifest = JsonSerializer.Deserialize<ImagingJobManifest>(existingJson, new JsonSerializerOptions
@@ -108,7 +109,8 @@ namespace CdeRecovery.Core.Imaging
                 };
             }
 
-            await using var imgStream = new FileStream(fullImgPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, 65536, useAsync: true);
+            var fileMode = isResumingExistingJob ? FileMode.OpenOrCreate : FileMode.Create;
+            await using var imgStream = new FileStream(fullImgPath, fileMode, FileAccess.ReadWrite, FileShare.Read, 65536, useAsync: true);
             if (useSparseOutput)
             {
                 try
@@ -161,6 +163,10 @@ namespace CdeRecovery.Core.Imaging
                                 }
 
                                 UpdateExtentRange(manifest, relPos, read, ImagingBlockState.Finished);
+                                if (read < chunkLen)
+                                {
+                                    UpdateExtentRange(manifest, relPos + read, chunkLen - read, ImagingBlockState.FailedBlock);
+                                }
                             }
                             else
                             {

@@ -10,11 +10,15 @@ param()
 
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$toolkitRoot = Split-Path -Parent $here
 $destDir = Join-Path $here "Boot\WinMemoryDiag"
 $dest = Join-Path $destDir "memtest.efi"
+$efiCdeDest = Join-Path $toolkitRoot "EFI\CDE\memtest.efi"
 $sources = @(
+    Join-Path $toolkitRoot "EFI\CDE\memtest.efi"
     Join-Path $env:WINDIR "Boot\EFI\memtest.efi"
     Join-Path $env:SystemRoot "Boot\EFI\memtest.efi"
+    Join-Path $toolkitRoot "EFI\microsoft\boot\memtest.efi"
 ) | Select-Object -Unique
 
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
@@ -22,10 +26,21 @@ New-Item -ItemType Directory -Force -Path $destDir | Out-Null
 $copied = $false
 foreach ($src in $sources) {
     if (Test-Path -LiteralPath $src -PathType Leaf) {
-        Copy-Item -LiteralPath $src -Destination $dest -Force
+        if ($src -ne $dest) {
+            Copy-Item -LiteralPath $src -Destination $dest -Force
+        }
         Write-Host "Copied memtest.efi from $src -> $dest"
         $copied = $true
         break
+    }
+}
+
+if ($copied -and (Test-Path -LiteralPath $dest -PathType Leaf)) {
+    $efiCdeDir = Split-Path -Parent $efiCdeDest
+    if (Test-Path -LiteralPath $efiCdeDir -PathType Container) {
+        if ($dest -ne $efiCdeDest) {
+            Copy-Item -LiteralPath $dest -Destination $efiCdeDest -Force
+        }
     }
 }
 

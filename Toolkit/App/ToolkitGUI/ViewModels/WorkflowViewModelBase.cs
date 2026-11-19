@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using ToolkitGUI;
 using ToolkitGUI.Models;
@@ -240,6 +241,13 @@ namespace ToolkitGUI.ViewModels
         public ObservableCollection<WorkflowExecutionStepViewModel> ResultSteps { get; } = new();
         public ObservableCollection<string> ResultErrors { get; } = new();
         public ObservableCollection<StructuredResultItemViewModel> StructuredResultItems { get; } = new();
+
+        private ICommand? _cancelCommand;
+        public ICommand CancelCommand => _cancelCommand ??= new RelayCommand(() =>
+        {
+            RequestStop();
+            return Task.CompletedTask;
+        });
 
         protected void AppendLog(string line)
         {

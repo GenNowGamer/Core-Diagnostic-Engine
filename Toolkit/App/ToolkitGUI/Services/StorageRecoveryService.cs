@@ -385,7 +385,7 @@ namespace ToolkitGUI.Services
             return string.Join("-", groups);
         }
 
-        public static async Task<BitLockerStatusInfo> QueryBitLockerStatusAsync(int diskNumber, int partitionNumber)
+        public static async Task<BitLockerStatusInfo> QueryBitLockerStatusAsync(int diskNumber, int partitionNumber, long partitionOffset = 0)
         {
             string manageBde = Path.Combine(Environment.SystemDirectory, "manage-bde.exe");
             if (!File.Exists(manageBde))
@@ -397,7 +397,7 @@ namespace ToolkitGUI.Services
                 };
             }
 
-            string letter = await GetPartitionDriveLetterAsync(diskNumber, partitionNumber).ConfigureAwait(false);
+            string letter = await GetPartitionDriveLetterAsync(diskNumber, partitionNumber, partitionOffset).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(letter))
             {
                 return new BitLockerStatusInfo
@@ -429,7 +429,8 @@ namespace ToolkitGUI.Services
         public static async Task<BitLockerUnlockResult> UnlockBitLockerPartitionAsync(
             int diskNumber,
             int partitionNumber,
-            string rawRecoveryKey)
+            string rawRecoveryKey,
+            long partitionOffset = 0)
         {
             string manageBde = Path.Combine(Environment.SystemDirectory, "manage-bde.exe");
             if (!File.Exists(manageBde))
@@ -451,10 +452,10 @@ namespace ToolkitGUI.Services
                 };
             }
 
-            string letter = await GetPartitionDriveLetterAsync(diskNumber, partitionNumber).ConfigureAwait(false);
+            string letter = await GetPartitionDriveLetterAsync(diskNumber, partitionNumber, partitionOffset).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(letter))
             {
-                letter = await AssignDriveLetterToPartitionAsync(diskNumber, partitionNumber).ConfigureAwait(false);
+                letter = await AssignDriveLetterToPartitionAsync(diskNumber, partitionNumber, partitionOffset).ConfigureAwait(false);
                 if (string.IsNullOrWhiteSpace(letter))
                 {
                     return new BitLockerUnlockResult
@@ -490,17 +491,23 @@ namespace ToolkitGUI.Services
             };
         }
 
-        private static async Task<string> GetPartitionDriveLetterAsync(int diskNumber, int partitionNumber)
+        private static async Task<string> GetPartitionDriveLetterAsync(int diskNumber, int partitionNumber, long partitionOffset = 0)
         {
-            string script = $"$p = Get-Partition -DiskNumber {diskNumber} -PartitionNumber {partitionNumber} -ErrorAction SilentlyContinue; if ($p -and $p.DriveLetter) {{ $p.DriveLetter }}";
+            string selector = partitionOffset > 0
+                ? $"Get-Partition -DiskNumber {diskNumber} -ErrorAction SilentlyContinue | Where-Object {{ $_.Offset -eq {partitionOffset} }} | Select-Object -First 1"
+                : $"Get-Partition -DiskNumber {diskNumber} -PartitionNumber {partitionNumber} -ErrorAction SilentlyContinue";
+            string script = $"$p = {selector}; if (-not $p) {{ $p = Get-Partition -DiskNumber {diskNumber} -PartitionNumber {partitionNumber} -ErrorAction SilentlyContinue }}; if ($p -and $p.DriveLetter) {{ $p.DriveLetter }}";
             var (_, stdout, _) = await RunProcessCaptureAsync("powershell.exe", $"-NoProfile -ExecutionPolicy Bypass -Command \"{script}\"").ConfigureAwait(false);
             string trimmed = stdout.Trim();
             return trimmed.Length == 1 && char.IsLetter(trimmed[0]) ? trimmed.ToUpperInvariant() : string.Empty;
         }
 
-        private static async Task<string> AssignDriveLetterToPartitionAsync(int diskNumber, int partitionNumber)
+        private static async Task<string> AssignDriveLetterToPartitionAsync(int diskNumber, int partitionNumber, long partitionOffset = 0)
         {
-            string script = $"$p = Get-Partition -DiskNumber {diskNumber} -PartitionNumber {partitionNumber} -ErrorAction Stop; $p | Add-PartitionAccessPath -AssignDriveLetter -ErrorAction Stop; $p2 = Get-Partition -DiskNumber {diskNumber} -PartitionNumber {partitionNumber}; if ($p2.DriveLetter) {{ $p2.DriveLetter }}";
+            string selector = partitionOffset > 0
+                ? $"Get-Partition -DiskNumber {diskNumber} -ErrorAction SilentlyContinue | Where-Object {{ $_.Offset -eq {partitionOffset} }} | Select-Object -First 1"
+                : $"Get-Partition -DiskNumber {diskNumber} -PartitionNumber {partitionNumber} -ErrorAction Stop";
+            string script = $"$p = {selector}; if (-not $p) {{ $p = Get-Partition -DiskNumber {diskNumber} -PartitionNumber {partitionNumber} -ErrorAction Stop }}; $p | Add-PartitionAccessPath -AssignDriveLetter -ErrorAction Stop; $p2 = Get-Partition -DiskNumber {diskNumber} -PartitionNumber $p.PartitionNumber; if ($p2.DriveLetter) {{ $p2.DriveLetter }}";
             var (code, stdout, _) = await RunProcessCaptureAsync("powershell.exe", $"-NoProfile -ExecutionPolicy Bypass -Command \"{script}\"").ConfigureAwait(false);
             if (code != 0) return string.Empty;
             string trimmed = stdout.Trim();
@@ -516,26 +523,23 @@ namespace ToolkitGUI.Services
 
         private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessCaptureAsync(string fileName, string arguments)
         {
-            return await Task.Run(() =>
+            using var proc = new System.Diagnostics.Process
             {
-                using var proc = new System.Diagnostics.Process
+                StartInfo = new System.Diagnostics.ProcessStartInfo
                 {
-                    StartInfo = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = fileName,
-                        Arguments = arguments,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true
-                    }
-                };
-                proc.Start();
-                string stdout = proc.StandardOutput.ReadToEnd();
-                string stderr = proc.StandardError.ReadToEnd();
-                proc.WaitForExit();
-                return (proc.ExitCode, stdout, stderr);
-            }).ConfigureAwait(false);
+                    FileName = fileName,
+                    Arguments = arguments,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+            proc.Start();
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+            await Task.WhenAll(stdoutTask, stderrTask, proc.WaitForExitAsync()).ConfigureAwait(false);
+            return (proc.ExitCode, await stdoutTask.ConfigureAwait(false), await stderrTask.ConfigureAwait(false));
         }
     }
 }

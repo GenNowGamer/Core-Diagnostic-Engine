@@ -18,7 +18,7 @@ namespace ToolkitGUI
             if (string.IsNullOrWhiteSpace(toolkitRoot))
                 return null;
 
-            return Path.Combine(toolkitRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), RuntimeSubdir);
+            return Path.Combine(ToolkitPaths.NormalizeRootPath(toolkitRoot), RuntimeSubdir);
         }
 
         internal static string? GetEnvFilePath(string? toolkitRoot)
@@ -38,7 +38,7 @@ namespace ToolkitGUI
             if (string.IsNullOrWhiteSpace(toolkitRoot))
                 return null;
 
-            return Path.Combine(toolkitRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), EnvFileName);
+            return Path.Combine(ToolkitPaths.NormalizeRootPath(toolkitRoot), EnvFileName);
         }
 
         internal static string? GetLegacyProgressLogPath(string? toolkitRoot)
@@ -46,7 +46,7 @@ namespace ToolkitGUI
             if (string.IsNullOrWhiteSpace(toolkitRoot))
                 return null;
 
-            return Path.Combine(toolkitRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), ProgressLogFileName);
+            return Path.Combine(ToolkitPaths.NormalizeRootPath(toolkitRoot), ProgressLogFileName);
         }
 
         internal static string? ResolveEnvFilePath(string? toolkitRoot)

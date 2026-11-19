@@ -46,7 +46,8 @@ namespace CdeRecovery.Core.Evidence
             IReadOnlyBlockSource source,
             StorageRecoveryAssessment? assessment,
             string baseOutputDirectory,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            IReadOnlyList<RepairBytePatch>? extraPatchesToSnapshot = null)
         {
             ArgumentNullException.ThrowIfNull(source);
             ValidateDestinationNotOnSource(source.Identity, baseOutputDirectory);
@@ -142,6 +143,29 @@ namespace CdeRecovery.Core.Evidence
                             $"Partition {fs.PartitionIndex} $MFT Records 0-3",
                             fs.NtfsMftByteOffset,
                             fs.NtfsFileRecordSizeBytes * 4).ConfigureAwait(false);
+                    }
+                }
+            }
+
+            if (extraPatchesToSnapshot != null)
+            {
+                int patchIdx = 0;
+                foreach (var patch in extraPatchesToSnapshot)
+                {
+                    patchIdx++;
+                    bool alreadyCovered = regions.Any(r =>
+                        patch.TargetByteOffset >= r.ByteOffset &&
+                        (patch.TargetByteOffset + patch.ByteLength) <= (r.ByteOffset + r.ByteLength));
+                    if (!alreadyCovered)
+                    {
+                        string safeName = string.IsNullOrWhiteSpace(patch.RegionName)
+                            ? $"Patch{patchIdx}"
+                            : new string(patch.RegionName.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray());
+                        await TryCaptureRegionAsync(
+                            $"PreRepair_{safeName}",
+                            $"Pre-repair target region: {patch.RegionName}",
+                            patch.TargetByteOffset,
+                            patch.ByteLength).ConfigureAwait(false);
                     }
                 }
             }

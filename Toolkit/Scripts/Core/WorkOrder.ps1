@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     USB-local work order / case ID management for CDE technician jobs.
@@ -668,7 +668,7 @@ function Add-WorkOrderCaseEvent {
         KeyFindings    = @()
         ReportJson     = ''
         ReportHtml     = ''
-        Environment    = if ($env:CDE_WINPE -eq '1') { 'WinPE' } else { 'Windows' }
+        Environment    = if (Get-Command Get-EnvironmentMode -ErrorAction SilentlyContinue) { Get-EnvironmentMode } elseif ($env:SystemDrive -ieq 'X:' -or $env:CDE_WINPE -eq '1') { 'WinPE' } else { 'Windows' }
         EventKind      = $EventKind
         DisplayLabel   = $DisplayLabel
         SourceArtifact = $SourceArtifact
@@ -711,13 +711,18 @@ function Close-WorkOrder {
         Save-WorkOrder -WorkOrder $order -ToolkitRoot $ToolkitRoot
     }
 
+    $closedAt = (Get-Date).ToString('o')
+    $orderForExport = $order.PSObject.Copy()
+    $orderForExport.Status = 'Closed'
+    $orderForExport.ClosedAt = $closedAt
+
     # Export PDF first while Status stays Open on disk. On PDF failure do not mark Closed
     # or clear the pointer (aligns with C# CloseActiveWorkOrder).
-    $result = Export-WorkOrderReport -WorkOrder $order -ToolkitRoot $ToolkitRoot
+    $result = Export-WorkOrderReport -WorkOrder $orderForExport -ToolkitRoot $ToolkitRoot
 
     $order = Get-WorkOrder -CaseId $CaseId -ToolkitRoot $ToolkitRoot
     $order.Status = 'Closed'
-    $order.ClosedAt = (Get-Date).ToString('o')
+    $order.ClosedAt = $closedAt
     $order | Add-Member -NotePropertyName FinalReportPdf -NotePropertyValue $result.PdfPath -Force
     Save-WorkOrder -WorkOrder $order -ToolkitRoot $ToolkitRoot
     Clear-ActiveWorkOrderPointer -ToolkitRoot $ToolkitRoot
@@ -749,10 +754,18 @@ function Export-WorkOrderReport {
     $jsonPath = Get-WorkOrderFilePath -CaseId $WorkOrder.CaseId -ToolkitRoot $ToolkitRoot
     $pdfPath = Assert-PathUnderWorkOrdersRoot -Path (Join-Path $operatorDir "$($WorkOrder.CaseId).pdf") -ToolkitRoot $ToolkitRoot
 
-    $errorMessage = ''
-    $generated = Invoke-WorkOrderReportPdf -OrderJsonPath $jsonPath -PdfPath $pdfPath -ToolkitRoot $ToolkitRoot -ErrorMessage ([ref]$errorMessage)
-    if (-not $generated) {
-        throw "Unable to generate work order PDF: $errorMessage"
+    $tempExportJson = Join-Path ([System.IO.Path]::GetTempPath()) ("cde_workorder_export_{0}.json" -f [guid]::NewGuid().ToString('N'))
+    try {
+        $WorkOrder | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $tempExportJson -Encoding UTF8
+        $errorMessage = ''
+        $generated = Invoke-WorkOrderReportPdf -OrderJsonPath $tempExportJson -PdfPath $pdfPath -ToolkitRoot $ToolkitRoot -ErrorMessage ([ref]$errorMessage)
+        if (-not $generated) {
+            throw "Unable to generate work order PDF: $errorMessage"
+        }
+    } finally {
+        if (Test-Path -LiteralPath $tempExportJson) {
+            Remove-Item -LiteralPath $tempExportJson -Force -ErrorAction SilentlyContinue
+        }
     }
 
     $WorkOrder | Add-Member -NotePropertyName FinalReportPdf -NotePropertyValue $pdfPath -Force
@@ -777,43 +790,124 @@ function Invoke-WorkOrderReportPdf {
         $ToolkitRoot = Get-WorkOrderToolkitRoot
     }
 
-    $candidates = @(
+    $repoRoot = Get-WorkOrderToolkitRoot
+    $dllCandidates = @(
+        (Join-Path $ToolkitRoot 'App\ToolkitGUI\bin\Debug\net8.0-windows\ToolkitGUI.dll'),
         (Join-Path $ToolkitRoot 'CDE\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.dll'),
-        (Join-Path $ToolkitRoot 'App\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.dll')
-    )
+        (Join-Path $ToolkitRoot 'App\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.dll'),
+        (Join-Path $repoRoot 'App\ToolkitGUI\bin\Debug\net8.0-windows\ToolkitGUI.dll'),
+        (Join-Path $repoRoot 'CDE\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.dll'),
+        (Join-Path $repoRoot 'App\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.dll')
+    ) | Select-Object -Unique
 
-    foreach ($dllPath in $candidates) {
-        if (-not (Test-Path -LiteralPath $dllPath)) {
+    # 1. If already running inside .NET Core / .NET 8 (e.g. ToolkitGUI in-process PS SDK), invoke directly via Reflection
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        foreach ($dllPath in $dllCandidates) {
+            if (-not (Test-Path -LiteralPath $dllPath -PathType Leaf)) {
+                continue
+            }
+            try {
+                $assembly = [Reflection.Assembly]::LoadFrom($dllPath)
+                $type = $assembly.GetType('ToolkitGUI.Services.WorkOrderReportPdfService')
+                if (-not $type) { continue }
+                $method = $type.GetMethod('TryGenerateFromJsonFile')
+                if (-not $method) { continue }
+
+                $invokeArgs = [object[]]@($OrderJsonPath, $PdfPath, $null)
+                $ok = [bool]$method.Invoke($null, $invokeArgs)
+                if ($ok) { return $true }
+                $ErrorMessage.Value = [string]$invokeArgs[2]
+                return $false
+            } catch {
+                $ErrorMessage.Value = $_.Exception.Message
+            }
+        }
+    }
+
+    # 2. Launch via UserGuideGenerator.exe --workorder-pdf (console app without requireAdministrator or WPF loop)
+    $helperExeCandidates = @(
+        (Join-Path $ToolkitRoot 'CDE\ToolkitGUI\bin\Release\net8.0-windows\UserGuideGenerator.exe'),
+        (Join-Path $ToolkitRoot 'App\ToolkitGUI\bin\Release\net8.0-windows\UserGuideGenerator.exe'),
+        (Join-Path $ToolkitRoot 'App\UserGuideGenerator\bin\Release\net8.0\UserGuideGenerator.exe'),
+        (Join-Path $ToolkitRoot 'App\UserGuideGenerator\bin\Debug\net8.0\UserGuideGenerator.exe'),
+        (Join-Path $repoRoot 'CDE\ToolkitGUI\bin\Release\net8.0-windows\UserGuideGenerator.exe'),
+        (Join-Path $repoRoot 'App\ToolkitGUI\bin\Release\net8.0-windows\UserGuideGenerator.exe'),
+        (Join-Path $repoRoot 'App\UserGuideGenerator\bin\Release\net8.0\UserGuideGenerator.exe'),
+        (Join-Path $repoRoot 'App\UserGuideGenerator\bin\Debug\net8.0\UserGuideGenerator.exe')
+    ) | Select-Object -Unique
+
+    foreach ($helperExe in $helperExeCandidates) {
+        if (-not (Test-Path -LiteralPath $helperExe -PathType Leaf)) {
+            continue
+        }
+        try {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $helperExe
+            $psi.Arguments = "--workorder-pdf `"$OrderJsonPath`" `"$PdfPath`""
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+
+            $proc = [System.Diagnostics.Process]::Start($psi)
+            $stderr = $proc.StandardError.ReadToEnd()
+            $null = $proc.StandardOutput.ReadToEnd()
+            $proc.WaitForExit()
+            if ($proc.ExitCode -eq 0 -and (Test-Path -LiteralPath $PdfPath -PathType Leaf)) {
+                return $true
+            }
+            if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+                $ErrorMessage.Value = $stderr.Trim()
+            }
+        } catch {
+            $ErrorMessage.Value = $_.Exception.Message
+        }
+    }
+
+    # 3. Fallback: launch ToolkitGUI.exe directly (works when elevated or in WinPE)
+    $exeCandidates = @(
+        (Join-Path $ToolkitRoot 'App\ToolkitGUI\bin\Debug\net8.0-windows\ToolkitGUI.exe'),
+        (Join-Path $ToolkitRoot 'CDE\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.exe'),
+        (Join-Path $ToolkitRoot 'App\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.exe'),
+        (Join-Path $repoRoot 'App\ToolkitGUI\bin\Debug\net8.0-windows\ToolkitGUI.exe'),
+        (Join-Path $repoRoot 'CDE\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.exe'),
+        (Join-Path $repoRoot 'App\ToolkitGUI\bin\Release\net8.0-windows\ToolkitGUI.exe')
+    ) | Select-Object -Unique
+
+    foreach ($exePath in $exeCandidates) {
+        if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) {
             continue
         }
 
         try {
-            $assembly = [Reflection.Assembly]::LoadFrom($dllPath)
-            $type = $assembly.GetType('ToolkitGUI.Services.WorkOrderReportPdfService')
-            if (-not $type) {
-                continue
-            }
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $exePath
+            $psi.Arguments = "--export-workorder-pdf `"$OrderJsonPath`" `"$PdfPath`""
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
 
-            $method = $type.GetMethod('TryGenerateFromJsonFile')
-            if (-not $method) {
-                continue
-            }
-
-            $errorOut = ''
-            $args = @($OrderJsonPath, $PdfPath, [ref]$errorOut)
-            $ok = [bool]$method.Invoke($null, $args)
-            if ($ok) {
+            $proc = [System.Diagnostics.Process]::Start($psi)
+            $stderr = $proc.StandardError.ReadToEnd()
+            $null = $proc.StandardOutput.ReadToEnd()
+            $proc.WaitForExit()
+            if ($proc.ExitCode -eq 0 -and (Test-Path -LiteralPath $PdfPath -PathType Leaf)) {
                 return $true
             }
 
-            $ErrorMessage.Value = $errorOut
-            return $false
+            if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+                $ErrorMessage.Value = $stderr.Trim()
+            } else {
+                $ErrorMessage.Value = "ToolkitGUI.exe PDF export ($exePath) exited with code $($proc.ExitCode)."
+            }
         } catch {
             $ErrorMessage.Value = $_.Exception.Message
-            return $false
         }
     }
 
-    $ErrorMessage.Value = 'ToolkitGUI.dll not found. Publish the toolkit before closing work orders from PowerShell.'
+    if ([string]::IsNullOrWhiteSpace($ErrorMessage.Value)) {
+        $ErrorMessage.Value = 'ToolkitGUI.exe / ToolkitGUI.dll not found. Publish the toolkit before closing work orders from PowerShell.'
+    }
     return $false
 }

@@ -1,11 +1,16 @@
 @echo off
 setlocal EnableDelayedExpansion
+set "CDE_BAT_ARGS=%*"
 
 :: Check for Administrator elevation
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo Requesting Administrator privileges...
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    if "%~1"=="" (
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    ) else (
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList $env:CDE_BAT_ARGS -Verb RunAs"
+    )
     exit /b
 )
 

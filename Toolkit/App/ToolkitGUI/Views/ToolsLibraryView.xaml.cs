@@ -60,7 +60,7 @@ namespace ToolkitGUI.Views
         {
             var fromEnv = Environment.GetEnvironmentVariable("TOOLKIT_ROOT");
             if (!string.IsNullOrWhiteSpace(fromEnv))
-                return fromEnv.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                return ToolkitPaths.NormalizeRootPath(fromEnv);
 
             var toolsRoot = ToolsRoot;
             if (string.IsNullOrWhiteSpace(toolsRoot))
@@ -1418,8 +1418,15 @@ namespace ToolkitGUI.Views
 
         private static string? ResolveSevenZipPath()
         {
-            var bundled = Path.Combine(ToolsRoot, "Utils", "7Zip", "7z.exe");
-            if (File.Exists(bundled))
+            var toolkitRoot = ToolkitPaths.GetToolkitRoot();
+            var bundledCandidates = new[]
+            {
+                Path.Combine(toolkitRoot, "Windows Tools", "Utilities", "7Zip", "7z.exe"),
+                Path.Combine(ToolsRoot, "Utils", "7Zip", "7z.exe"),
+                Path.Combine(ToolsRoot, "Utilities", "7Zip", "7z.exe")
+            };
+            var bundled = bundledCandidates.FirstOrDefault(File.Exists);
+            if (!string.IsNullOrWhiteSpace(bundled))
                 return bundled;
 
             try

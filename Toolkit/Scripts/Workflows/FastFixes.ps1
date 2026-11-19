@@ -412,9 +412,9 @@ function Invoke-Fix {
                     "Bindings disabled or already off: $disabled"
                 )
             }
-            return New-FixResult -Status Fail -Summary 'IPv6 still enabled on one or more adapters' -Details @(
+            return New-FixResult -Status Fail -Summary 'IPv6 still enabled on one or more adapters' -Details (@(
                 "Still enabled on: $($stillEnabled -join ', ')"
-            ) + $failed
+            ) + @($failed))
         }
 
         'ClearEventLogs' {
@@ -662,10 +662,10 @@ function Invoke-Fix {
             if ($isHighPerf) {
                 return New-FixResult -Status Pass -Summary 'High Performance power plan activated' -Details @($active.Text)
             }
-            return New-FixResult -Status Fail -Summary 'High Performance power plan was not activated (Modern Standby S0ix systems may restrict legacy power plans)' -Details @(
+            return New-FixResult -Status Fail -Summary 'High Performance power plan was not activated (Modern Standby S0ix systems may restrict legacy power plans)' -Details (@(
                 "Requested GUID: $guid",
                 $active.Text
-            ) + $activate.Output
+            ) + @($activate.Output))
         }
 
         default {
@@ -679,8 +679,6 @@ switch ($Action) {
         $FixDefinitions | ForEach-Object { [PSCustomObject]$_ } | ConvertTo-Json -Depth 2
     }
     'Apply' {
-        Assert-ToolkitCapability -Workflow 'FastFixes' -Action 'Apply'
-
         $fixDef  = $FixDefinitions | Where-Object { $_.Key -eq $FixKey } | Select-Object -First 1
         if (-not $fixDef) {
             Write-Error "Unknown fix key: $FixKey"
@@ -700,6 +698,8 @@ switch ($Action) {
             Generate-Report -WorkflowResult $workflow | Out-Null
             exit 0
         }
+
+        Assert-ToolkitCapability -Workflow 'FastFixes' -Action 'Apply'
 
         if (Invoke-FastFixElevationRelay -Key $FixKey) {
             exit 0

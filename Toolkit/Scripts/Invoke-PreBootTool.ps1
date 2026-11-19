@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Launches a pre-boot diagnostic tool from the CDE WinPE boot menu.
@@ -53,13 +53,17 @@ Write-Host "  ============================================================"
 Write-Host ""
 
 # --- Validate environment ----------------------------------------------------
+if (-not $env:CDE_ROOT -and $env:TOOLKIT_ROOT) {
+    $env:CDE_ROOT = $env:TOOLKIT_ROOT.TrimEnd('\', '/')
+}
 if (-not $env:CDE_ROOT) {
     Write-Host "  ERROR: CDE_ROOT is not set." -ForegroundColor Red
     Read-Host "  Press Enter to return to the menu"
     exit 1
 }
 
-$logDir = Join-Path $env:CDE_ROOT 'CDE\Runtime\Data\sessions'
+$cdeRootClean = $env:CDE_ROOT.TrimEnd('\', '/')
+$logDir = Join-Path "$cdeRootClean\" 'CDE\Runtime\Data\sessions'
 if (-not (Test-Path $logDir)) { New-Item $logDir -ItemType Directory -Force | Out-Null }
 $logFile = Join-Path $logDir "PreBootTool_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 
@@ -73,21 +77,31 @@ Write-Log "  Log file : $logFile"
 
 # =============================================================================
 # CHU - Core Hardware Utility
-# Use UEFI firmware BootNext to load CDEBoot.efi directly, bypassing WBM.
+# Use UEFI firmware BootNext to load CHUPrep.efi / CoreDiag.efi directly, bypassing WBM.
 # This writes to the laptop's LIVE BCD and UEFI NVRAM (not the USB BCD).
 # =============================================================================
 if ($Tool -eq 'CHU') {
 
-    $coreEfi     = "$env:CDE_ROOT\EFI\CDE\CDEBoot.efi"
-    $driveLetter = $env:CDE_ROOT.Substring(0, 1)
+    $chuRelPath = '\EFI\CDE\CHUPrep.efi'
+    $coreEfi    = "$cdeRootClean\EFI\CDE\CHUPrep.efi"
+    if (-not (Test-Path -LiteralPath $coreEfi)) {
+        if (Test-Path -LiteralPath "$cdeRootClean\EFI\CDE\CoreDiag.efi") {
+            $chuRelPath = '\EFI\CDE\CoreDiag.efi'
+            $coreEfi    = "$cdeRootClean\EFI\CDE\CoreDiag.efi"
+        } elseif (Test-Path -LiteralPath "$cdeRootClean\EFI\CDE\CDEBoot.efi") {
+            $chuRelPath = '\EFI\CDE\CDEBoot.efi'
+            $coreEfi    = "$cdeRootClean\EFI\CDE\CDEBoot.efi"
+        }
+    }
+    $driveLetter = $cdeRootClean.Substring(0, 1)
 
     Write-Log ""
-    Write-Log "  NOTE: CDEBoot.efi is unsigned." 'Yellow'
+    Write-Log "  NOTE: CHU EFI loader ($chuRelPath) is unsigned." 'Yellow'
     Write-Log "        UEFI Secure Boot MUST be DISABLED or CHU will fail." 'Yellow'
     Write-Log ""
 
-    if (-not (Test-Path $coreEfi)) {
-        Write-Log "  ERROR: CDEBoot.efi not found at: $coreEfi" 'Red'
+    if (-not (Test-Path -LiteralPath $coreEfi)) {
+        Write-Log "  ERROR: CHU EFI loader not found at: $coreEfi" 'Red'
         Read-Host "  Press Enter to return to the menu"
         exit 1
     }
@@ -97,7 +111,9 @@ if ($Tool -eq 'CHU') {
     $allEntries  = & bcdedit /enum all 2>&1
     $currentGuid = $null
     foreach ($line in $allEntries) {
-        if ($line -match '\{[0-9a-fA-F\-]+\}') { $currentGuid = $line.Trim() }
+        if ($line -match '\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}') {
+            $currentGuid = $Matches[0]
+        }
         if ($line -match 'CDE:CHU' -and $currentGuid) {
             Write-Log "        Removing old entry $currentGuid..." 'Yellow'
             & bcdedit /delete $currentGuid /cleanup 2>&1 | Out-Null
@@ -106,7 +122,7 @@ if ($Tool -eq 'CHU') {
     }
 
     # --- Step 2: Create a new BCD entry in the LIVE BCD ---------------------
-    Write-Log "  [2/4] Creating UEFI boot entry for CDEBoot.efi in live BCD..."
+    Write-Log "  [2/4] Creating UEFI boot entry for $chuRelPath in live BCD..."
     $createOut  = & bcdedit /create /d "CDE:CHU" /application BOOTAPP 2>&1
     $createText = $createOut -join ' '
     Write-Log "        $createText"
@@ -122,9 +138,17 @@ if ($Tool -eq 'CHU') {
     Write-Log "        GUID: $guid" 'Green'
 
     $r1 = & bcdedit /set $guid device "partition=$($driveLetter):" 2>&1
-    $r2 = & bcdedit /set $guid path '\EFI\CDE\CDEBoot.efi' 2>&1
+    $r1Exit = $LASTEXITCODE
+    $r2 = & bcdedit /set $guid path $chuRelPath 2>&1
+    $r2Exit = $LASTEXITCODE
     Write-Log "        device -> $($r1 -join ' ')"
     Write-Log "        path   -> $($r2 -join ' ')"
+    if ($r1Exit -ne 0 -or $r2Exit -ne 0) {
+        Write-Log "  ERROR: Failed to configure BCD entry $guid (device exit=$r1Exit, path exit=$r2Exit)." 'Red'
+        & bcdedit /delete $guid /cleanup 2>&1 | Out-Null
+        Read-Host "  Press Enter to return to the menu"
+        exit 1
+    }
 
     # --- Step 3: Set UEFI BootNext via {fwbootmgr} --------------------------
     # This writes the BootNext variable to UEFI NVRAM via EFI Runtime Services.

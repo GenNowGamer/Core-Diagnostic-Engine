@@ -233,8 +233,14 @@ namespace ToolkitGUI.ViewModels
 
             if (_selectedDisk != null)
             {
+                var preferredEfiRoot = !string.IsNullOrWhiteSpace(_selectedInstall?.EfiDriveRoot)
+                    ? _selectedInstall.EfiDriveRoot
+                    : _selectedInstall?.DriveRoot;
+
                 _selectedEfiVolume = _layout.EfiVolumes.FirstOrDefault(v =>
-                    string.Equals(v.DriveRoot, _selectedInstall?.DriveRoot, StringComparison.OrdinalIgnoreCase));
+                    string.Equals(v.DriveRoot, preferredEfiRoot, StringComparison.OrdinalIgnoreCase))
+                    ?? _layout.EfiVolumes.FirstOrDefault(v =>
+                        string.Equals(v.DriveRoot, _selectedInstall?.DriveRoot, StringComparison.OrdinalIgnoreCase));
 
                 if (_selectedEfiVolume == null && _selectedPartition.IsSystem)
                 {
@@ -355,14 +361,23 @@ namespace ToolkitGUI.ViewModels
 
             if (scriptName.Equals("BootloaderRebuildEfi.ps1", StringComparison.OrdinalIgnoreCase))
             {
-                var efiDrive = _selectedInstall.DriveRoot;
-                if (!File.Exists(_selectedInstall.EfiBcdPath) && _selectedEfiVolume != null)
-                    efiDrive = _selectedEfiVolume.DriveRoot;
-                else if (!File.Exists(_selectedInstall.EfiBcdPath))
+                var efiDrive = !string.IsNullOrWhiteSpace(_selectedInstall.EfiDriveRoot)
+                    ? _selectedInstall.EfiDriveRoot
+                    : _selectedInstall.DriveRoot;
+
+                if (string.Equals(efiDrive, _selectedInstall.DriveRoot, StringComparison.OrdinalIgnoreCase) &&
+                    !File.Exists(_selectedInstall.EfiBcdPath))
                 {
-                    var pick = PickEfiVolume();
-                    if (pick == null) return;
-                    efiDrive = pick.DriveRoot;
+                    if (_selectedEfiVolume != null)
+                    {
+                        efiDrive = _selectedEfiVolume.DriveRoot;
+                    }
+                    else
+                    {
+                        var pick = PickEfiVolume();
+                        if (pick == null) return;
+                        efiDrive = pick.DriveRoot;
+                    }
                 }
 
                 parameters += $" -EfiTargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(efiDrive)}";
@@ -399,24 +414,39 @@ namespace ToolkitGUI.ViewModels
             switch (kind.ToLowerInvariant())
             {
                 case "bcd":
-                    if (_selectedInstall == null) return;
+                    if (_selectedInstall == null)
+                    {
+                        AppendLog("Select a Windows partition first to back up its BCD store.");
+                        return;
+                    }
                     await ExecuteWorkflowAsync("BootloaderBcdBackup.ps1",
                         $"-TargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(_selectedInstall.DriveRoot)} -Confirmed", "Backup BCD");
                     break;
                 case "partition":
-                    if (_selectedDisk == null) return;
-                    var backupRoot = _selectedInstall != null
-                        ? GetBackupRoot(_selectedInstall.DriveRoot)
-                        : string.Empty;
+                    if (_selectedDisk == null)
+                    {
+                        AppendLog("Select a disk or partition first to back up the partition table.");
+                        return;
+                    }
+                    var fallbackDrive = _selectedInstall?.DriveRoot;
+                    if (string.IsNullOrWhiteSpace(fallbackDrive) && _layout?.WindowsInstalls is { Count: > 0 })
+                        fallbackDrive = _layout.WindowsInstalls[0].DriveRoot;
+                    if (string.IsNullOrWhiteSpace(fallbackDrive))
+                        fallbackDrive = _selectedPartition?.DriveRoot;
+                    var backupRoot = !string.IsNullOrWhiteSpace(fallbackDrive)
+                        ? GetBackupRoot(fallbackDrive)
+                        : Path.Combine(ToolkitPaths.NormalizeRootPath(ToolkitPaths.GetToolkitRoot()), "CDE", "Runtime", "Data", "BootloaderBackups");
                     var p = $"-DiskNumber {_selectedDisk.DiskNumber} -Confirmed";
                     if (!string.IsNullOrWhiteSpace(backupRoot))
                         p += $" -BackupRoot {PowerShellArgumentHelper.QuotePathParameterForProcess(backupRoot)}";
-                    else if (_selectedInstall != null)
-                        p += $" -TargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(_selectedInstall.DriveRoot)}";
                     await ExecuteWorkflowAsync("PartitionTableBackup.ps1", p, "Backup partition table");
                     break;
                 case "all":
-                    if (_selectedInstall == null || _selectedDisk == null) return;
+                    if (_selectedInstall == null || _selectedDisk == null)
+                    {
+                        AppendLog("Select a Windows partition first to back up all boot artifacts.");
+                        return;
+                    }
                     await ExecuteWorkflowAsync("BootArtifactsBackup.ps1",
                         $"-TargetDrive {PowerShellArgumentHelper.QuotePathParameterForProcess(_selectedInstall.DriveRoot)} -DiskNumber {_selectedDisk.DiskNumber} -Confirmed",
                         "Backup all boot artifacts");
@@ -552,9 +582,11 @@ namespace ToolkitGUI.ViewModels
                 scriptName.Equals("BootArtifactsBackup.ps1", StringComparison.OrdinalIgnoreCase) ||
                 scriptName.Equals("PartitionTableBackup.ps1", StringComparison.OrdinalIgnoreCase))
             {
+                var hasFailures = HasResultErrors || ResultSteps.Any(s =>
+                    s.Status.Equals("Fail", StringComparison.OrdinalIgnoreCase));
                 var hasWarnings = ResultSteps.Any(s =>
                     s.Status.Equals("Warn", StringComparison.OrdinalIgnoreCase));
-                SetActionSummaryFromSteps(HasResultErrors
+                SetActionSummaryFromSteps(hasFailures
                     ? "Backup completed with errors:"
                     : hasWarnings
                         ? "Backup completed with warnings:"
@@ -562,9 +594,11 @@ namespace ToolkitGUI.ViewModels
                 return;
             }
 
+            var actionHasFailures = HasResultErrors || ResultSteps.Any(s =>
+                s.Status.Equals("Fail", StringComparison.OrdinalIgnoreCase));
             var actionHasWarnings = ResultSteps.Any(s =>
                 s.Status.Equals("Warn", StringComparison.OrdinalIgnoreCase));
-            ActionSummary = HasResultErrors
+            ActionSummary = actionHasFailures
                 ? "Last action completed with errors — see log."
                 : actionHasWarnings
                     ? "Last action completed with warnings — see log."

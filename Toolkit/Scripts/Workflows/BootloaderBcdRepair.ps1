@@ -43,8 +43,24 @@ $workflow = Start-Workflow -WorkflowName 'Bootloader_BCDRepair' -ScriptBlock {
     #   bootsect.exe  - writes MBR and VBR (from ADK, injected into WinPE by Customize-WinPE.ps1)
     #   bcdboot.exe   - rebuilds BCD store and boot files (native in WinPE)
 
-    $step = Invoke-BootsectOnBootloaderTarget -Target $target -StepName 'BootsectFixMBR' -IncludeMbr
-    Add-BootloaderStep -Result $r -Step $step
+    $isMbrDisk = $false
+    if (Get-Command Get-Partition -ErrorAction SilentlyContinue) {
+        try {
+            $winLetter = $target.DriveRoot.TrimEnd('\').TrimEnd(':')
+            $winPart = Get-Partition -DriveLetter $winLetter -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($winPart -and (Get-Command Get-Disk -ErrorAction SilentlyContinue)) {
+                $diskObj = Get-Disk -Number $winPart.DiskNumber -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($diskObj -and [string]$diskObj.PartitionStyle -ieq 'MBR') {
+                    $isMbrDisk = $true
+                }
+            }
+        } catch { }
+    }
+
+    if ($isMbrDisk) {
+        $step = Invoke-BootsectOnBootloaderTarget -Target $target -StepName 'BootsectFixMBR' -IncludeMbr
+        Add-BootloaderStep -Result $r -Step $step
+    }
 
     $step = Invoke-BootsectOnBootloaderTarget -Target $target -StepName 'BootsectFixBoot'
     Add-BootloaderStep -Result $r -Step $step

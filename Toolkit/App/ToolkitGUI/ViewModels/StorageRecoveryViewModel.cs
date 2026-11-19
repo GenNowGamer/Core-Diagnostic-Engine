@@ -60,6 +60,7 @@ namespace ToolkitGUI.ViewModels
         private string _fileSearchFilter = string.Empty;
         private bool _hasBitLockerPartition;
         private int _bitLockerPartitionIndex = 1;
+        private long _bitLockerPartitionOffset;
         private string _bitLockerDriveLetter = string.Empty;
         private string _bitLockerKeyProtectorId = string.Empty;
         private string _bitLockerRecoveryKey = string.Empty;
@@ -204,12 +205,43 @@ namespace ToolkitGUI.ViewModels
             {
                 if (ReferenceEquals(_selectedTarget, value)) return;
                 _selectedTarget = value;
+                ResetStateForTargetChange();
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(SelectedDeviceSummary));
                 OnPropertyChanged(nameof(IsPhysicalTargetSelected));
                 OnPropertyChanged(nameof(IsImageTargetSelected));
                 OnPropertyChanged(nameof(RequiredConfirmationPhraseHint));
             }
+        }
+
+        private void ResetStateForTargetChange()
+        {
+            _currentAssessment = null;
+            _selectedRepairPlan = null;
+            HardwareBadge = "Not Scanned";
+            PartitionBadge = "Not Scanned";
+            FileSystemBadge = "Not Scanned";
+            OverallVerdict = "Ready";
+            ExecutiveSummary = "Target changed. Click 'Inspect Disk' to run read-only diagnostics on the selected target.";
+            InPlaceConfirmPhrase = string.Empty;
+            Findings.Clear();
+            RawDiskMapCollection.Clear();
+            DiscoveredPartitions.Clear();
+            FileSystems.Clear();
+            ProposedRepairs.Clear();
+            SelectedPlanPatches.Clear();
+            _allRecoverableFiles.Clear();
+            DisplayedRecoverableFiles.Clear();
+            SelectedRecoveryPartition = null;
+            HasBitLockerPartition = false;
+            _bitLockerPartitionOffset = 0;
+            BitLockerDriveLetter = string.Empty;
+            BitLockerKeyProtectorId = string.Empty;
+            BitLockerStatusMessage = string.Empty;
+            ImagingScopes.Clear();
+            ImagingScopes.Add(new ImagingScopeOption { Label = "Whole Disk", StartOffset = 0, LengthBytes = 0, FileTag = "WholeDisk" });
+            SelectedImagingScope = ImagingScopes[0];
+            OnPropertyChanged(nameof(GptComparisonSummary));
         }
 
         public string SelectedDeviceSummary => _selectedTarget == null
@@ -706,12 +738,13 @@ namespace ToolkitGUI.ViewModels
             if (bitLockerFs != null)
             {
                 _bitLockerPartitionIndex = bitLockerFs.PartitionIndex;
+                _bitLockerPartitionOffset = bitLockerFs.PartitionStartOffset;
                 BitLockerDriveLetter = string.Empty;
                 BitLockerKeyProtectorId = string.Empty;
                 if (IsPhysicalTargetSelected && SelectedTarget != null)
                 {
                     BitLockerStatusMessage = "Checking BitLocker lock status and Recovery Key ID...";
-                    _ = RefreshBitLockerStatusAsync(SelectedTarget.Device.DiskNumber, _bitLockerPartitionIndex);
+                    _ = RefreshBitLockerStatusAsync(SelectedTarget.Device.DiskNumber, _bitLockerPartitionIndex, _bitLockerPartitionOffset);
                 }
                 else
                 {
@@ -1306,11 +1339,11 @@ namespace ToolkitGUI.ViewModels
             ImagingOutputPath = Path.Combine(dir, fileName);
         }
 
-        private async Task RefreshBitLockerStatusAsync(int diskNumber, int partitionNumber)
+        private async Task RefreshBitLockerStatusAsync(int diskNumber, int partitionNumber, long partitionOffset = 0)
         {
             try
             {
-                var info = await StorageRecoveryService.QueryBitLockerStatusAsync(diskNumber, partitionNumber);
+                var info = await StorageRecoveryService.QueryBitLockerStatusAsync(diskNumber, partitionNumber, partitionOffset);
                 BitLockerDriveLetter = info.DriveLetter;
                 BitLockerKeyProtectorId = info.KeyProtectorId;
                 BitLockerStatusMessage = info.StatusMessage;
@@ -1334,7 +1367,8 @@ namespace ToolkitGUI.ViewModels
                 var res = await StorageRecoveryService.UnlockBitLockerPartitionAsync(
                     SelectedTarget.Device.DiskNumber,
                     _bitLockerPartitionIndex,
-                    BitLockerRecoveryKey);
+                    BitLockerRecoveryKey,
+                    _bitLockerPartitionOffset);
 
                 if (!string.IsNullOrWhiteSpace(res.DriveLetter))
                     BitLockerDriveLetter = res.DriveLetter;

@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Toolkit.Core.psm1 — Core module for Core Diagnostic Engine.
@@ -173,7 +173,18 @@ function Load-Config {
     )
 
     if (Test-Path $ConfigFile) {
-        $Script:Config = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+        $rawConfig = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+        $rootClean = if ($Script:ToolkitRoot) { [string]$Script:ToolkitRoot.TrimEnd('\', '/') } else { '' }
+        foreach ($prop in $rawConfig.PSObject.Properties) {
+            if ($prop.Value -is [string] -and $prop.Value -match '\$TOOLKIT_ROOT') {
+                $expanded = $prop.Value -replace '\$TOOLKIT_ROOT', $rootClean
+                if ($expanded -match '^[A-Za-z]:$') {
+                    $expanded = "$expanded\"
+                }
+                $prop.Value = $expanded
+            }
+        }
+        $Script:Config = $rawConfig
     } else {
         # Return defaults
         $Script:Config = [PSCustomObject]@{
@@ -369,10 +380,10 @@ function Get-SystemInfo {
         ColdBootUptimeFormatted = $bootInfo.ColdBootUptimeFormatted
         ColdBootSource          = $bootInfo.ColdBootSource
 
-        CpuName         = $cpu.Name.Trim()
-        CpuCores        = $cpu.NumberOfCores
-        CpuThreads      = $cpu.NumberOfLogicalProcessors
-        CpuLoad         = $cpu.LoadPercentage
+        CpuName         = if ($cpu -and $cpu.Name) { [string]$cpu.Name.Trim() } else { 'Unknown' }
+        CpuCores        = if ($cpu) { $cpu.NumberOfCores } else { 0 }
+        CpuThreads      = if ($cpu) { $cpu.NumberOfLogicalProcessors } else { 0 }
+        CpuLoad         = if ($cpu) { $cpu.LoadPercentage } else { 0 }
 
         TotalRamGB      = $totalRam
         FreeRamGB       = $freeRam
@@ -381,12 +392,12 @@ function Get-SystemInfo {
         Motherboard     = "$($board.Manufacturer) $($board.Product)"
         BiosVersion     = "$($bios.Manufacturer) $($bios.SMBIOSBIOSVersion)"
 
-        Disks           = $disks | ForEach-Object {
+        Disks           = @($disks) | ForEach-Object {
             [PSCustomObject]@{
                 Model       = $_.Model
-                SizeGB      = [math]::Round($_.Size / 1GB, 1)
+                SizeGB      = if ($_.Size) { [math]::Round($_.Size / 1GB, 1) } else { 0 }
                 Interface   = $_.InterfaceType
-                SerialNumber= $_.SerialNumber.Trim()
+                SerialNumber= if ($_.SerialNumber) { [string]$_.SerialNumber.Trim() } else { '' }
             }
         }
 
@@ -474,7 +485,7 @@ function Start-Workflow {
     }
 
     try {
-        & $ScriptBlock $result
+        $null = & $ScriptBlock $result
         $hasFailedStep = @($result.Steps | Where-Object { $_.Status -eq 'Fail' }).Count -gt 0
         if ($hasFailedStep) {
             $result.Status = 'Failed'
@@ -750,7 +761,8 @@ function Format-WorkflowEventSummaryText {
 
     $groups = @($EventSummary)
     if ($groups.Count -eq 0) {
-        return if ($EventCount -gt 0) { "$EventCount event(s)" } else { 'No critical/error events' }
+        if ($EventCount -gt 0) { return "$EventCount event(s)" }
+        return 'No critical/error events'
     }
 
     $topParts = @($groups | Select-Object -First $TopN | ForEach-Object {
@@ -1284,32 +1296,35 @@ function Format-NetworkConfig {
     #>
     param([Parameter(Mandatory)]$IpConfig)
 
+    $ipList = @($IpConfig)
     $output = "NETWORK CONFIGURATION`n"
     $output += "=====================`n`n"
-    $output += "Total Interfaces        : $($IpConfig.Count)`n`n"
+    $output += "Total Interfaces        : $($ipList.Count)`n`n"
 
     $interfaceIndex = 0
-    foreach ($nic in $IpConfig) {
+    foreach ($nic in $ipList) {
         $interfaceIndex++
-        $alias = if ($nic.InterfaceAlias) { [string]$nic.InterfaceAlias } else { "Interface $interfaceIndex" }
+        $alias = if ($nic.PSObject.Properties['InterfaceAlias'] -and $nic.InterfaceAlias) { [string]$nic.InterfaceAlias } else { "Interface $interfaceIndex" }
         $title = if ($alias.Length -gt 72) { $alias.Substring(0, 72) } else { $alias }
         $output += Format-GroupedBlockHeader -Kind 'INTERFACE' -Index $interfaceIndex -Title $title
-        $output += (Format-GroupedPropertyLine -Label 'Description' -Value $nic.InterfaceDescription) + "`n"
-        $mac = (Get-NetAdapter -InterfaceAlias $nic.InterfaceAlias -ErrorAction SilentlyContinue).MacAddress
+        $desc = if ($nic.PSObject.Properties['InterfaceDescription']) { $nic.InterfaceDescription } else { '' }
+        $output += (Format-GroupedPropertyLine -Label 'Description' -Value $desc) + "`n"
+        $netAdapter = Get-NetAdapter -InterfaceAlias $alias -ErrorAction SilentlyContinue | Select-Object -First 1
+        $mac = if ($netAdapter -and $netAdapter.PSObject.Properties['MacAddress']) { $netAdapter.MacAddress } else { '' }
         $output += (Format-GroupedPropertyLine -Label 'Physical Address' -Value $mac) + "`n"
 
-        if ($nic.IPv4Address) {
+        if ($nic.PSObject.Properties['IPv4Address'] -and $nic.IPv4Address) {
             $ipv4 = $nic.IPv4Address | Select-Object -First 1
             $output += (Format-GroupedPropertyLine -Label 'IPv4 Address' -Value $ipv4.IPAddress) + "`n"
             $output += (Format-GroupedPropertyLine -Label 'Subnet Prefix' -Value $ipv4.PrefixLength) + "`n"
         }
 
-        if ($nic.IPv4DefaultGateway) {
+        if ($nic.PSObject.Properties['IPv4DefaultGateway'] -and $nic.IPv4DefaultGateway) {
             $gw = $nic.IPv4DefaultGateway | Select-Object -First 1
             $output += (Format-GroupedPropertyLine -Label 'Default Gateway' -Value $gw.NextHop) + "`n"
         }
 
-        if ($nic.DNSServer) {
+        if ($nic.PSObject.Properties['DNSServer'] -and $nic.DNSServer) {
             $dnsStr = ($nic.DNSServer | ForEach-Object { $_.ServerAddresses } | Select-Object -First 3) -join ', '
             $output += (Format-GroupedPropertyLine -Label 'DNS Servers' -Value $dnsStr) + "`n"
         }
@@ -1626,23 +1641,23 @@ function Format-NetworkAdapters {
     $output += "Adapters in scope       : $($adapterList.Count)`n`n"
 
     $index = 0
-    foreach ($adapter in ($adapterList | Sort-Object { [string]($_.Name) })) {
+    foreach ($adapter in ($adapterList | Sort-Object { if ($_.PSObject.Properties['Name'] -and $_.Name) { [string]$_.Name } elseif ($_.PSObject.Properties['NetConnectionID']) { [string]$_.NetConnectionID } else { '' } })) {
         $index++
-        $alias = if ($adapter.Name) { [string]$adapter.Name } elseif ($adapter.NetConnectionID) { [string]$adapter.NetConnectionID } else { "Adapter $index" }
+        $alias = if ($adapter.PSObject.Properties['Name'] -and $adapter.Name) { [string]$adapter.Name } elseif ($adapter.PSObject.Properties['NetConnectionID'] -and $adapter.NetConnectionID) { [string]$adapter.NetConnectionID } else { "Adapter $index" }
         $output += "ADAPTER $index : $alias`n"
         $output += ('-' * (10 + $alias.Length)) + "`n"
 
-        $desc = if ($adapter.InterfaceDescription) { $adapter.InterfaceDescription }
-                elseif ($adapter.Description) { $adapter.Description }
+        $desc = if ($adapter.PSObject.Properties['InterfaceDescription'] -and $adapter.InterfaceDescription) { $adapter.InterfaceDescription }
+                elseif ($adapter.PSObject.Properties['Description'] -and $adapter.Description) { $adapter.Description }
                 else { 'Unknown' }
         $output += "{0,-24}: {1}`n" -f 'Description', $desc
 
-        $status = if ($adapter.Status) { $adapter.Status }
-                  elseif ($null -ne $adapter.NetEnabled) { if ($adapter.NetEnabled) { 'Enabled' } else { 'Disabled' } }
+        $status = if ($adapter.PSObject.Properties['Status'] -and $adapter.Status) { $adapter.Status }
+                  elseif ($adapter.PSObject.Properties['NetEnabled'] -and $null -ne $adapter.NetEnabled) { if ($adapter.NetEnabled) { 'Enabled' } else { 'Disabled' } }
                   else { 'Unknown' }
         $output += "{0,-24}: {1}`n" -f 'Status', $status
 
-        if ($adapter.LinkSpeed) {
+        if ($adapter.PSObject.Properties['LinkSpeed'] -and $adapter.LinkSpeed) {
             $speedLine = if ($adapter.LinkSpeed -is [string]) {
                 [string]$adapter.LinkSpeed
             } else {
@@ -1652,46 +1667,51 @@ function Format-NetworkAdapters {
             $output += "{0,-24}: {1}`n" -f 'Link Speed', $speedLine
         }
 
-        $mac = if ($adapter.MacAddress) { $adapter.MacAddress }
-               elseif ($adapter.MACAddress) { $adapter.MACAddress }
+        $mac = if ($adapter.PSObject.Properties['MacAddress'] -and $adapter.MacAddress) { $adapter.MacAddress }
+               elseif ($adapter.PSObject.Properties['MACAddress'] -and $adapter.MACAddress) { $adapter.MACAddress }
                else { 'Unknown' }
         $output += "{0,-24}: {1}`n" -f 'MAC Address', $mac
 
-        if ($adapter.MediaType) {
+        if ($adapter.PSObject.Properties['MediaType'] -and $adapter.MediaType) {
             $output += "{0,-24}: {1}`n" -f 'Media Type', $adapter.MediaType
         }
-        if ($adapter.InterfaceType) {
+        if ($adapter.PSObject.Properties['InterfaceType'] -and $adapter.InterfaceType) {
             $output += "{0,-24}: {1}`n" -f 'Interface Type', $adapter.InterfaceType
         }
-        if ($adapter.DriverVersion) {
+        if ($adapter.PSObject.Properties['DriverVersion'] -and $adapter.DriverVersion) {
             $output += "{0,-24}: {1}`n" -f 'Driver Version', $adapter.DriverVersion
         }
-        if ($adapter.DriverDate) {
+        if ($adapter.PSObject.Properties['DriverDate'] -and $adapter.DriverDate) {
             $output += "{0,-24}: {1}`n" -f 'Driver Date', (Convert-CdeWmiDate -WmiDate ([string]$adapter.DriverDate))
         }
 
+        $adapterInterfaceAlias = if ($adapter.PSObject.Properties['InterfaceAlias']) { $adapter.InterfaceAlias } else { $null }
+        $adapterIfIndex = if ($adapter.PSObject.Properties['ifIndex']) { $adapter.ifIndex } elseif ($adapter.PSObject.Properties['InterfaceIndex']) { $adapter.InterfaceIndex } else { $null }
         $ipCfg = @($ipList | Where-Object {
-            $_.InterfaceAlias -eq $alias -or
-            $_.InterfaceAlias -eq $adapter.InterfaceAlias -or
-            $_.InterfaceIndex -eq $adapter.ifIndex
+            ($_.PSObject.Properties['InterfaceAlias'] -and ($_.InterfaceAlias -eq $alias -or ($null -ne $adapterInterfaceAlias -and $_.InterfaceAlias -eq $adapterInterfaceAlias))) -or
+            ($null -ne $adapterIfIndex -and $_.PSObject.Properties['InterfaceIndex'] -and $_.InterfaceIndex -eq $adapterIfIndex)
         })
         foreach ($nic in $ipCfg) {
-            foreach ($addr in @($nic.IPv4Address)) {
-                if ($addr -and $addr.IPAddress) {
-                    $output += "{0,-24}: {1}/{2}`n" -f 'IPv4 Address', $addr.IPAddress, $addr.PrefixLength
+            if ($nic.PSObject.Properties['IPv4Address']) {
+                foreach ($addr in @($nic.IPv4Address)) {
+                    if ($addr -and $addr.PSObject.Properties['IPAddress'] -and $addr.IPAddress) {
+                        $output += "{0,-24}: {1}/{2}`n" -f 'IPv4 Address', $addr.IPAddress, $addr.PrefixLength
+                    }
                 }
             }
-            foreach ($addr in @($nic.IPv6Address | Select-Object -First 2)) {
-                if ($addr -and $addr.IPAddress) {
-                    $output += "{0,-24}: {1}/{2}`n" -f 'IPv6 Address', $addr.IPAddress, $addr.PrefixLength
+            if ($nic.PSObject.Properties['IPv6Address']) {
+                foreach ($addr in @($nic.IPv6Address | Select-Object -First 2)) {
+                    if ($addr -and $addr.PSObject.Properties['IPAddress'] -and $addr.IPAddress) {
+                        $output += "{0,-24}: {1}/{2}`n" -f 'IPv6 Address', $addr.IPAddress, $addr.PrefixLength
+                    }
                 }
             }
-            $gw = @($nic.IPv4DefaultGateway | Select-Object -First 1)
-            if ($gw -and $gw.NextHop) {
+            $gw = if ($nic.PSObject.Properties['IPv4DefaultGateway'] -and $nic.IPv4DefaultGateway) { $nic.IPv4DefaultGateway | Select-Object -First 1 } else { $null }
+            if ($gw -and $gw.PSObject.Properties['NextHop'] -and $gw.NextHop) {
                 $output += "{0,-24}: {1}`n" -f 'Default Gateway', $gw.NextHop
             }
-            if ($nic.DNSServer -and $nic.DNSServer.ServerAddresses) {
-                $dns = @($nic.DNSServer.ServerAddresses | Where-Object { $_ })
+            if ($nic.PSObject.Properties['DNSServer'] -and $nic.DNSServer) {
+                $dns = @($nic.DNSServer | ForEach-Object { if ($_.PSObject.Properties['ServerAddresses']) { $_.ServerAddresses } } | Where-Object { $_ })
                 if ($dns.Count -gt 0) {
                     $output += "{0,-24}: {1}`n" -f 'DNS Servers', ($dns -join ', ')
                 }
@@ -1733,7 +1753,8 @@ function Get-GpuDedicatedVideoRamBytes {
         $props = Get-ItemProperty -LiteralPath $subPath -ErrorAction SilentlyContinue
         if (-not $props) { continue }
 
-        $qw = $props.'HardwareInformation.qwMemorySize'
+        $qwProp = $props.PSObject.Properties['HardwareInformation.qwMemorySize']
+        $qw = if ($qwProp) { $qwProp.Value } else { $null }
         if ($null -eq $qw) { continue }
 
         try {
@@ -1744,12 +1765,15 @@ function Get-GpuDedicatedVideoRamBytes {
         if ($qwBytes -le 0) { continue }
 
         $matched = $false
-        $matchId = [string]$props.MatchingDeviceId
+        $matchIdProp = $props.PSObject.Properties['MatchingDeviceId']
+        $matchId = if ($matchIdProp) { [string]$matchIdProp.Value } else { '' }
+        $driverDescProp = $props.PSObject.Properties['DriverDesc']
+        $driverDesc = if ($driverDescProp) { [string]$driverDescProp.Value } else { '' }
         if ($matchId -and $pnpId -and $pnpId.StartsWith($matchId, [System.StringComparison]::OrdinalIgnoreCase)) {
             $matched = $true
         }
-        elseif ($props.DriverDesc -and $caption -and
-                [string]::Equals([string]$props.DriverDesc, $caption, [System.StringComparison]::OrdinalIgnoreCase)) {
+        elseif ($driverDesc -and $caption -and
+                [string]::Equals($driverDesc, $caption, [System.StringComparison]::OrdinalIgnoreCase)) {
             $matched = $true
         }
 
@@ -1758,13 +1782,14 @@ function Get-GpuDedicatedVideoRamBytes {
         }
     }
 
-    if ($null -eq $Gpu.AdapterRAM) {
+    $adapterRamProp = $Gpu.PSObject.Properties['AdapterRAM']
+    if (-not $adapterRamProp -or $null -eq $adapterRamProp.Value) {
         return $null
     }
 
     try {
         # AdapterRAM is uint32 in WMI; PowerShell may surface it as signed Int32.
-        $raw = $Gpu.AdapterRAM
+        $raw = $adapterRamProp.Value
         if ($raw -is [int] -or $raw -is [int32]) {
             return [long]([uint32]$raw)
         }
@@ -1801,8 +1826,9 @@ function Format-GpuInfo {
             $output += "{0,-24}: {1}`n" -f 'Video Processor', $gpu.VideoProcessor
         }
         $vramBytes = $null
-        if ($null -ne $gpu.DedicatedVideoRAM -and [long]$gpu.DedicatedVideoRAM -gt 0) {
-            $vramBytes = [long]$gpu.DedicatedVideoRAM
+        $dedProp = $gpu.PSObject.Properties['DedicatedVideoRAM']
+        if ($dedProp -and $null -ne $dedProp.Value -and [long]$dedProp.Value -gt 0) {
+            $vramBytes = [long]$dedProp.Value
         } else {
             $vramBytes = Get-GpuDedicatedVideoRamBytes -Gpu $gpu
         }

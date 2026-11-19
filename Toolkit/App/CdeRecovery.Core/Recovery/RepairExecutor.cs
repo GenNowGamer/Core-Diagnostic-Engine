@@ -141,7 +141,7 @@ namespace CdeRecovery.Core.Recovery
                     }
                 }
 
-                var snap = await MetadataSnapshotService.CaptureSnapshotAsync(reader, null, snapshotOutputDirectory, cancellationToken).ConfigureAwait(false);
+                var snap = await MetadataSnapshotService.CaptureSnapshotAsync(reader, null, snapshotOutputDirectory, cancellationToken, plan.Patches).ConfigureAwait(false);
                 manifestPath = Path.Combine(snap.SnapshotDirectory, "manifest.json");
                 audit.Add($"[SNAPSHOT] Captured pre-repair binary metadata snapshot: {manifestPath}");
             }
@@ -338,7 +338,7 @@ namespace CdeRecovery.Core.Recovery
                     }
                 }
 
-                var snap = await MetadataSnapshotService.CaptureSnapshotAsync(reader, null, authorization.MandatorySnapshotDirectory, cancellationToken).ConfigureAwait(false);
+                var snap = await MetadataSnapshotService.CaptureSnapshotAsync(reader, null, authorization.MandatorySnapshotDirectory, cancellationToken, plan.Patches).ConfigureAwait(false);
                 manifestPath = Path.Combine(snap.SnapshotDirectory, "manifest.json");
                 var (snapValid, _, snapMsg) = await MetadataSnapshotService.VerifySnapshotAsync(manifestPath, cancellationToken).ConfigureAwait(false);
                 if (!snapValid)

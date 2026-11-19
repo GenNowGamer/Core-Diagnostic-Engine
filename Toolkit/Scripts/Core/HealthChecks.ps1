@@ -895,11 +895,19 @@ function Invoke-HealthCheck_critical_events_7d {
     Write-Log 'Harvesting critical event log entries...'
     try {
         $since = (Get-Date).AddDays(-7)
-        $critical = @(Get-WinEvent -FilterHashtable @{
-            LogName   = 'System', 'Application'
-            Level     = 1, 2
-            StartTime = $since
-        } -MaxEvents 50 -ErrorAction Stop)
+        $critical = @()
+        try {
+            $critical = @(Get-WinEvent -FilterHashtable @{
+                LogName   = 'System', 'Application'
+                Level     = 1, 2
+                StartTime = $since
+            } -MaxEvents 50 -ErrorAction Stop)
+        } catch {
+            if ($_.Exception.Message -notmatch '(?i)No events were found') {
+                throw
+            }
+            $critical = @()
+        }
         $eventCount = $critical.Count
         $eventSummary = Group-WorkflowEvents -Events $critical
         $summaryText = Format-CriticalEventsDetail -EventCount $eventCount -EventSummary $eventSummary -Events ($critical | Select-Object -First 20)

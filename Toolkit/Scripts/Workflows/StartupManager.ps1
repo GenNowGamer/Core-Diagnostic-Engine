@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 param(
     [string]$Action  = 'List',
     # List | ListStartupItems | ListDrivers | ListUserLogon | ListExtensions | Enable | Disable | Delete | EnableEntry | DisableEntry | DeleteEntry | ResetWinlogonEntry | UndoWinlogonEntry | ListServices | StartService | StopService | SetStartType
@@ -1352,7 +1352,8 @@ function Get-StartupMutationAllowedRegistryRoots {
 
     $roots.Add((ConvertTo-StartupRegistryComparePath -Path 'HKLM\SYSTEM\CurrentControlSet\Services')) | Out-Null
     $roots.Add((ConvertTo-StartupRegistryComparePath -Path 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager')) | Out-Null
-    $roots.Add((ConvertTo-StartupRegistryComparePath -Path (Get-StartupApprovedRegistryRoot))) | Out-Null
+    $roots.Add((ConvertTo-StartupRegistryComparePath -Path (Get-StartupApprovedRegistryRoot -ScopeHint 'HKCU'))) | Out-Null
+    $roots.Add((ConvertTo-StartupRegistryComparePath -Path (Get-StartupApprovedRegistryRoot -ScopeHint 'HKLM'))) | Out-Null
     $roots.Add((ConvertTo-StartupRegistryComparePath -Path (Get-MsixStartupTaskRegistryRoot))) | Out-Null
 
     $extensionKeys = @(
@@ -1419,10 +1420,11 @@ function Sync-StartupApprovedAfterMutation {
         return
     }
 
+    $scopeHint = if (-not [string]::IsNullOrWhiteSpace($RegistryPath)) { $RegistryPath } else { $SourceGroup }
     switch ($Action) {
-        'Enable' { Set-StartupApprovedEntryEnabled -Category $category -EntryName $entryName -Enable $true }
-        'Disable' { Set-StartupApprovedEntryEnabled -Category $category -EntryName $entryName -Enable $false }
-        'Remove' { Remove-StartupApprovedEntry -Category $category -EntryName $entryName }
+        'Enable' { Set-StartupApprovedEntryEnabled -Category $category -EntryName $entryName -Enable $true -ScopeHint $scopeHint }
+        'Disable' { Set-StartupApprovedEntryEnabled -Category $category -EntryName $entryName -Enable $false -ScopeHint $scopeHint }
+        'Remove' { Remove-StartupApprovedEntry -Category $category -EntryName $entryName -ScopeHint $scopeHint }
     }
 }
 
@@ -1580,7 +1582,7 @@ switch ($Action) {
                 }
 
                 $approvedCategory = if ($EntryKey -match 'WOW6432Node') { 'Run32' } else { 'Run' }
-                Set-StartupApprovedEntryEnabled -Category $approvedCategory -EntryName $EntryName -Enable $true
+                Set-StartupApprovedEntryEnabled -Category $approvedCategory -EntryName $EntryName -Enable $true -ScopeHint $EntryKey
             } else {
                 $resolved = Resolve-StartupFolderEntryContext -Path $EntryPath
                 if (-not $resolved.IsDisabled) {
@@ -1601,12 +1603,13 @@ switch ($Action) {
                 }
 
                 $fileName = [System.IO.Path]::GetFileName($targetPath)
-                Set-StartupApprovedEntryEnabled -Category 'StartupFolder' -EntryName $fileName -Enable $true
+                Set-StartupApprovedEntryEnabled -Category 'StartupFolder' -EntryName $fileName -Enable $true -ScopeHint $resolved.Context.Source
             }
 
             Write-Output "Enabled: $EntryName"
         } catch {
             Write-Error "Enable failed for ${EntryName}: $($_.Exception.Message)"
+            exit 1
         }
     }
     'Disable' {
@@ -1634,7 +1637,7 @@ switch ($Action) {
                 }
 
                 $approvedCategory = if ($EntryKey -match 'WOW6432Node') { 'Run32' } else { 'Run' }
-                Set-StartupApprovedEntryEnabled -Category $approvedCategory -EntryName $EntryName -Enable $false
+                Set-StartupApprovedEntryEnabled -Category $approvedCategory -EntryName $EntryName -Enable $false -ScopeHint $EntryKey
             } else {
                 $resolved = Resolve-StartupFolderEntryContext -Path $EntryPath
                 if ($resolved.IsDisabled) {
@@ -1654,7 +1657,7 @@ switch ($Action) {
                 }
 
                 $fileName = [System.IO.Path]::GetFileName($resolved.FullPath)
-                Set-StartupApprovedEntryEnabled -Category 'StartupFolder' -EntryName $fileName -Enable $false
+                Set-StartupApprovedEntryEnabled -Category 'StartupFolder' -EntryName $fileName -Enable $false -ScopeHint $resolved.Context.Source
 
                 Move-Item -LiteralPath $resolved.FullPath -Destination $targetPath -Force -ErrorAction Stop
                 if (-not (Test-Path $targetPath)) {
@@ -1665,6 +1668,7 @@ switch ($Action) {
             Write-Output "Disabled: $EntryName"
         } catch {
             Write-Error "Disable failed for ${EntryName}: $($_.Exception.Message)"
+            exit 1
         }
     }
     'Delete' {
@@ -1698,12 +1702,13 @@ switch ($Action) {
                     throw "Delete verification failed for $EntryPath"
                 }
 
-                Sync-StartupApprovedAfterMutation -RowType 'FileStartupItem' -Name $EntryName -FilePath $resolved.FullPath -ValueName $fileName -Action Remove
+                Sync-StartupApprovedAfterMutation -SourceGroup $resolved.Context.Source -RowType 'FileStartupItem' -Name $EntryName -FilePath $resolved.FullPath -ValueName $fileName -Action Remove
             }
 
             Write-Output "Deleted: $EntryName"
         } catch {
             Write-Error "Delete failed for ${EntryName}: $($_.Exception.Message)"
+            exit 1
         }
     }
     'StartService' {

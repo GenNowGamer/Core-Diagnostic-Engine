@@ -228,7 +228,8 @@ function Invoke-HealthBaselineDelta {
     $smartDeltas = @(Compare-CdeSmartBaselineDelta -PriorSmart $prior.smart -CurrentSmart $current.smart)
     foreach ($d in $smartDeltas) {
         $mediaKeys = @('ata_5', 'ata_196', 'ata_197', 'ata_198', 'nvme_media_errors')
-        $isMedia = $mediaKeys -contains $d.Key
+        $normalizedKey = ([string]$d.Key) -replace '^d\d+_', ''
+        $isMedia = $mediaKeys -contains $normalizedKey
         $sev = if ($isMedia) { 'High' } else { 'Medium' }
         $cls = if ($isMedia) { 'CorroboratedSuspect' } else { 'SingleSignal' }
         $out.Add((New-HealthFinding -FindingId ("baseline.smart.delta_{0}" -f $d.Key) -CheckId 'critical_events_7d' `
@@ -314,9 +315,9 @@ function Add-HealthBaselineDeltaFindings {
         ) -join "`n"
         $ht.Output = $body.TrimEnd()
         Add-HealthFindingsToStep -Step $ht -Findings $merged -SummaryText $ht.Detail
-        $target.Status = $ht.Status
-        $target.Output = $ht.Output
-        $target.StructuredFindings = $ht.StructuredFindings
+        $target | Add-Member -NotePropertyName Status -NotePropertyValue $ht.Status -Force
+        $target | Add-Member -NotePropertyName Output -NotePropertyValue $ht.Output -Force
+        $target | Add-Member -NotePropertyName StructuredFindings -NotePropertyValue $ht.StructuredFindings -Force
     }
     else {
         $step = @{

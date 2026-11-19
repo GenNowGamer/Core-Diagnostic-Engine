@@ -40,7 +40,7 @@ namespace ToolkitGUI.Services
             {
                 var toolkitRoot = Environment.GetEnvironmentVariable("TOOLKIT_ROOT");
                 if (!string.IsNullOrWhiteSpace(toolkitRoot))
-                    paths.Add(Path.Combine(toolkitRoot.TrimEnd('\\'), "CDE", "Runtime", "winpe_startup.log"));
+                    paths.Add(Path.Combine(ToolkitPaths.NormalizeRootPath(toolkitRoot), "CDE", "Runtime", "winpe_startup.log"));
             }
             catch
             {

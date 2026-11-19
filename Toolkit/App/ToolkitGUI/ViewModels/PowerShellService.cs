@@ -174,7 +174,8 @@ namespace ToolkitGUI.ViewModels
 
                 // Use the same proven runspace path as the dedicated SMART Analyzer
                 // (QueryAsync sets execution policy bypass and opens an explicit runspace).
-                var (json, _) = QueryAsync($"& '{scriptPath}' -Mode Query")
+                var quotedScript = PowerShellArgumentHelper.QuoteForScriptParameter(scriptPath);
+                var (json, _) = QueryAsync($"& {quotedScript} -Mode Query")
                     .GetAwaiter().GetResult();
 
                 if (!string.IsNullOrWhiteSpace(json))
@@ -248,7 +249,20 @@ namespace ToolkitGUI.ViewModels
         {
             try
             {
+                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\MiniNT");
+                if (key != null)
+                    return true;
+            }
+            catch
+            {
+                // Continue to env fallbacks.
+            }
+
+            try
+            {
+                var sysRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? string.Empty;
                 return Environment.GetEnvironmentVariable("SystemDrive")?.Equals("X:", StringComparison.OrdinalIgnoreCase) == true
+                    || sysRoot.StartsWith(@"X:\", StringComparison.OrdinalIgnoreCase)
                     || Environment.GetEnvironmentVariable("WINPE") == "1"
                     || Environment.GetEnvironmentVariable("PEINSTALL") == "1";
             }

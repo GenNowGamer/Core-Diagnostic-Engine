@@ -241,7 +241,8 @@ function Get-CdeDiskPartScriptLines {
         [bool]$UseMbr,
         [Parameter(Mandatory)]
         [string]$Label,
-        [string]$CurrentStyle = ''
+        [string]$CurrentStyle = '',
+        [long]$DiskSizeBytes = 0
     )
 
     $lines = @(
@@ -250,22 +251,25 @@ function Get-CdeDiskPartScriptLines {
         'clean'
     )
 
+    # Windows FAT32 format limit is 32 GB (32768 MB). Cap partition size when disk exceeds 32 GB.
+    $createPartCmd = if ($DiskSizeBytes -gt 32GB) {
+        'create partition primary size=32760'
+    } else {
+        'create partition primary'
+    }
+
     if ($UseMbr) {
-        if ($CurrentStyle -ne 'MBR') {
-            $lines += 'convert mbr'
-        }
         $lines += @(
-            'create partition primary'
+            'convert mbr'
+            $createPartCmd
             'select partition 1'
             'active'
         )
     }
     else {
-        if ($CurrentStyle -ne 'GPT') {
-            $lines += 'convert gpt'
-        }
         $lines += @(
-            'create partition primary'
+            'convert gpt'
+            $createPartCmd
             'select partition 1'
         )
     }
@@ -306,9 +310,10 @@ function Set-CdeUsbPartitionViaDiskPart {
     Import-Module Storage -ErrorAction SilentlyContinue | Out-Null
     $disk = Get-Disk -Number $DiskNumber -ErrorAction SilentlyContinue
     $currentStyle = if ($disk) { [string]$disk.PartitionStyle } else { '' }
+    $diskSizeBytes = if ($disk) { [long]$disk.Size } else { 0 }
 
     $lines = Get-CdeDiskPartScriptLines -DiskNumber $DiskNumber -DriveLetter $DriveLetter `
-        -UseMbr:$UseMbr -Label $Label -CurrentStyle $currentStyle
+        -UseMbr:$UseMbr -Label $Label -CurrentStyle $currentStyle -DiskSizeBytes $diskSizeBytes
 
     $result = Invoke-DiskPartScript -Lines $lines
     Start-Sleep -Seconds 2
@@ -363,7 +368,11 @@ function Set-CdeUsbPartition {
         Initialize-Disk -Number $DiskNumber -PartitionStyle $partitionStyle -Confirm:$false -ErrorAction Stop
     }
 
-    $partition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -ErrorAction Stop
+    $partition = if ($disk.Size -gt 32GB) {
+        New-Partition -DiskNumber $DiskNumber -Size 32760MB -ErrorAction Stop
+    } else {
+        New-Partition -DiskNumber $DiskNumber -UseMaximumSize -ErrorAction Stop
+    }
     if ($UseMbr) {
         Set-Partition -DiskNumber $DiskNumber -PartitionNumber $partition.PartitionNumber -IsActive $true -ErrorAction Stop
     }
@@ -578,116 +587,130 @@ Write-Step "Copying CDE files to $usbLetter`:\ ..."
 
 $sourceRoot = $CDE_ROOT
 $destRoot   = "$usbLetter`:\"
+$resolvedIsoPath = $null
 
-if ($IsoPath) {
-    # If ISO path provided, extract it
-    if (-not (Test-Path $IsoPath)) { Write-Fail "ISO not found: $IsoPath" }
-    Write-Host "  Mode: Extract from ISO"
-    $mount = Mount-DiskImage -ImagePath (Resolve-Path $IsoPath).Path -PassThru
-    Start-Sleep -Seconds 2
-    $isoLetter = ($mount | Get-Volume).DriveLetter
-    if (-not $isoLetter) { Write-Fail "Could not determine ISO mount letter." }
-    Write-Host "  ISO mounted at $isoLetter`:\"
-    $sourceRoot = "$isoLetter`:\"
-}
-
-# ---------------------------------------------------------------
-# Validate rEFInd source artifacts (UEFI primary boot path)
-# ---------------------------------------------------------------
-Write-Step "Validating rEFInd source artifacts..."
-
-$refindMainSrc = Join-Path $sourceRoot "EFI\refind\refind_x64.efi"
-$refindConfSrc = Join-Path $sourceRoot "EFI\boot\refind.conf"
-$refindIconsSrc = Join-Path $sourceRoot "EFI\boot\icons"
-
-if (-not (Test-Path $refindMainSrc)) {
-    Write-Fail "Missing required rEFInd binary: $refindMainSrc"
-}
-if (-not (Test-Path $refindConfSrc)) {
-    Write-Fail "Missing required rEFInd config: $refindConfSrc"
-}
-if (-not (Test-Path $refindIconsSrc)) {
-    Write-Fail "Missing required rEFInd icons directory: $refindIconsSrc"
-}
-Write-OK "rEFInd source artifacts present"
-
-# ---------------------------------------------------------------
-# Pre-flight: check available space vs source size
-# ---------------------------------------------------------------
-Write-Step "Checking available space..."
-
-$excludedFolders = @("Deploy", "dist", "Mount", "Logs", "App", "WinPE", "Docs", ".agents", ".git", ".venv", ".vscode", "Scripts\Tests", "Scripts\BenchLab", "CDE\Runtime", "Tools\Deploy", "Tools\.staging", "Security\CST\rules\baselines\baselines", 'CDE\ToolkitGUI\bin\Release\net8.0-windows\$TOOLKIT_ROOT')
-# Files not needed on the USB (dev tools, repo metadata, docs already handled by *.md)
-$excludedFiles   = @("*.md", "CreateISO.vbs", "Run-CustomizeWinPE.vbs", "PrepareUSB.vbs", "SyncUSB.bat", "SyncUSB_Debug.bat", "Build-WinPE.bat", "Create-ISO.bat", "Prepare-USB.bat", "Publish-ToolkitGUI.ps1", "ToolkitGUI.sln", ".gitignore",
-                     "script_output.txt",
-                     "CreateISO.ps1", "Customize-WinPE.ps1", "Prepare-BootableUSB.ps1",
-                     "update_script.ps1", "do_update.ps1",
-                     "goodware.db", "goodware.db-wal", "goodware.db-shm",
-                     "*.bak_*", "*.lock", "*.tmp.png", "*.rtf")
-
-# Calculate source size excluding the folders that won't be copied
-$sourceBytes = 0
-Get-ChildItem $sourceRoot -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-    # Check if this file is under an excluded folder
-    $rel = $_.FullName.Substring($sourceRoot.Length).TrimStart('\')
-    $topFolder = ($rel -split '\\')[0]
-    if ($topFolder -notin $excludedFolders) {
-        $sourceBytes += $_.Length
+try {
+    if ($IsoPath) {
+        # If ISO path provided, extract it
+        if (-not (Test-Path $IsoPath)) { Write-Fail "ISO not found: $IsoPath" }
+        Write-Host "  Mode: Extract from ISO"
+        $resolvedIsoPath = (Resolve-Path $IsoPath).Path
+        $mount = Mount-DiskImage -ImagePath $resolvedIsoPath -PassThru
+        Start-Sleep -Seconds 2
+        $isoLetter = ($mount | Get-Volume).DriveLetter
+        if (-not $isoLetter) { Write-Fail "Could not determine ISO mount letter." }
+        Write-Host "  ISO mounted at $isoLetter`:\"
+        $sourceRoot = "$isoLetter`:\"
     }
-}
-$sourceMB = [math]::Round($sourceBytes / 1MB)
-$sourceGB = [math]::Round($sourceBytes / 1GB, 2)
 
-$usbVol = Get-Volume -DriveLetter $usbLetter -ErrorAction SilentlyContinue
-if ($usbVol) {
-    $freeBytes = $usbVol.SizeRemaining
-    $freeMB    = [math]::Round($freeBytes / 1MB)
-    Write-Host "  Content to copy: $sourceMB MB  ($sourceGB GB)"
-    Write-Host "  USB free space:  $freeMB MB"
-    if ($sourceBytes -gt $freeBytes) {
-        $shortGB = [math]::Round(($sourceBytes - $freeBytes) / 1GB, 2)
-        Write-Fail "Not enough space on USB. Need $sourceGB GB, have $([math]::Round($freeBytes/1GB,2)) GB (short by $shortGB GB)."
+    # ---------------------------------------------------------------
+    # Validate rEFInd source artifacts (UEFI primary boot path)
+    # ---------------------------------------------------------------
+    Write-Step "Validating rEFInd source artifacts..."
+
+    $refindMainSrc = Join-Path $sourceRoot "EFI\refind\refind_x64.efi"
+    $refindConfSrc = Join-Path $sourceRoot "EFI\boot\refind.conf"
+    $refindIconsSrc = Join-Path $sourceRoot "EFI\boot\icons"
+
+    if (-not (Test-Path $refindMainSrc)) {
+        Write-Fail "Missing required rEFInd binary: $refindMainSrc"
     }
-    Write-OK "Space check passed ($sourceMB MB needed, $freeMB MB available)"
-} else {
-    Write-Warn "Could not read USB volume info - proceeding without space check."
+    if (-not (Test-Path $refindConfSrc)) {
+        Write-Fail "Missing required rEFInd config: $refindConfSrc"
+    }
+    if (-not (Test-Path $refindIconsSrc)) {
+        Write-Fail "Missing required rEFInd icons directory: $refindIconsSrc"
+    }
+    Write-OK "rEFInd source artifacts present"
+
+    # ---------------------------------------------------------------
+    # Pre-flight: check available space vs source size
+    # ---------------------------------------------------------------
+    Write-Step "Checking available space..."
+
+    $excludedFolders = @("Deploy", "dist", "Mount", "Logs", "App", "WinPE", "Docs", ".agents", ".git", ".venv", ".vscode", "Scripts\Tests", "Scripts\BenchLab", "CDE\Runtime", "Tools\Deploy", "Tools\.staging", "Security\CST\lib\lib", "Security\CST\rules\baselines\baselines", 'CDE\ToolkitGUI\bin\Release\net8.0-windows\$TOOLKIT_ROOT')
+    # Files not needed on the USB (dev tools, repo metadata, docs already handled by *.md)
+    $excludedFiles   = @("*.md", "CreateISO.vbs", "Run-CustomizeWinPE.vbs", "PrepareUSB.vbs", "SyncUSB.bat", "SyncUSB_Debug.bat", "Build-WinPE.bat", "Create-ISO.bat", "Prepare-USB.bat", "Publish-ToolkitGUI.ps1", "ToolkitGUI.sln", ".gitignore",
+                         "script_output.txt",
+                         "CreateISO.ps1", "Customize-WinPE.ps1", "Prepare-BootableUSB.ps1",
+                         "update_script.ps1", "do_update.ps1",
+                         "goodware.db", "goodware.db-wal", "goodware.db-shm",
+                         "*.bak_*", "*.lock", "*.tmp.png", "*.rtf")
+
+    # Calculate source size excluding the folders that won't be copied
+    $sourceBytes = 0
+    Get-ChildItem $sourceRoot -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+        # Check if this file is under an excluded folder (including nested paths)
+        $rel = $_.FullName.Substring($sourceRoot.Length).TrimStart('\')
+        $isExcluded = $false
+        foreach ($excl in $excludedFolders) {
+            if ($rel.Equals($excl, [System.StringComparison]::OrdinalIgnoreCase) -or
+                $rel.StartsWith("$excl\", [System.StringComparison]::OrdinalIgnoreCase)) {
+                $isExcluded = $true
+                break
+            }
+        }
+        if (-not $isExcluded) {
+            $sourceBytes += $_.Length
+        }
+    }
+    $sourceMB = [math]::Round($sourceBytes / 1MB)
+    $sourceGB = [math]::Round($sourceBytes / 1GB, 2)
+
+    $usbVol = Get-Volume -DriveLetter $usbLetter -ErrorAction SilentlyContinue
+    if ($usbVol) {
+        $freeBytes = $usbVol.SizeRemaining
+        $freeMB    = [math]::Round($freeBytes / 1MB)
+        Write-Host "  Content to copy: $sourceMB MB  ($sourceGB GB)"
+        Write-Host "  USB free space:  $freeMB MB"
+        if ($sourceBytes -gt $freeBytes) {
+            $shortGB = [math]::Round(($sourceBytes - $freeBytes) / 1GB, 2)
+            Write-Fail "Not enough space on USB. Need $sourceGB GB, have $([math]::Round($freeBytes/1GB,2)) GB (short by $shortGB GB)."
+        }
+        Write-OK "Space check passed ($sourceMB MB needed, $freeMB MB available)"
+    } else {
+        Write-Warn "Could not read USB volume info - proceeding without space check."
+    }
+
+    Write-Host ""
+    Write-Host "  Source: $sourceRoot  (excluding folders: $($excludedFolders -join ', '))"
+    Write-Host "  Excluding files:  $($excludedFiles -join ', ')"
+    Write-Host "  Dest:   $destRoot"
+    Write-Host "  This may take several minutes depending on USB speed..."
+    Write-Host ""
+
+    # Build robocopy exclusion args for folders
+    $excludeArgs = $excludedFolders | ForEach-Object { "$sourceRoot\$_" }
+
+    & robocopy $sourceRoot $destRoot /E /XD @excludeArgs /XF @excludedFiles /NFL /NDL /NJH /R:2 /W:1
+    # robocopy exit codes 0-7 are success/informational
+    $roboexit = $LASTEXITCODE
+    if ($roboexit -gt 7) { Write-Fail "robocopy failed with exit code $roboexit" }
+    Write-OK "Files copied successfully (robocopy exit: $roboexit)"
+
+    # Ensure UEFI removable fallback path points to rEFInd launcher
+    Write-Step "Setting UEFI fallback launcher to rEFInd..."
+    $refindMainDst = "$destRoot\EFI\refind\refind_x64.efi"
+    $bootx64Dst    = "$destRoot\EFI\boot\bootx64.efi"
+
+    if (-not (Test-Path $refindMainDst)) {
+        Write-Fail "rEFInd main binary missing on USB after copy: $refindMainDst"
+    }
+
+    Copy-Item $refindMainDst $bootx64Dst -Force
+    if (-not (Test-Path $bootx64Dst)) {
+        Write-Fail "Failed to set fallback launcher at EFI\\boot\\bootx64.efi"
+    }
+    Write-OK "UEFI fallback launcher set to rEFInd"
 }
-
-Write-Host ""
-Write-Host "  Source: $sourceRoot  (excluding folders: $($excludedFolders -join ', '))"
-Write-Host "  Excluding files:  $($excludedFiles -join ', ')"
-Write-Host "  Dest:   $destRoot"
-Write-Host "  This may take several minutes depending on USB speed..."
-Write-Host ""
-
-# Build robocopy exclusion args for top-level folders (no embedded quotes; PowerShell handles quoting for native exe)
-$excludeArgs = $excludedFolders | ForEach-Object { "$sourceRoot\$_" }
-
-& robocopy $sourceRoot $destRoot /E /XD @excludeArgs /XF @excludedFiles /NFL /NDL /NJH /R:2 /W:1
-# robocopy exit codes 0-7 are success/informational
-$roboexit = $LASTEXITCODE
-if ($roboexit -gt 7) { Write-Fail "robocopy failed with exit code $roboexit" }
-Write-OK "Files copied successfully (robocopy exit: $roboexit)"
-
-# Ensure UEFI removable fallback path points to rEFInd launcher
-Write-Step "Setting UEFI fallback launcher to rEFInd..."
-$refindMainDst = "$destRoot\EFI\refind\refind_x64.efi"
-$bootx64Dst    = "$destRoot\EFI\boot\bootx64.efi"
-
-if (-not (Test-Path $refindMainDst)) {
-    Write-Fail "rEFInd main binary missing on USB after copy: $refindMainDst"
-}
-
-Copy-Item $refindMainDst $bootx64Dst -Force
-if (-not (Test-Path $bootx64Dst)) {
-    Write-Fail "Failed to set fallback launcher at EFI\\boot\\bootx64.efi"
-}
-Write-OK "UEFI fallback launcher set to rEFInd"
-
-# Dismount ISO if we used one
-if ($IsoPath) {
-    Dismount-DiskImage -ImagePath (Resolve-Path $IsoPath).Path | Out-Null
-    Write-OK "ISO dismounted"
+finally {
+    # Dismount ISO if we mounted one
+    if ($resolvedIsoPath) {
+        try {
+            Dismount-DiskImage -ImagePath $resolvedIsoPath -ErrorAction SilentlyContinue | Out-Null
+            Write-OK "ISO dismounted"
+        } catch {}
+    }
 }
 
 # ---------------------------------------------------------------

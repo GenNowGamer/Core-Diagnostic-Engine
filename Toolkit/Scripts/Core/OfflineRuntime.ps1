@@ -8,7 +8,11 @@ function Get-ToolkitRootFromScript {
     param([string]$ScriptRoot = $PSScriptRoot)
 
     if (-not [string]::IsNullOrWhiteSpace($env:TOOLKIT_ROOT) -and (Test-Path -LiteralPath $env:TOOLKIT_ROOT)) {
-        return $env:TOOLKIT_ROOT.TrimEnd('\')
+        $trimmed = $env:TOOLKIT_ROOT.Trim().TrimEnd('\', '/')
+        if ($trimmed -match '^[A-Za-z]:$') {
+            return "$trimmed\"
+        }
+        return $trimmed
     }
 
     if ([string]::IsNullOrWhiteSpace($ScriptRoot)) {
@@ -106,9 +110,16 @@ function Clear-OfflineRuntimeSessionFiles {
     Remove-LegacyOfflineRuntimeArtifacts -ToolkitRoot $ToolkitRoot
 
     $runtimeDir = Get-OfflineRuntimeDirectory -ToolkitRoot $ToolkitRoot
-    if (Test-Path -LiteralPath $runtimeDir) {
-        Get-ChildItem -LiteralPath $runtimeDir -Force -ErrorAction SilentlyContinue |
-            Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $runtimeDir)) {
+        return
+    }
+
+    # Remove only transient WinPE session files; preserve persisted settings (e.g. theme.txt) and WorkOrders/Data.
+    foreach ($sessionFile in @('offline_env.txt', 'offline_progress.log')) {
+        $path = Join-Path $runtimeDir $sessionFile
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 

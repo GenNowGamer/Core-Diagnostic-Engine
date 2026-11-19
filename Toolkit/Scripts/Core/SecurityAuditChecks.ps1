@@ -296,7 +296,7 @@ function Invoke-CoreSecurityTool {
                 $relayParts.Add('-OfflineOnly') | Out-Null
             }
             $relayOut = @{}
-            Invoke-ToolkitElevatedRelay -ScriptPath $cstScript -ArgumentString ($relayParts -join ' ') -RelayOut $relayOut
+            Invoke-ToolkitElevatedRelay -ScriptPath $cstScript -ArgumentString ($relayParts -join ' ') -RelayOut $relayOut -StreamToHost
             $relay = $relayOut['Result']
             if (Test-Path -LiteralPath $resultArtifactPath -PathType Leaf) {
                 $result = Get-Content -LiteralPath $resultArtifactPath -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json -ErrorAction SilentlyContinue

@@ -147,19 +147,7 @@ namespace ToolkitGUI.Services
                 DisplayLabel = item.TryGetProperty("DisplayLabel", out var label) ? label.GetString() ?? string.Empty : string.Empty
             };
 
-        private static bool IsWinPeMode()
-        {
-            try
-            {
-                return string.Equals(Environment.GetEnvironmentVariable("SystemDrive"), "X:", StringComparison.OrdinalIgnoreCase)
-                    || Environment.GetEnvironmentVariable("WINPE") == "1"
-                    || Environment.GetEnvironmentVariable("PEINSTALL") == "1"
-                    || Directory.Exists(@"X:\");
-            }
-            catch
-            {
-                return false;
-            }
-        }
+        private static bool IsWinPeMode() =>
+            ToolkitGUI.ViewModels.PowerShellService.IsWinPeEnvironment();
     }
 }

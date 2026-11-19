@@ -1999,11 +1999,15 @@ function Invoke-CstRollback {
         }
 
         $runKeyRollbackAttempted = $false
+        $runKeyRollbackSucceeded = $false
+        $runKeyRollbackFailed = $false
+        $runKeyNotes = New-Object System.Collections.Generic.List[string]
         foreach ($persistenceAction in $persistenceActions) {
             if ([string]$persistenceAction.kind -ne 'RunKey' -or [string]$persistenceAction.status -ne 'Success') {
                 continue
             }
 
+            $runKeyRollbackAttempted = $true
             $artifact = $null
             if ($persistenceAction.PSObject.Properties['artifact']) {
                 $artifact = $persistenceAction.artifact
@@ -2017,25 +2021,27 @@ function Invoke-CstRollback {
 
             try {
                 $restoreMsg = Invoke-CstRestoreRunKeyEntry -Artifact $artifact
-                $current | Add-Member -NotePropertyName rollbackStatus -NotePropertyValue 'Restored' -Force
-                $current | Add-Member -NotePropertyName rollbackNote -NotePropertyValue $restoreMsg -Force
-                $current | Add-Member -NotePropertyName rollbackTimestamp -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('o')) -Force
-                $updatedRecords.Add($current)
-                $restored++
-                $runKeyRollbackAttempted = $true
-                break
+                $runKeyNotes.Add($restoreMsg) | Out-Null
+                $runKeyRollbackSucceeded = $true
             } catch {
-                $current | Add-Member -NotePropertyName rollbackStatus -NotePropertyValue 'Failed' -Force
-                $current | Add-Member -NotePropertyName rollbackNote -NotePropertyValue $_.Exception.Message -Force
-                $updatedRecords.Add($current)
-                $failed++
-                $errors.Add("${rollbackId}: $($_.Exception.Message)")
-                $runKeyRollbackAttempted = $true
-                break
+                $runKeyNotes.Add($_.Exception.Message) | Out-Null
+                $errors.Add("${rollbackId}: $($_.Exception.Message)") | Out-Null
+                $runKeyRollbackFailed = $true
             }
         }
 
-        if ($runKeyRollbackAttempted) {
+        $hasQuarantinedFile = ($action -eq 'Quarantine') -and (-not [string]::IsNullOrWhiteSpace($source) -or -not [string]::IsNullOrWhiteSpace($destination))
+        if ($runKeyRollbackAttempted -and -not $hasQuarantinedFile) {
+            if ($runKeyRollbackFailed -and -not $runKeyRollbackSucceeded) {
+                $current | Add-Member -NotePropertyName rollbackStatus -NotePropertyValue 'Failed' -Force
+                $failed++
+            } else {
+                $current | Add-Member -NotePropertyName rollbackStatus -NotePropertyValue 'Restored' -Force
+                $current | Add-Member -NotePropertyName rollbackTimestamp -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('o')) -Force
+                $restored++
+            }
+            $current | Add-Member -NotePropertyName rollbackNote -NotePropertyValue ($runKeyNotes -join ' ') -Force
+            $updatedRecords.Add($current)
             continue
         }
 
@@ -2063,6 +2069,14 @@ function Invoke-CstRollback {
         }
 
         if ([string]::IsNullOrWhiteSpace($source) -or -not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            if ($runKeyRollbackAttempted -and $runKeyRollbackSucceeded -and [string]::IsNullOrWhiteSpace($destination)) {
+                $current | Add-Member -NotePropertyName rollbackStatus -NotePropertyValue 'Restored' -Force
+                $current | Add-Member -NotePropertyName rollbackNote -NotePropertyValue ($runKeyNotes -join ' ') -Force
+                $current | Add-Member -NotePropertyName rollbackTimestamp -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('o')) -Force
+                $updatedRecords.Add($current)
+                $restored++
+                continue
+            }
             $current | Add-Member -NotePropertyName rollbackStatus -NotePropertyValue 'Failed' -Force
             $current | Add-Member -NotePropertyName rollbackNote -NotePropertyValue 'Quarantine source file is missing.' -Force
             $updatedRecords.Add($current)
@@ -2093,8 +2107,12 @@ function Invoke-CstRollback {
             }
 
             Move-Item -LiteralPath $source -Destination $destination -Force
+            $fileNote = 'Quarantined file restored to original path.'
+            if ($runKeyNotes.Count -gt 0) {
+                $fileNote = "$fileNote " + ($runKeyNotes -join ' ')
+            }
             $current | Add-Member -NotePropertyName rollbackStatus -NotePropertyValue 'Restored' -Force
-            $current | Add-Member -NotePropertyName rollbackNote -NotePropertyValue 'Quarantined file restored to original path.' -Force
+            $current | Add-Member -NotePropertyName rollbackNote -NotePropertyValue $fileNote -Force
             $current | Add-Member -NotePropertyName rollbackTimestamp -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('o')) -Force
             $restored++
         } catch {
@@ -4185,7 +4203,7 @@ function Find-CstFileFindings {
                             0.0
                         }
                         $walkScanOverall = Get-CstScanOverallPercent -Scanned $scanned -ProgressTotal $progressTotal -MaxFiles $MaxFiles
-                        Write-CstLiveProgress -Scanned $scanned -ProgressTotal $progressTotal -CurrentPath $candidate.FullName -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -RecentAverageSec $recentAverageSec -MinEtaSampleSize 25 -MaxBudgetSec $timeLimitSec -Phase 'Scanning' -PhasePercent $walkScanPhasePercent -OverallPercent $walkScanOverall -TargetIndex $enumTargetIndex -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail ("Scanning {0:N0}/{1:N0} • walked {2:N0} paths (target {3}/{4})" -f $scanned, $progressTotal, $enumeratedCandidates, $enumTargetIndex, $enumTargetCount)
+                        Write-CstLiveProgress -Scanned $scanned -ProgressTotal $progressTotal -CurrentPath $candidate.FullName -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -RecentAverageSec $recentAverageSec -MinEtaSampleSize 25 -MaxBudgetSec $timeLimitSec -Phase 'Scanning' -PhasePercent $walkScanPhasePercent -OverallPercent $walkScanOverall -TargetIndex $enumTargetIndex -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail ("Scanning {0:N0}/{1:N0} | walked {2:N0} paths (target {3}/{4})" -f $scanned, $progressTotal, $enumeratedCandidates, $enumTargetIndex, $enumTargetCount)
                     } else {
                         $enumOverall = [math]::Round(10.0 + ($enumPhasePercent * 0.25), 1)
                         Write-CstLiveProgress -Scanned $enumeratedCandidates -ProgressTotal ([math]::Max(1, $enumExpectedCandidates)) -CurrentPath $candidate.FullName -ElapsedSec (((Get-Date) - $scanStart).TotalSeconds) -Phase 'Enumerating' -PhasePercent $enumPhasePercent -OverallPercent $enumOverall -TargetIndex $enumTargetIndex -TargetCount $enumTargetCount -EnumeratedCandidates $enumeratedCandidates -FilteredByRiskPath $filteredByRiskPath -FilteredByExclusion $filteredByExclusion -Detail ("Discovering paths on target {0}/{1} ({2:N0} candidates found)" -f $enumTargetIndex, $enumTargetCount, $enumeratedCandidates)
@@ -5258,10 +5276,24 @@ function Find-CstRansomwareTamperFindings {
     if ($policy.checkWinRe) {
         try {
             if ($EnvironmentMode -eq 'Windows') {
-                $reagent = & reagentc.exe /info 2>&1 | Out-String
-                if ($reagent -match '(?i)Windows\s+RE\s+status\s*:\s*Disabled') {
-                    $issueCount++
-                    $findings.Add((New-CstFinding -Type 'PUM' -Severity 'High' -Name 'Windows RE disabled' -Location 'reagentc' -Evidence 'reagentc reports Windows RE status: Disabled.' -Detector 'RansomwareTamperInspector' -Confidence 0.8 -ObjectType 'Configuration' -CanRemediate $false))
+                $isAdmin = $false
+                try {
+                    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+                    $pr = New-Object Security.Principal.WindowsPrincipal($id)
+                    $isAdmin = $pr.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+                } catch { }
+                if ($isAdmin) {
+                    $prevEap = $ErrorActionPreference
+                    $ErrorActionPreference = 'Continue'
+                    try {
+                        $reagent = & reagentc.exe /info 2>&1 | Out-String
+                    } finally {
+                        $ErrorActionPreference = $prevEap
+                    }
+                    if ($reagent -match '(?i)Windows\s+RE\s+status\s*:\s*Disabled') {
+                        $issueCount++
+                        $findings.Add((New-CstFinding -Type 'PUM' -Severity 'High' -Name 'Windows RE disabled' -Location 'reagentc' -Evidence 'reagentc reports Windows RE status: Disabled.' -Detector 'RansomwareTamperInspector' -Confidence 0.8 -ObjectType 'Configuration' -CanRemediate $false))
+                    }
                 }
             } elseif (-not [string]::IsNullOrWhiteSpace($OfflineWindowsRoot)) {
                 $recoveryDir = Join-Path $OfflineWindowsRoot.TrimEnd('\') 'Windows\System32\Recovery'

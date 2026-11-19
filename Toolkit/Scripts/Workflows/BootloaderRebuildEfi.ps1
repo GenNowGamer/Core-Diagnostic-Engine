@@ -13,8 +13,15 @@ $workflow = Start-Workflow -WorkflowName 'Bootloader_RebuildEFI' -ScriptBlock {
 
     $efiRoot = if ($target.EfiDriveRoot) { $target.EfiDriveRoot } else { '' }
     if (-not [string]::IsNullOrWhiteSpace($EfiTargetDrive)) {
-        $efiTarget = Select-BootloaderEfiVolumeWithConfirmation -PreSelectedDrive $EfiTargetDrive
-        $efiRoot = $efiTarget.DriveRoot
+        $normalizedEfiDrive = Normalize-DriveRoot -DriveRoot $EfiTargetDrive
+        if ((Test-Path -LiteralPath ($normalizedEfiDrive + '\') -PathType Container) -and
+            -not (Test-IsToolkitMediaDriveRoot -DriveRoot $normalizedEfiDrive)) {
+            $efiRoot = $normalizedEfiDrive
+            Write-Host "EFI volume pre-selected: $efiRoot" -ForegroundColor Cyan
+        } else {
+            $efiTarget = Select-BootloaderEfiVolumeWithConfirmation -PreSelectedDrive $EfiTargetDrive
+            $efiRoot = $efiTarget.DriveRoot
+        }
     } elseif ([string]::IsNullOrWhiteSpace($efiRoot) -or ($efiRoot -eq $target.DriveRoot -and -not (Test-Path -LiteralPath $target.EfiBcdPath -PathType Leaf))) {
         $efiTarget = Select-BootloaderEfiVolumeWithConfirmation -PreSelectedDrive $EfiTargetDrive
         $efiRoot = $efiTarget.DriveRoot

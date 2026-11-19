@@ -702,8 +702,8 @@ namespace CdeSmart
             }
 
             uint returnStatus = (uint)ReadLE(buf, 16, 4);
-            // STORAGE_PROTOCOL_STATUS_SUCCESS = 0; PENDING = 3 (varies by header)
-            if (returnStatus != 0 && returnStatus != 1 && returnStatus != 3)
+            // STORAGE_PROTOCOL_STATUS_PENDING = 0; COMPLETED = 1; NOT_SUPPORTED = 3
+            if (returnStatus != 0 && returnStatus != 1)
             {
                 return "Skipped: NVMe self-test protocol status " + returnStatus;
             }
@@ -767,16 +767,44 @@ namespace CdeSmart
             // 0 = no DST in progress
             if (currentOp != 0) return -1;
 
-            // Newest result entry starts at offset 4 (NVMe DST log layout)
-            int newestResult = qbuf[dataOff + 4] & 0x0F;
-            // 0h = Entry unused / no result yet
-            // 1h = Operation completed without error
-            // 2h = Operation aborted by DST command
-            // 3h..Fh = various failures / aborted
-            if (newestResult == 1) return 0;
-            if (newestResult == 0) return -2;
-            if (newestResult == 2) return 2;  // aborted - soft
-            return 1;
+            // Newest result entry starts at offset 4 (NVMe DST log layout, 28 bytes per entry)
+            // Byte 0 of entry (dataOff + 4): bits 3:0 = Self-test Result, bits 7:4 = Self-test Code (1h=Short, 2h=Extended)
+            if (dataOff + 32 > qbuf.Length) return 2;
+            byte statusByte = qbuf[dataOff + 4];
+            int newestResult = statusByte & 0x0F;
+            int selfTestCode = (statusByte >> 4) & 0x0F;
+
+            // According to NVMe Base Spec Figure 206 (Device Self-test Result Data Structure):
+            // 0h = Operation completed without error
+            // 1h = Operation was aborted by a Device Self-test command
+            // 2h = Operation was aborted by a Controller Level Reset
+            // 3h = Operation was aborted due to a removal of a namespace from the namespace inventory
+            // 4h = Operation was aborted due to the processing of a Format NVM command
+            // 5h = A fatal error or unknown test error occurred while the controller was executing the device self-test operation, and the operation did not complete
+            // 6h = Operation completed with a segment that failed and the segment that failed is not known
+            // 7h = Operation completed with one or more failed segments and the first segment that failed is indicated in the Segment Number field
+            // 8h = Operation was aborted for unknown reason
+            // 9h = Operation was aborted due to a sanitize operation
+            // Fh = Entry not used (does not contain a test result)
+            if (newestResult == 0x0F) return -2;
+
+            // Some controllers zero-fill unused result slots instead of setting 0x0F.
+            // A valid completed self-test always has a non-zero Self-test Code (bits 7:4 = 1 or 2).
+            if (statusByte == 0 && selfTestCode == 0)
+            {
+                bool allZero = true;
+                for (int i = 4; i < 16; i++)
+                {
+                    if (qbuf[dataOff + i] != 0) { allZero = false; break; }
+                }
+                if (allZero) return -2;
+            }
+
+            if (newestResult == 0x0) return 0; // Completed without error -> Pass
+            if (newestResult == 0x1 || newestResult == 0x2 || newestResult == 0x3 ||
+                newestResult == 0x4 || newestResult == 0x8 || newestResult == 0x9)
+                return 2; // Aborted -> Warn
+            return 1; // 0x5, 0x6, 0x7, etc. -> Failed
         }
 
         static void WriteU16(byte[] b, int o, ushort v)
