@@ -16,6 +16,11 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 ## Session Update (2026-11-19)
 
+- **Hardware Memory Test Parameter Alignment & Pass Reporting (`Core_Hardware_Utility.json`, `HardwareTestCatalog.json`, `HardwareMemoryTests.ps1`, `Sync-HardwareTestCatalog.ps1`)** — Restored expected hardware memory pass/fail reporting and synchronized memory test size caps across CDE and CHU:
+  - Updated Quick profile memory size cap from `192 MB` to `1024 MB` and Extended profile memory size cap from `1536 MB` to `4096 MB` in both sibling repository `Core Hardware Utility\Core_Hardware_Utility.json` and `Toolkit\Config\HardwareTestCatalog.json`.
+  - Running `Publish-ToolkitGUI.ps1` (which invokes `Sync-HardwareTestCatalog.ps1`) now permanently retains the `1024 MB` / `4096 MB` memory caps instead of overwriting them with legacy 192 MB defaults.
+  - Removed the `$script:HwMemoryCoverageIncomplete` override in `HardwareMemoryTests.ps1` (`Invoke-MemoryTests`) that previously coerced successful test runs into an `Incomplete` status. Windows user-mode memory tests that successfully verify their memory pattern allocations now report `Passed: <coverage>` (e.g., `Passed: 1024 MB tested (~3.1% of 32690 MB installed) (1s)`).
+  - Verified with live execution of `HardwareDiagnostics.ps1 -ToolName MemoryTests -TestProfile Quick` (all 10 sub-tests passing), `Test-HardwareTestCatalogSync.ps1`, and `Test-HwIncompleteAndConfirmOnFail.ps1`.
 - **Light / Dark Theme Persistence Across Windows & WinPE (`ThemeService.cs`, `ToolkitPaths.cs`, `OfflineRuntimePaths.cs`, `OfflineRuntime.ps1`, `MainWindow.xaml.cs`, `CDELauncher\Program.cs`)** — Fixed theme persistence so the selected Light or Dark theme reliably survives across CDE restarts in live Windows, WinPE Normal, and WinPE Offline modes:
   - Added `ToolkitPaths.NormalizeRootPath()` so bare drive roots (`D:` or `E:\` when launched from USB root) retain their trailing backslash (`E:\`) instead of collapsing to a drive-relative path (`E:CDE\Runtime\theme.txt`).
   - Exempted `CDE\Runtime\theme.txt` from `OfflineRuntimePaths.ClearSessionFiles()` and `Clear-OfflineSessionFiles` so WinPE boot/offline transitions do not wipe the saved theme preference.

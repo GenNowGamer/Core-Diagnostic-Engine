@@ -417,7 +417,7 @@
                                    "fpuLoops":  75000,
                                    "memoryPatternPasses":  2,
                                    "memoryBlockCount":  2,
-                                   "memorySizeCapMb":  192,
+                                   "memorySizeCapMb":  1024,
                                    "memorySizeFloorMb":  96,
                                    "memoryFreePercent":  0.12,
                                    "memoryWinPeMb":  192,
@@ -440,7 +440,7 @@
                                       "fpuLoops":  500000,
                                       "memoryPatternPasses":  4,
                                       "memoryBlockCount":  6,
-                                      "memorySizeCapMb":  1536,
+                                      "memorySizeCapMb":  4096,
                                       "memorySizeFloorMb":  512,
                                       "memoryFreePercent":  0.35,
                                       "memoryWinPeMb":  512,
@@ -457,5 +457,5 @@
                  },
     "version":  1,
     "source":  "..\\Core Hardware Utility\\Core_Hardware_Utility.json",
-    "syncedAt":  "2026-11-19T09:13:01.5536197-06:00"
+    "syncedAt":  "2026-11-19T11:55:04.2641700-06:00"
 }
