@@ -42,6 +42,18 @@ Assert-True -Name 'Bootsect volume normalizes drive root' -Condition ((Get-Boots
 Assert-True -Name 'Normalize drive root' -Condition ((Normalize-DriveRoot -DriveRoot 'C') -eq 'C:')
 Assert-True -Name 'Normalize drive root with slash' -Condition ((Normalize-DriveRoot -DriveRoot 'D:\') -eq 'D:')
 
+$mbrSkip = Resolve-MissingEfiBcdBackupStep -EfiBcdPath 'F:\EFI\Microsoft\Boot\BCD' -BiosBcdPresent:$true -PartitionStyle 'MBR' -HasEsp:$false
+Assert-True -Name 'Missing EFI on MBR+BIOS skips' -Condition ($mbrSkip.Status -eq 'Skip' -and $mbrSkip.ExitCode -eq 0)
+
+$mbrWarnNoBios = Resolve-MissingEfiBcdBackupStep -EfiBcdPath 'F:\EFI\Microsoft\Boot\BCD' -BiosBcdPresent:$false -PartitionStyle 'MBR' -HasEsp:$false
+Assert-True -Name 'Missing EFI on MBR without BIOS warns' -Condition ($mbrWarnNoBios.Status -eq 'Warn')
+
+$gptWarn = Resolve-MissingEfiBcdBackupStep -EfiBcdPath 'S:\EFI\Microsoft\Boot\BCD' -BiosBcdPresent:$true -PartitionStyle 'GPT' -HasEsp:$true
+Assert-True -Name 'Missing EFI on GPT+ESP warns' -Condition ($gptWarn.Status -eq 'Warn')
+
+$mbrWithEspWarn = Resolve-MissingEfiBcdBackupStep -EfiBcdPath 'S:\EFI\Microsoft\Boot\BCD' -BiosBcdPresent:$true -PartitionStyle 'MBR' -HasEsp:$true
+Assert-True -Name 'Missing EFI on MBR with ESP warns' -Condition ($mbrWithEspWarn.Status -eq 'Warn')
+
 $capture = Get-CommandCaptureText -Stdout $null -Stderr ''
 Assert-True -Name 'Capture text tolerates null stdout' -Condition ($capture -eq '')
 $captureBoth = Get-CommandCaptureText -Stdout 'ok' -Stderr $null

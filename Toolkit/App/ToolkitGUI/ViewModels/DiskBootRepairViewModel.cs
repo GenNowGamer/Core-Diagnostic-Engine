@@ -269,13 +269,20 @@ namespace ToolkitGUI.ViewModels
                     lines.Add($"EFI volume: {_selectedInstall.EfiDriveRoot}");
                 }
 
-                lines.Add($"EFI BCD: {_selectedPartition.EfiBcdPath}");
-                lines.Add($"BIOS BCD: {_selectedPartition.BiosBcdPath}");
+                lines.Add($"EFI BCD: {FormatBcdPathDisplay(_selectedPartition.EfiBcdPath)}");
+                lines.Add($"BIOS BCD: {FormatBcdPathDisplay(_selectedPartition.BiosBcdPath)}");
             }
 
             DetailText = string.Join(Environment.NewLine, lines);
             RefreshBackupInventory();
             RaiseAllCommandStates();
+        }
+
+        private static string FormatBcdPathDisplay(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                return "Not found / N/A";
+            return path;
         }
 
         private void RaiseAllCommandStates()

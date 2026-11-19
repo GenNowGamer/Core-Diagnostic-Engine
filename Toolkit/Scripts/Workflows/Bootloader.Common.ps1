@@ -625,6 +625,72 @@ function global:Resolve-TargetBiosBcdPath {
     }
 }
 
+function global:Resolve-MissingEfiBcdBackupStep {
+    <#
+    .SYNOPSIS
+      Decide Warn vs Skip when an EFI BCD store is absent.
+    .NOTES
+      MBR + BIOS BCD present + no ESP => Skip (not applicable).
+      Otherwise => Warn (expected EFI store missing).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$EfiBcdPath,
+        [bool]$BiosBcdPresent,
+        [string]$PartitionStyle = '',
+        [bool]$HasEsp = $false
+    )
+
+    $style = [string]$PartitionStyle
+    if ($BiosBcdPresent -and ($style -ieq 'MBR') -and -not $HasEsp) {
+        return [PSCustomObject]@{
+            Name     = 'BackupEFI_BCD'
+            Status   = 'Skip'
+            ExitCode = 0
+            Output   = "EFI BCD not applicable on MBR disk with BIOS BCD present (no ESP). Expected path would be $EfiBcdPath"
+        }
+    }
+
+    return [PSCustomObject]@{
+        Name     = 'BackupEFI_BCD'
+        Status   = 'Warn'
+        ExitCode = 1
+        Output   = "EFI BCD store not found at $EfiBcdPath"
+    }
+}
+
+function global:Get-MissingEfiBcdBackupStep {
+    param([Parameter(Mandatory)]$Target)
+
+    $biosPresent = Test-Path -LiteralPath $Target.BiosBcdPath -PathType Leaf
+    $partitionStyle = ''
+    $hasEsp = $false
+
+    $driveRoot = if ($Target.DriveRoot) { [string]$Target.DriveRoot } else { '' }
+    $letter = $driveRoot.TrimEnd('\').TrimEnd(':')
+    if ($letter.Length -eq 1 -and (Get-Command Get-Partition -ErrorAction SilentlyContinue) -and (Get-Command Get-Disk -ErrorAction SilentlyContinue)) {
+        try {
+            $winPart = Get-Partition -DriveLetter $letter -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($winPart) {
+                $disk = Get-Disk -Number $winPart.DiskNumber -ErrorAction SilentlyContinue
+                if ($disk) {
+                    $partitionStyle = [string]$disk.PartitionStyle
+                }
+
+                $hasEsp = @(Get-Partition -DiskNumber $winPart.DiskNumber -ErrorAction SilentlyContinue |
+                    Where-Object {
+                        $_.GptType -and $_.GptType.ToString() -ieq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'
+                    }).Count -gt 0
+            }
+        } catch { }
+    }
+
+    return Resolve-MissingEfiBcdBackupStep `
+        -EfiBcdPath ([string]$Target.EfiBcdPath) `
+        -BiosBcdPresent:$biosPresent `
+        -PartitionStyle $partitionStyle `
+        -HasEsp:$hasEsp
+}
+
 function global:Get-BcdBackupInventory {
     param([Parameter(Mandatory)][string]$BackupRoot)
 

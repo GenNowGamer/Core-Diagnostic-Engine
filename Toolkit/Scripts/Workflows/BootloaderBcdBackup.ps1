@@ -27,12 +27,7 @@ $workflow = Start-Workflow -WorkflowName 'Bootloader_BCDBackup' -ScriptBlock {
         $step = Invoke-BcdEditExport -BcdStorePath $target.EfiBcdPath -ExportPath $efiBackup -StepName 'BackupEFI_BCD'
         Add-BootloaderStep -Result $r -Step $step
     } else {
-        Add-BootloaderStep -Result $r -Step ([PSCustomObject]@{
-            Name = 'BackupEFI_BCD'
-            Status = 'Warn'
-            ExitCode = 1
-            Output = "EFI BCD store not found at $($target.EfiBcdPath)"
-        })
+        Add-BootloaderStep -Result $r -Step (Get-MissingEfiBcdBackupStep -Target $target)
     }
 
     if (Test-Path -LiteralPath $target.BiosBcdPath -PathType Leaf) {
