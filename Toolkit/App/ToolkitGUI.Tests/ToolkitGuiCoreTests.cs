@@ -187,7 +187,7 @@ public class ThemePersistenceAndRootPathTests
     }
 
     [Fact]
-    public void LoadSavedTheme_ReturnsLight_WhenNoThemeFileExists()
+    public void LoadSavedTheme_ReturnsDark_WhenNoThemeFileExists()
     {
         var tempDir = CreateTempDir();
         try
@@ -195,7 +195,7 @@ public class ThemePersistenceAndRootPathTests
             var primary = Path.Combine(tempDir, "primary", "theme.txt");
             var fallback = Path.Combine(tempDir, "fallback", "theme.txt");
 
-            Assert.Equal(AppTheme.Light, ThemeService.LoadSavedTheme(primary, fallback));
+            Assert.Equal(AppTheme.Dark, ThemeService.LoadSavedTheme(primary, fallback));
         }
         finally
         {
@@ -229,6 +229,7 @@ public class ThemePersistenceAndRootPathTests
     [Theory]
     [InlineData("  dark \r\n", AppTheme.Dark)]
     [InlineData(" LIGHT ", AppTheme.Light)]
+    [InlineData(" invalid ", AppTheme.Dark)]
     public void LoadSavedTheme_ParsesCaseInsensitiveAndWhitespaceTrimmedValues(string fileContent, AppTheme expected)
     {
         var tempDir = CreateTempDir();

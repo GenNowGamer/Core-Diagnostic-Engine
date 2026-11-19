@@ -283,7 +283,7 @@ CDE is designed with clean architectural boundaries separating the user interfac
 ```
 
 * **WPF Frontend (`ToolkitGUI`):**  
-  Built on .NET 8 (C#) using standard Windows Presentation Foundation controls. Features full-screen responsive layouts, persistent Light and Dark theme styling, live script progress streaming, and high-DPI scaling. Runs with `requireAdministrator` manifest elevation.
+  Built on .NET 8 (C#) using standard Windows Presentation Foundation controls. Features full-screen responsive layouts, default Dark theme styling with persistent Light and Dark theme switching, live script progress streaming, and high-DPI scaling. Runs with `requireAdministrator` manifest elevation.
 * **PowerShell Orchestration Core (`Toolkit.Core.psm1`):**  
   Encapsulates common hardware detection, offline registry mounting, file system safety, and logging utilities. All scripts are strictly standardized to **UTF-8 with BOM** for flawless execution across Windows PowerShell 5.1 and modern PowerShell runtimes.
 * **Diagnostic CLI Companions:**  

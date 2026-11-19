@@ -2952,20 +2952,20 @@ namespace ToolkitGUI.ViewModels
         };
 
         public Brush ForegroundBrush => IsHeader
-            ? ThemeService.GetBrush("TextOnNeutralBrush", new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1A)))
-            : ThemeService.GetBrush("TextPrimaryBrush", new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)));
+            ? ThemeService.GetBrush("TextOnNeutralBrush", new SolidColorBrush(Color.FromRgb(0xE6, 0xED, 0xF5)))
+            : ThemeService.GetBrush("TextPrimaryBrush", new SolidColorBrush(Color.FromRgb(0xE6, 0xED, 0xF5)));
 
         public Brush RowBackground
         {
             get
             {
                 if (IsHeader)
-                    return ThemeService.GetBrush("SurfaceHeaderBandBrush", new SolidColorBrush(Color.FromRgb(0xD6, 0xE4, 0xF0)));
+                    return ThemeService.GetBrush("SurfaceHeaderBandBrush", new SolidColorBrush(Color.FromRgb(0x24, 0x32, 0x44)));
                 if (IsHighlighted)
-                    return ThemeService.GetBrush("SurfaceWarningBrush", new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0xCD)));
+                    return ThemeService.GetBrush("SurfaceWarningBrush", new SolidColorBrush(Color.FromRgb(0x3A, 0x2B, 0x16)));
                 if (IsRunningRow)
-                    return ThemeService.GetBrush("SurfaceRunningRowBrush", new SolidColorBrush(Color.FromRgb(0xE8, 0xF4, 0xFC)));
-                return ThemeService.GetBrush("SurfaceGridRowBrush", Brushes.White);
+                    return ThemeService.GetBrush("SurfaceRunningRowBrush", new SolidColorBrush(Color.FromRgb(0x1B, 0x33, 0x4D)));
+                return ThemeService.GetBrush("SurfaceGridRowBrush", new SolidColorBrush(Color.FromRgb(0x1A, 0x22, 0x2D)));
             }
         }
 

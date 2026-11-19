@@ -7,12 +7,12 @@
             <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
             <models:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
 
-            <!-- ═══ Color Palette — Professional Light Theme ═══ -->
+            <!-- ═══ Color Palette — Professional Dark Theme (Default) ═══ -->
 
             <!-- Backgrounds -->
-            <Color x:Key="BackgroundDark">#EEF2F7</Color>
-            <Color x:Key="BackgroundMid">#FFFFFF</Color>
-            <Color x:Key="BackgroundLight">#E2E8F2</Color>
+            <Color x:Key="BackgroundDark">#11161E</Color>
+            <Color x:Key="BackgroundMid">#1A222D</Color>
+            <Color x:Key="BackgroundLight">#242E3D</Color>
 
             <!-- Sidebar (deep navy) -->
             <Color x:Key="SidebarBg">#1B3A5C</Color>
@@ -23,15 +23,15 @@
             <Color x:Key="SidebarTextActive">#FFFFFF</Color>
 
             <!-- Accents -->
-            <Color x:Key="AccentBlue">#0078D4</Color>
-            <Color x:Key="AccentGreen">#0D7A3E</Color>
-            <Color x:Key="AccentRed">#C42B1C</Color>
-            <Color x:Key="AccentYellow">#926800</Color>
+            <Color x:Key="AccentBlue">#3898EC</Color>
+            <Color x:Key="AccentGreen">#2EA043</Color>
+            <Color x:Key="AccentRed">#E5534B</Color>
+            <Color x:Key="AccentYellow">#D29922</Color>
 
             <!-- Text -->
-            <Color x:Key="TextPrimary">#1A2840</Color>
-            <Color x:Key="TextSecondary">#5A6B80</Color>
-            <Color x:Key="Border">#D0D6E0</Color>
+            <Color x:Key="TextPrimary">#E6EDF5</Color>
+            <Color x:Key="TextSecondary">#9FB0C4</Color>
+            <Color x:Key="Border">#313E50</Color>
 
             <!-- Terminal log area -->
             <Color x:Key="LogBg">#0D1821</Color>
@@ -56,29 +56,29 @@
             <SolidColorBrush x:Key="BorderBrush"              Color="{StaticResource Border}"/>
             <SolidColorBrush x:Key="LogBgBrush"               Color="{StaticResource LogBg}"/>
             <SolidColorBrush x:Key="LogTextBrush"             Color="{StaticResource LogText}"/>
-            <SolidColorBrush x:Key="ActionButtonHoverBrush"   Color="#005FA3"/>
-            <SolidColorBrush x:Key="ActionButtonDisabledBgBrush" Color="#C8D0DC"/>
-            <SolidColorBrush x:Key="SurfaceCardAltBrush"      Color="#FAFBFD"/>
-            <SolidColorBrush x:Key="SurfaceGridRowBrush"      Color="#FFFFFF"/>
-            <SolidColorBrush x:Key="SurfaceGridAltRowBrush"   Color="#F8FAFC"/>
-            <SolidColorBrush x:Key="SurfaceGridSelectedBrush" Color="#E3F0FB"/>
-            <SolidColorBrush x:Key="SurfaceHoverBrush"        Color="#EEF3F8"/>
-            <SolidColorBrush x:Key="SurfaceWarningBrush"      Color="#FFF4E5"/>
-            <SolidColorBrush x:Key="SurfaceDangerRowBrush"    Color="#FEE2E2"/>
-            <SolidColorBrush x:Key="SurfaceSuccessRowBrush"   Color="#E8F5E9"/>
-            <SolidColorBrush x:Key="SurfaceInfoBannerBrush"   Color="#F0F6FF"/>
-            <SolidColorBrush x:Key="SurfaceInfoBannerBorderBrush" Color="#B4D2F5"/>
-            <SolidColorBrush x:Key="SurfaceWarnBannerBrush"   Color="#FFF8E6"/>
-            <SolidColorBrush x:Key="SurfaceWarnBannerBorderBrush" Color="#E6C36A"/>
-            <SolidColorBrush x:Key="SurfaceHeaderBandBrush"   Color="#D6E4F0"/>
-            <SolidColorBrush x:Key="SurfaceRunningRowBrush"   Color="#E8F4FC"/>
-            <SolidColorBrush x:Key="LoadingOverlayBrush"      Color="#B3FFFFFF"/>
-            <SolidColorBrush x:Key="TextWarningBrush"         Color="#926800"/>
-            <SolidColorBrush x:Key="TextWarningDarkBrush"     Color="#6B4D00"/>
-            <SolidColorBrush x:Key="TextDangerBrush"          Color="#C62828"/>
-            <SolidColorBrush x:Key="TextSuccessBrush"         Color="#0D7A3E"/>
-            <SolidColorBrush x:Key="TextInfoBrush"            Color="#1565C0"/>
-            <SolidColorBrush x:Key="TextOnNeutralBrush"       Color="#1A1A1A"/>
+            <SolidColorBrush x:Key="ActionButtonHoverBrush"   Color="#2A82D2"/>
+            <SolidColorBrush x:Key="ActionButtonDisabledBgBrush" Color="#2D3746"/>
+            <SolidColorBrush x:Key="SurfaceCardAltBrush"      Color="#202936"/>
+            <SolidColorBrush x:Key="SurfaceGridRowBrush"      Color="#1A222D"/>
+            <SolidColorBrush x:Key="SurfaceGridAltRowBrush"   Color="#202936"/>
+            <SolidColorBrush x:Key="SurfaceGridSelectedBrush" Color="#223A58"/>
+            <SolidColorBrush x:Key="SurfaceHoverBrush"        Color="#283344"/>
+            <SolidColorBrush x:Key="SurfaceWarningBrush"      Color="#3A2B16"/>
+            <SolidColorBrush x:Key="SurfaceDangerRowBrush"    Color="#3D1F24"/>
+            <SolidColorBrush x:Key="SurfaceSuccessRowBrush"   Color="#172E20"/>
+            <SolidColorBrush x:Key="SurfaceInfoBannerBrush"   Color="#1A2E44"/>
+            <SolidColorBrush x:Key="SurfaceInfoBannerBorderBrush" Color="#2E5580"/>
+            <SolidColorBrush x:Key="SurfaceWarnBannerBrush"   Color="#382A14"/>
+            <SolidColorBrush x:Key="SurfaceWarnBannerBorderBrush" Color="#7A5B22"/>
+            <SolidColorBrush x:Key="SurfaceHeaderBandBrush"   Color="#243244"/>
+            <SolidColorBrush x:Key="SurfaceRunningRowBrush"   Color="#1B334D"/>
+            <SolidColorBrush x:Key="LoadingOverlayBrush"      Color="#B30F141C"/>
+            <SolidColorBrush x:Key="TextWarningBrush"         Color="#E5B84B"/>
+            <SolidColorBrush x:Key="TextWarningDarkBrush"     Color="#F0CB6E"/>
+            <SolidColorBrush x:Key="TextDangerBrush"          Color="#F47067"/>
+            <SolidColorBrush x:Key="TextSuccessBrush"         Color="#3FB950"/>
+            <SolidColorBrush x:Key="TextInfoBrush"            Color="#58A6FF"/>
+            <SolidColorBrush x:Key="TextOnNeutralBrush"       Color="#E6EDF5"/>
 
             <!-- Layout tokens (GridLength for row/column definitions; Double for control metrics) -->
             <GridLength x:Key="NavSidebarWidthFull">220</GridLength>

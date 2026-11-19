@@ -16,6 +16,13 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 ## Session Update (2026-11-19)
 
+- **Default Dark Theme with Settings Toggle (`ThemeService.cs`, `App.xaml`, `WorkflowViewModels.cs`, `ToolkitGuiCoreTests.cs`, `08_Tools_Library_Settings.md`)** — Configured Dark Theme as the out-of-the-box default theme across the Core Diagnostic Engine interface while preserving the manual toggle in Settings:
+  - Updated `ThemeService.CurrentTheme` and all fallback theme resolution paths (`LoadSavedTheme()`, `TryGetThemeConfigPath()`, unreadable/unrecognized theme file parsing) to resolve to `AppTheme.Dark`.
+  - Re-anchored `App.xaml` root color definitions and brush resources to the Dark theme palette so that windows, dialogs, and controls default to Dark mode upon initial XAML parse, before theme initialization, and during design-time rendering.
+  - Aligned `WorkflowViewModels.cs` fallback row backgrounds and text foreground brushes with the dark theme palette tokens.
+  - Retained the manual **APPEARANCE** radio toggle (`☀ Light Theme` / `🌙 Dark Theme`) in **Settings** (`SettingsView.xaml` / `SettingsView.xaml.cs`) with persistence to `CDE\Runtime\theme.txt` (and `%LOCALAPPDATA%\CoreDiagnosticEngine\theme.txt` read-only media fallback) preserved across restarts and WinPE transitions.
+  - Updated test coverage in `ToolkitGuiCoreTests.cs` to verify default Dark theme resolution on missing/corrupt configs alongside persistence when toggling between Light and Dark themes (all 57 tests passing).
+
 - **Hardware Memory Test Parameter Alignment & Pass Reporting (`Core_Hardware_Utility.json`, `HardwareTestCatalog.json`, `HardwareMemoryTests.ps1`, `Sync-HardwareTestCatalog.ps1`)** — Restored expected hardware memory pass/fail reporting and synchronized memory test size caps across CDE and CHU:
   - Updated Quick profile memory size cap from `192 MB` to `1024 MB` and Extended profile memory size cap from `1536 MB` to `4096 MB` in both sibling repository `Core Hardware Utility\Core_Hardware_Utility.json` and `Toolkit\Config\HardwareTestCatalog.json`.
   - Running `Publish-ToolkitGUI.ps1` (which invokes `Sync-HardwareTestCatalog.ps1`) now permanently retains the `1024 MB` / `4096 MB` memory caps instead of overwriting them with legacy 192 MB defaults.

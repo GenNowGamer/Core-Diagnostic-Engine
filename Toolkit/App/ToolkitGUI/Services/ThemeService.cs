@@ -95,7 +95,7 @@ namespace ToolkitGUI.Services
 
         private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
-        public static AppTheme CurrentTheme { get; private set; } = AppTheme.Light;
+        public static AppTheme CurrentTheme { get; private set; } = AppTheme.Dark;
 
         public static event EventHandler<AppTheme>? ThemeChanged;
 
@@ -144,8 +144,8 @@ namespace ToolkitGUI.Services
             }
             catch
             {
-                // Fall back to Light theme if runtime config is unreadable.
-                return AppTheme.Light;
+                // Fall back to Dark theme if runtime config is unreadable.
+                return AppTheme.Dark;
             }
         }
 
@@ -173,7 +173,7 @@ namespace ToolkitGUI.Services
                 return readOnlyPrimaryTheme;
             }
 
-            return AppTheme.Light;
+            return AppTheme.Dark;
         }
 
         public static void SetTheme(AppTheme theme)
@@ -217,13 +217,13 @@ namespace ToolkitGUI.Services
                 return true;
             }
 
-            theme = AppTheme.Light;
+            theme = AppTheme.Dark;
             return false;
         }
 
         private static bool TryReadThemeFile(string path, out AppTheme theme)
         {
-            theme = AppTheme.Light;
+            theme = AppTheme.Dark;
             try
             {
                 if (!File.Exists(path))
