@@ -635,7 +635,7 @@ try {
                          "CreateISO.ps1", "Customize-WinPE.ps1", "Prepare-BootableUSB.ps1",
                          "update_script.ps1", "do_update.ps1",
                          "goodware.db", "goodware.db-wal", "goodware.db-shm",
-                         "*.bak_*", "*.lock", "*.tmp.png", "*.rtf")
+                         "*.bak", "*.bak_*", "*.tmp", "*.tmp.*", "*.lock", "*.rtf")
 
     # Calculate source size excluding the folders that won't be copied
     $sourceBytes = 0

@@ -10,16 +10,17 @@ if (-not (Test-Path $SourcePath)) {
 }
 
 $sourceJson = Get-Content -Path $SourcePath -Raw | ConvertFrom-Json
-if (-not $sourceJson.rulesVersion) {
-    throw 'Invalid rules format. Expected rulesVersion.'
-}
+$RequiredSections = @(
+    'rulesVersion', 'hashes', 'yaraLikeRules', 'signerPolicies',
+    'heuristicThresholds', 'correlationRules', 'bootPolicies', 'bootFilePolicies',
+    'bcdPolicies', 'sectorPolicies', 'defenderExclusionPolicies',
+    'ransomwareTamperPolicies', 'driverFilterPolicies', 'patterns',
+    'onlineReputation', 'knownGoodPolicy', 'pathExclusions'
+)
 
-if (-not $sourceJson.hashes -or -not $sourceJson.yaraLikeRules -or -not $sourceJson.signerPolicies -or -not $sourceJson.heuristicThresholds -or -not $sourceJson.correlationRules) {
-    throw 'Invalid rules format. Expected sectioned schema: hashes, yaraLikeRules, signerPolicies, heuristicThresholds, correlationRules.'
-}
-
-if (-not $sourceJson.patterns) {
-    throw 'Invalid rules format. Expected patterns during transition compatibility window.'
+$missingSections = @($RequiredSections | Where-Object { -not $sourceJson.PSObject.Properties[$_] -or $null -eq $sourceJson.$_ })
+if ($missingSections.Count -gt 0) {
+    throw ("Invalid rules format. Missing required configuration section(s): {0}" -f ($missingSections -join ', '))
 }
 
 $destDir = Split-Path $DestinationPath -Parent

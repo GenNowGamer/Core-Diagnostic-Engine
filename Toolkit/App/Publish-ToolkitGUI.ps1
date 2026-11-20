@@ -352,6 +352,15 @@ foreach ($staleNsrl in @($dstGoodwareDb, "$dstGoodwareDb-wal", "$dstGoodwareDb-s
         Write-Host ("  Removed stale toolkit NSRL artifact: {0}" -f (Split-Path -Leaf $staleNsrl))
     }
 }
+# Clean up any stale backup or temp files in toolkit rules directory
+foreach ($staleRuleBak in @(Get-ChildItem -LiteralPath $cstRulesDir -Filter '*.bak*' -File -ErrorAction SilentlyContinue)) {
+    Remove-Item -LiteralPath $staleRuleBak.FullName -Force -ErrorAction SilentlyContinue
+    Write-Host ("  Removed stale rules backup: {0}" -f $staleRuleBak.Name)
+}
+foreach ($staleRuleTmp in @(Get-ChildItem -LiteralPath $cstRulesDir -Filter '*.tmp*' -File -ErrorAction SilentlyContinue)) {
+    Remove-Item -LiteralPath $staleRuleTmp.FullName -Force -ErrorAction SilentlyContinue
+    Write-Host ("  Removed stale rules temp: {0}" -f $staleRuleTmp.Name)
+}
 $srcCstLib = Join-Path $cstSourceDir 'lib'
 $dstCstLib = Join-Path $cstRuntimeDir 'lib'
 if (Test-Path -LiteralPath $srcCstLib) {

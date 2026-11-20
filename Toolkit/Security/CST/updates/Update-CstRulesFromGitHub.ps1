@@ -65,12 +65,31 @@ try {
     exit 1
 }
 
-if (-not $remote.PSObject.Properties['rulesVersion'] -or -not $remote.PSObject.Properties['hashes']) {
-    Write-Error "Downloaded file is missing expected fields (rulesVersion, hashes). Update aborted."
+$RequiredSections = @(
+    'rulesVersion', 'hashes', 'yaraLikeRules', 'signerPolicies',
+    'heuristicThresholds', 'correlationRules', 'bootPolicies', 'bootFilePolicies',
+    'bcdPolicies', 'sectorPolicies', 'defenderExclusionPolicies',
+    'ransomwareTamperPolicies', 'driverFilterPolicies', 'patterns',
+    'onlineReputation', 'knownGoodPolicy', 'pathExclusions'
+)
+
+$missingSections = @($RequiredSections | Where-Object { -not $remote.PSObject.Properties[$_] -or $null -eq $remote.$_ })
+if ($missingSections.Count -gt 0) {
+    Write-Error ("Downloaded file is missing required configuration section(s): {0}. Update aborted." -f ($missingSections -join ', '))
     exit 1
 }
 
 $remoteHashCount = @($remote.hashes).Count
+if ($remoteHashCount -eq 0) {
+    Write-Error "Downloaded file contains 0 hash IOCs. Update aborted."
+    exit 1
+}
+
+if (-not $remote.driverFilterPolicies.PSObject.Properties['allowlistedFilterNames'] -or @($remote.driverFilterPolicies.allowlistedFilterNames).Count -eq 0) {
+    Write-Error "Downloaded file has invalid or empty driverFilterPolicies.allowlistedFilterNames. Update aborted."
+    exit 1
+}
+
 Write-Output "Remote: rules v$($remote.rulesVersion), $remoteHashCount hash IOCs, updated $($remote.updatedUtc)"
 
 # --- Check if already current ---
@@ -108,6 +127,12 @@ try {
     if (-not $verify.rulesVersion -or @($verify.hashes).Count -ne $remoteHashCount) {
         Remove-Item -Path $tmpPath -Force -ErrorAction SilentlyContinue
         Write-Error "Post-write verification failed: hash count mismatch. Update aborted."
+        exit 1
+    }
+    $verifyMissing = @($RequiredSections | Where-Object { -not $verify.PSObject.Properties[$_] -or $null -eq $verify.$_ })
+    if ($verifyMissing.Count -gt 0) {
+        Remove-Item -Path $tmpPath -Force -ErrorAction SilentlyContinue
+        Write-Error ("Post-write verification failed: missing section(s): {0}. Update aborted." -f ($verifyMissing -join ', '))
         exit 1
     }
 } catch {

@@ -205,9 +205,11 @@ try {
         "goodware.db",
         "goodware.db-wal",
         "goodware.db-shm",
+        "*.bak",
         "*.bak_*",
+        "*.tmp",
+        "*.tmp.*",
         "*.lock",
-        "*.tmp.png",
         "*.rtf"
     )
 

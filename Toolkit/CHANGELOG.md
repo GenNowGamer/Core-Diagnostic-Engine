@@ -16,6 +16,29 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 ## Session Update (2026-11-19)
 
+- **CST Inspector Policy Restoration & Threat Feed Sync (`rules.json`, `driverFilterPolicies`, `defenderExclusionPolicies`, `ransomwareTamperPolicies`, `Merge-DriverFilterAllowlist.ps1`)** — Restored critical capability inspector policies to `rules.json` and synchronized with the remote threat feed:
+  - Fixed a regression where an automated/manual update on 2026-11-11 had overwritten `rules.json` with an older schema base that dropped `defenderExclusionPolicies`, `ransomwareTamperPolicies`, and `driverFilterPolicies`.
+  - Restored all three policy blocks (including `applockerfltr` and Malwarebytes minifilters) into `Toolkit\Security\CST\rules\rules.json`, standalone CST source, and local clone `CDE-threat-rules\rules.json`.
+  - Pushed the restored schema to the remote threat rules repository [CDE-threat-rules](https://github.com/GenNowGamer/CDE-threat-rules) (commit `cc3987e`) so downstream in-app updates receive the complete configuration.
+  - Resolved `Merge-DriverFilterAllowlist.ps1` throwing `rules.json missing driverFilterPolicies`.
+  - Verified with a full 9/9 release gate pass (`Validate-CstReleaseGates.ps1`).
+
+- **CST Update Pipeline Schema Integrity & Threat Tracking Hardening (`Update-CstHashIOCs.ps1`, `Update-CstRulesFromGitHub.ps1`, `Update-CoreSecurityRules.ps1`)** — Hardened rule updating scripts with mandatory schema validation:
+  - Enforced pre-write and post-write validation of all 17 required policy sections in `Update-CstHashIOCs.ps1`, `Update-CstRulesFromGitHub.ps1`, and `Update-CoreSecurityRules.ps1`. If a downloaded or source payload is truncated or missing policy blocks, the update aborts immediately to protect local policy integrity.
+  - Added non-empty checks for hash IOC counts and `driverFilterPolicies.allowlistedFilterNames`.
+  - Expanded `Update-CstHashIOCs.ps1` tracked malware families from 8 to 18 (added modern threats: `Lumma`, `Vidar`, `Stealc`, `Pikabot`, `XLoader`, `Qakbot`, `IcedID`, `Sliver`, `Danabot`, and `SmokeLoader`).
+  - Tested live against the GitHub raw feed and verified error handling on malformed inputs.
+
+- **Build Hygiene & Staging Exclusion Hardening (`CreateISO.ps1`, `Prepare-BootableUSB.ps1`, `Publish-ToolkitGUI.ps1`)** — Prevented temporary and backup artifacts from packaging into bootable ISO and USB media:
+  - Removed stale 2.4 MB `rules.json.bak_20260720_085234` from `Toolkit\Security\CST\rules\`.
+  - Added explicit pattern exclusions (`*.bak`, `*.bak_*`, `*.tmp`, `*.tmp.*`) to robocopy `/XF` lists in `CreateISO.ps1` and `Prepare-BootableUSB.ps1`.
+  - Added automated cleanup of stale `.bak*` and `.tmp*` files in `Publish-ToolkitGUI.ps1` during CST synchronization.
+  - Verified with `Test-PostOpCleanup.ps1` (15/15 passing), `Test-CstStructuredResults.ps1`, and `Test-HardwareDiagnosticsCst.ps1`.
+
+- **Post-Op Browser Cache Cleaner Verification (`PostOp.ps1`)** — Audited the `BrowserCacheClean` workflow:
+  - Verified that `Invoke-BrowserCacheClean` and `Get-BrowserCacheTargetPaths` only target disposable disk and shader caches (`Cache`, `Code Cache`, `GPUCache` for Chromium Edge/Chrome; `cache2`, `startupCache`, `thumbnails` in `AppData\Local` for Firefox).
+  - Confirmed all user profile data (saved passwords, logins, cookies, bookmarks, history, and Firefox `AppData\Roaming` directories) are completely protected and untouched.
+
 - **Default Dark Theme with Settings Toggle (`ThemeService.cs`, `App.xaml`, `WorkflowViewModels.cs`, `ToolkitGuiCoreTests.cs`, `08_Tools_Library_Settings.md`)** — Configured Dark Theme as the out-of-the-box default theme across the Core Diagnostic Engine interface while preserving the manual toggle in Settings:
   - Updated `ThemeService.CurrentTheme` and all fallback theme resolution paths (`LoadSavedTheme()`, `TryGetThemeConfigPath()`, unreadable/unrecognized theme file parsing) to resolve to `AppTheme.Dark`.
   - Re-anchored `App.xaml` root color definitions and brush resources to the Dark theme palette so that windows, dialogs, and controls default to Dark mode upon initial XAML parse, before theme initialization, and during design-time rendering.
