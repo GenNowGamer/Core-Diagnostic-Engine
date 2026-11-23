@@ -38,6 +38,42 @@ $assessment = Test-PostOpStartupSuspicious `
 Assert-True -Name 'RunOnce entry flagged for review' -Condition $assessment.IsSuspicious
 Assert-True -Name 'RunOnce reason present' -Condition ($assessment.Reasons -contains 'RunOnce key')
 
+$edgeCleanupOk = Test-PostOpStartupSuspicious `
+    -Name 'msedge_cleanup_{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}' `
+    -SourceGroup 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' `
+    -ResolvedPath 'C:\Program Files (x86)\Microsoft\Edge\Application\158.0.4370.33\Installer\setup.exe' `
+    -Publisher 'Microsoft Corporation' `
+    -IsSigned:$true `
+    -RiskBand 'Safe' `
+    -IsRunOnce:$true `
+    -TargetExists:$true
+Assert-True -Name 'Signed Microsoft Edge RunOnce cleanup not flagged' -Condition (-not $edgeCleanupOk.IsSuspicious)
+Assert-True -Name 'Signed Microsoft Edge RunOnce cleanup has no RunOnce reason' -Condition ($edgeCleanupOk.Reasons -notcontains 'RunOnce key')
+
+$copilotCleanupOk = Test-PostOpStartupSuspicious `
+    -Name 'msedge_cleanup_{C50565E9-CCCF-44B4-BA15-5AC5C6569197}' `
+    -SourceGroup 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' `
+    -ResolvedPath 'C:\Program Files (x86)\Microsoft\Copilot\Application\158.0.4370.33\Installer\setup.exe' `
+    -Publisher 'Microsoft Corporation' `
+    -IsSigned:$true `
+    -RiskBand 'Safe' `
+    -IsRunOnce:$true `
+    -TargetExists:$true
+Assert-True -Name 'Signed Microsoft Copilot RunOnce cleanup not flagged' -Condition (-not $copilotCleanupOk.IsSuspicious)
+Assert-True -Name 'Signed Microsoft Copilot RunOnce cleanup has no RunOnce reason' -Condition ($copilotCleanupOk.Reasons -notcontains 'RunOnce key')
+
+$untrustedProgramFilesRunOnce = Test-PostOpStartupSuspicious `
+    -Name 'msedge_cleanup_{00000000-0000-0000-0000-000000000000}' `
+    -SourceGroup 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' `
+    -ResolvedPath 'C:\Program Files (x86)\Microsoft\Edge\Application\158.0.4370.33\Installer\setup.exe' `
+    -Publisher 'Contoso' `
+    -IsSigned:$false `
+    -RiskBand 'Warning' `
+    -IsRunOnce:$true `
+    -TargetExists:$true
+Assert-True -Name 'Unsigned non-Microsoft Program Files RunOnce still flagged' -Condition $untrustedProgramFilesRunOnce.IsSuspicious
+Assert-True -Name 'Unsigned non-Microsoft Program Files RunOnce keeps RunOnce reason' -Condition ($untrustedProgramFilesRunOnce.Reasons -contains 'RunOnce key')
+
 $shellOk = Test-PostOpStartupSuspicious `
     -Name 'Shell' `
     -SourceGroup 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' `

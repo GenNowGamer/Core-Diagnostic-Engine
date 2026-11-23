@@ -16,6 +16,11 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 ## Session Update (2026-11-23)
 
+- **Startup Audit & Startup Manager `RunOnce` False-Positive Fix (`Scripts\Core\StartupRisk.ps1`, `Scripts\Tests\Test-StartupAuditReviewUx.ps1`)** — Prevented signed Microsoft `RunOnce` post-update installer/cleanup entries in `Program Files` (such as `msedge_cleanup_{...}` for Microsoft Edge and Copilot) from being flagged for review:
+  - Updated `Test-PostOpStartupSuspicious` in `Scripts\Core\StartupRisk.ps1` (shared by System Health Check's `StartupAudit`, Startup Manager's **Suspicious only** filter, and Hijack Repair) to skip the blanket `'RunOnce key'` flag when the entry is signed, target-present, scored `Safe`, published by `Microsoft`, located under `Program Files\Microsoft\` or `Program Files (x86)\Microsoft\`, and matches an `\Installer\*.exe` or installer/cleanup executable pattern.
+  - Added regression tests in `Scripts\Tests\Test-StartupAuditReviewUx.ps1` covering signed Microsoft Edge/Copilot `RunOnce` cleanup entries and confirming unsigned/non-Microsoft `Program Files` `RunOnce` entries remain flagged.
+  - Verified with `Test-StartupAuditReviewUx.ps1` (22/22 passing) and `Test-StartupManagerCoverage.ps1` (64/64 passing).
+
 - **File Manager Operation Progress Window (`FileOperationService.cs`, `FileOperationProgressWindow.xaml/.cs`, `FileManagerView.xaml.cs`, `FileOperationServiceTests.cs`)** — Added a Windows Explorer-style progress dialog for File Manager delete, copy, and move/paste operations:
   - Implemented `FileOperationService.ExecuteAsync` with `Preparing` (item/byte discovery) and `Running` phases, 1 MB buffered file copy streaming for byte-level progress, speed, and ETA, per-item post-order deletion, pause/resume support via `FileOperationPauseToken`, and partial destination file cleanup on mid-copy cancellation.
   - Created `FileOperationProgressWindow` displaying operation title, percentage, `From:`/`To:` paths (hidden for Delete), indeterminate-to-determinate `ProgressBar`, current item name, items/bytes remaining, transfer speed, estimated time remaining, and **Pause/Resume** + **Cancel** controls.

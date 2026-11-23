@@ -1082,7 +1082,22 @@ function Test-PostOpStartupSuspicious {
         $reasons.Add("winlogon: $detail") | Out-Null
     }
 
-    if ($IsRunOnce) {
+    # Signed Microsoft installer/cleanup RunOnce entries in Program Files (e.g. Edge/Copilot post-update cleanup)
+    # are normal self-deleting maintenance tasks, not suspicious persistence.
+    $isTrustedMicrosoftRunOnceInstaller = (
+        $IsRunOnce -and
+        $IsSigned -and
+        $TargetExists -and
+        $RiskBand -eq 'Safe' -and
+        ($Publisher -match '(?i)Microsoft') -and
+        ($ResolvedPath -match '(?i)^[A-Za-z]:\\Program Files( \(x86\))?\\Microsoft\\') -and
+        (
+            ($ResolvedPath -match '(?i)\\Installer\\[^\\]+\.exe$') -or
+            ($Name -match '(?i)(cleanup|setup|install|update)' -and $ResolvedPath -match '(?i)\\[^\\]*(setup|install|cleanup|update)[^\\]*\.exe$')
+        )
+    )
+
+    if ($IsRunOnce -and -not $isTrustedMicrosoftRunOnceInstaller) {
         $reasons.Add('RunOnce key') | Out-Null
     }
 
