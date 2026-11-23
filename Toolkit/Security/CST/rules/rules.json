@@ -1,6 +1,6 @@
-﻿{
+{
     "rulesVersion":  "1.4.3",
-    "updatedUtc":  "2026-11-20T05:31:09Z",
+    "updatedUtc":  "2026-11-23T05:34:48Z",
     "hashes":  [
                    {
                        "sha256":  "EBC697C9609E84C3B29F0335BF52DBD5138AAB9194E71FD8BD24905D8A5AB907",
@@ -82975,11 +82975,35 @@
                                               ],
                             "hashAllowlistProfiles":  [
                                                           {
+                                                              "name":  "Win10_22H2_AMD64",
+                                                              "osBuildRegex":  "^1904[1-5]$",
+                                                              "productRegex":  "Windows 10",
+                                                              "files":  [
+                                                                            "baselines/win10_22h2_amd64.json"
+                                                                        ]
+                                                          },
+                                                          {
+                                                              "name":  "Win11_23H2_AMD64",
+                                                              "osBuildRegex":  "^226[23]1$",
+                                                              "productRegex":  "Windows 11",
+                                                              "files":  [
+                                                                            "baselines/win11_23h2_amd64.json"
+                                                                        ]
+                                                          },
+                                                          {
                                                               "name":  "Win11_26200_AMD64",
-                                                              "osBuildRegex":  "^26200$",
+                                                              "osBuildRegex":  "^26[12]00$",
                                                               "productRegex":  "Windows 10|Windows 11",
                                                               "files":  [
                                                                             "baselines/win11_26200_amd64.json"
+                                                                        ]
+                                                          },
+                                                          {
+                                                              "name":  "Win11_26300_AMD64",
+                                                              "osBuildRegex":  "^26300$",
+                                                              "productRegex":  "Windows 10|Windows 11",
+                                                              "files":  [
+                                                                            "baselines/win11_26300_amd64.json"
                                                                         ]
                                                           }
                                                       ],

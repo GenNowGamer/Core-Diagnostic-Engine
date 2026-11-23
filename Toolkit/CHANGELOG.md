@@ -14,6 +14,17 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-11-22)
+
+- **CST Known-Good OS Baselines for Windows 10 22H2 & Windows 11 23H2/26H2 (`Build-CstBaselineFromIso.ps1`, `rules/baselines/*.json`, `rules.json`)** — Expanded CST known-good hash coverage from minimal seed sets to full core-OS ISO baselines across Windows 10 and Windows 11:
+  - Created `Core Security Tool\CST\scripts\Build-CstBaselineFromIso.ps1` to mount Windows ISOs read-only, extract core OS/vendor binaries (`System32`, `SysWOW64`, `Program Files\Windows*`) via `wimlib-imagex.exe` without requiring elevation or VM boot, and emit deduplicated SHA-256 JSON sidecars.
+  - Generated and mirrored three full baselines to `Toolkit\Security\CST\rules\baselines\`:
+    - `win10_22h2_amd64.json` (10,668 unique hashes, 1.50 MB, Build `19045` / `19041.3803`)
+    - `win11_23h2_amd64.json` (10,816 unique hashes, 1.52 MB, Build `22631.7714`)
+    - `win11_26300_amd64.json` (11,184 unique hashes, 1.57 MB, Build `26300.9974`)
+  - Wired 4 `knownGoodPolicy.hashAllowlistProfiles` (`Win10_22H2_AMD64`, `Win11_23H2_AMD64`, `Win11_26200_AMD64`, `Win11_26300_AMD64`) into `rules.json` across CST, `Toolkit\Security\CST\rules\rules.json`, and `CDE-threat-rules\rules.json`.
+  - Verified with `Validate-CstRuleQuality.ps1` (PASS, 0 failures) and `Validate-CstReleaseGates.ps1` (9/9 PASS, `release_gate_20261122_233459_*`).
+
 ## Session Update (2026-11-19)
 
 - **CST Inspector Policy Restoration & Threat Feed Sync (`rules.json`, `driverFilterPolicies`, `defenderExclusionPolicies`, `ransomwareTamperPolicies`, `Merge-DriverFilterAllowlist.ps1`)** — Restored critical capability inspector policies to `rules.json` and synchronized with the remote threat feed:
