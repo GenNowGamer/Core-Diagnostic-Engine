@@ -1,0 +1,126 @@
+<Window x:Class="ToolkitGUI.Views.FileOperationProgressWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="File Operation"
+        Width="520"
+        Height="270"
+        MinWidth="460"
+        MinHeight="240"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource BackgroundDarkBrush}"
+        TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+    <Grid Margin="18,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header: Title + Percent -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="HeaderText"
+                       Grid.Column="0"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       Text="Preparing..."
+                       TextTrimming="CharacterEllipsis"/>
+            <TextBlock x:Name="PercentText"
+                       Grid.Column="1"
+                       Margin="12,0,0,0"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       Text="0%"/>
+        </Grid>
+
+        <!-- Source / Destination paths (hidden for Delete) -->
+        <StackPanel x:Name="TransferPathsPanel"
+                    Grid.Row="1"
+                    Margin="0,8,0,0">
+            <TextBlock x:Name="SourcePathText"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextTrimming="CharacterEllipsis"/>
+            <TextBlock x:Name="DestinationPathText"
+                       Margin="0,2,0,0"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+
+        <!-- Progress Bar -->
+        <ProgressBar x:Name="OperationProgressBar"
+                     Grid.Row="2"
+                     Margin="0,12,0,0"
+                     Height="20"
+                     Minimum="0"
+                     Maximum="100"
+                     Value="0"
+                     IsIndeterminate="True"/>
+
+        <!-- Current Item -->
+        <TextBlock x:Name="CurrentItemText"
+                   Grid.Row="3"
+                   Margin="0,10,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
+                   Text="Calculating..."
+                   TextTrimming="CharacterEllipsis"/>
+
+        <!-- Stats: Items/Bytes remaining, Speed, Time remaining -->
+        <Grid Grid.Row="4" Margin="0,6,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock x:Name="ItemsRemainingText"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="Discovering items..."/>
+                <TextBlock x:Name="TimeRemainingText"
+                           Margin="0,2,0,0"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="Time remaining: Calculating..."/>
+            </StackPanel>
+            <TextBlock x:Name="SpeedText"
+                       Grid.Column="1"
+                       Margin="12,0,0,0"
+                       VerticalAlignment="Top"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text=""/>
+        </Grid>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="6"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,14,0,0">
+            <Button x:Name="PauseResumeButton"
+                    Width="92"
+                    Height="30"
+                    Margin="0,0,8,0"
+                    Content="Pause"
+                    Click="PauseResumeButton_Click"/>
+            <Button x:Name="CancelButton"
+                    Width="92"
+                    Height="30"
+                    Content="Cancel"
+                    Click="CancelButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

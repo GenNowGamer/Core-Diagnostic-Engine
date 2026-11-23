@@ -82448,7 +82448,7 @@
                                              ],
                               "containsText":  [
                                                    "invoke-webrequest",
-                                                   "-enc"
+                                                   "-enc "
                                                ],
                               "pathRegex":  "(appdata\\\\(local\\\\)?temp|\\\\windows\\\\temp|\\\\users\\\\public|\\\\downloads|startup)"
                           },
@@ -82895,6 +82895,7 @@
                                                            ],
                                  "allowlistedFilterNames":  [
                                                                 "WdFilter",
+                                                                "FsDepends",
                                                                 "luafv",
                                                                 "npsvctrig",
                                                                 "FileInfo",

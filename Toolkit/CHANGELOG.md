@@ -14,6 +14,19 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-11-23)
+
+- **File Manager Operation Progress Window (`FileOperationService.cs`, `FileOperationProgressWindow.xaml/.cs`, `FileManagerView.xaml.cs`, `FileOperationServiceTests.cs`)** — Added a Windows Explorer-style progress dialog for File Manager delete, copy, and move/paste operations:
+  - Implemented `FileOperationService.ExecuteAsync` with `Preparing` (item/byte discovery) and `Running` phases, 1 MB buffered file copy streaming for byte-level progress, speed, and ETA, per-item post-order deletion, pause/resume support via `FileOperationPauseToken`, and partial destination file cleanup on mid-copy cancellation.
+  - Created `FileOperationProgressWindow` displaying operation title, percentage, `From:`/`To:` paths (hidden for Delete), indeterminate-to-determinate `ProgressBar`, current item name, items/bytes remaining, transfer speed, estimated time remaining, and **Pause/Resume** + **Cancel** controls.
+  - Wired `PasteIntoPane`, `DeleteSelected_Click`, and `CopyOrMoveSelected` in `FileManagerView.xaml.cs` through `RunFileOperationWithProgressAsync`, forcing a `DispatcherPriority.Render` pass on show and a 450 ms minimum display window for fast non-cancelled operations so quick folder deletions visibly render before closing.
+  - Verified with `dotnet test` (`ToolkitGUI.Tests`: 62/62 passing, including 5 new tests in `FileOperationServiceTests.cs`) and published via `App\Publish-ToolkitGUI.ps1`.
+
+- **CST Rule False-Positive Fixes (`Security\CST\rules\rules.json`, canonical `Core Security Tool\CST\rules\rules.json`)** — Reduced false positives in CST ThreatScan:
+  - Tightened `PS_Download_And_Encoded_Exec` `containsText` from `"-enc"` to `"-enc "` so benign scripts using `-Encoding` (such as Cursor terminal UTF-8 wrapper scripts) do not trigger false positives.
+  - Added `"FsDepends"` (Microsoft File System Dependency Minifilter) to `driverFilterPolicies.allowlistedFilterNames`.
+  - Verified both JSON files parse cleanly with `ConvertFrom-Json`.
+
 ## Session Update (2026-11-22)
 
 - **CST Known-Good OS Baselines for Windows 10 22H2 & Windows 11 23H2/26H2 (`Build-CstBaselineFromIso.ps1`, `rules/baselines/*.json`, `rules.json`)** — Expanded CST known-good hash coverage from minimal seed sets to full core-OS ISO baselines across Windows 10 and Windows 11:

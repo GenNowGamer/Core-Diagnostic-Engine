@@ -722,14 +722,12 @@ namespace ToolkitGUI.Views
             {
                 var wasCut = _clipboardIsCut;
                 var sources = _clipboardPaths.ToList();
+                var kind = wasCut ? FileOperationKind.Move : FileOperationKind.Copy;
                 SetStatus(wasCut ? "Moving items..." : "Copying items...");
-                await Task.Run(() =>
-                {
-                    foreach (var source in sources)
-                        TransferItem(source, targetPath, isMove: wasCut);
-                });
 
-                if (wasCut)
+                var result = await RunFileOperationWithProgressAsync(kind, sources, targetPath);
+
+                if (wasCut && result.Completed && !result.WasCancelled)
                 {
                     _clipboardPaths = null;
                     _clipboardIsCut = false;
@@ -737,7 +735,13 @@ namespace ToolkitGUI.Views
 
                 if (string.Equals(GetPanePath(pane), targetPath, StringComparison.OrdinalIgnoreCase))
                     RefreshPane(pane);
-                SetStatus(wasCut ? "Move complete." : "Paste complete.");
+
+                if (result.WasCancelled)
+                    SetStatus(wasCut ? "Move cancelled." : "Paste cancelled.");
+                else if (!result.Completed)
+                    SetStatus($"Paste failed: {result.ErrorMessage}");
+                else
+                    SetStatus(wasCut ? "Move complete." : "Paste complete.");
             }
             catch (Exception ex)
             {
@@ -1141,14 +1145,18 @@ namespace ToolkitGUI.Views
             try
             {
                 SetStatus("Deleting selected item(s)...");
-                await Task.Run(() =>
-                {
-                    foreach (var item in selected)
-                        DeleteFileOrDirectory(item.FullPath, item.IsDirectory);
-                });
+                var sources = selected.Select(i => i.FullPath).ToList();
+                var result = await RunFileOperationWithProgressAsync(FileOperationKind.Delete, sources, targetFolder: null);
+
                 if (string.Equals(GetPanePath(targetPane), targetPanePath, StringComparison.OrdinalIgnoreCase))
                     RefreshPane(targetPane);
-                SetStatus("Deleted selected item(s).");
+
+                if (result.WasCancelled)
+                    SetStatus("Delete cancelled.");
+                else if (!result.Completed)
+                    SetStatus($"Delete failed: {result.ErrorMessage}");
+                else
+                    SetStatus("Deleted selected item(s).");
             }
             catch (Exception ex)
             {
@@ -1179,7 +1187,7 @@ namespace ToolkitGUI.Views
             try
             {
                 var newFolder = Path.Combine(targetPath, "New Folder");
-                newFolder = GetUniquePath(newFolder, isDirectory: true);
+                newFolder = FileOperationService.GetUniquePath(newFolder, isDirectory: true);
                 Directory.CreateDirectory(newFolder);
                 RefreshPane(_activePane);
                 SetStatus("Created new folder.");
@@ -1307,18 +1315,22 @@ namespace ToolkitGUI.Views
             _fileOpInProgress = true;
             try
             {
+                var kind = copyOnly ? FileOperationKind.Copy : FileOperationKind.Move;
                 SetStatus(copyOnly ? "Copying items..." : "Moving items...");
-                await Task.Run(() =>
-                {
-                    foreach (var item in selected)
-                        TransferItem(item.FullPath, targetFolder, isMove: !copyOnly);
-                });
+                var sources = selected.Select(i => i.FullPath).ToList();
+                var result = await RunFileOperationWithProgressAsync(kind, sources, targetFolder);
 
                 if (string.Equals(GetPanePath(destination), targetFolder, StringComparison.OrdinalIgnoreCase))
                     RefreshPane(destination);
                 if (string.Equals(GetPanePath(source), sourceFolder, StringComparison.OrdinalIgnoreCase))
                     RefreshPane(source);
-                SetStatus(copyOnly ? "Copy complete." : "Move complete.");
+
+                if (result.WasCancelled)
+                    SetStatus(copyOnly ? "Copy cancelled." : "Move cancelled.");
+                else if (!result.Completed)
+                    SetStatus($"Operation failed: {result.ErrorMessage}");
+                else
+                    SetStatus(copyOnly ? "Copy complete." : "Move complete.");
             }
             catch (Exception ex)
             {
@@ -1330,184 +1342,51 @@ namespace ToolkitGUI.Views
             }
         }
 
-        private static void TransferItem(string source, string targetFolder, bool isMove)
+        private async Task<FileOperationResult> RunFileOperationWithProgressAsync(
+            FileOperationKind kind,
+            IReadOnlyList<string> sourcePaths,
+            string? targetFolder)
         {
-            var isDirectory = Directory.Exists(source);
-            if (!isDirectory && !File.Exists(source))
-                return;
+            using var cts = new CancellationTokenSource();
+            using var pauseToken = new FileOperationPauseToken();
 
-            var name = Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (string.IsNullOrEmpty(name))
-                return;
+            var sourceSummary = sourcePaths.Count == 1
+                ? sourcePaths[0]
+                : $"{Path.GetDirectoryName(sourcePaths[0]) ?? sourcePaths[0]} ({sourcePaths.Count} items)";
 
-            if (isDirectory && IsSameOrSubdirectory(source, targetFolder))
-                throw new InvalidOperationException($"Cannot copy or move '{name}' into itself or a subfolder.");
-
-            if (isMove && IsSameParentDirectory(source, targetFolder))
-                return;
-
-            var dest = GetUniquePath(Path.Combine(targetFolder, name), isDirectory);
-            if (isMove && IsSameVolume(source, dest))
+            var progressWindow = new FileOperationProgressWindow(kind, sourceSummary, targetFolder, cts, pauseToken)
             {
-                if (isDirectory)
-                    Directory.Move(source, dest);
-                else
-                    File.Move(source, dest);
-                return;
-            }
+                Owner = Window.GetWindow(this)
+            };
 
-            if (isDirectory)
-            {
-                CopyDirectory(source, dest);
-                if (isMove)
-                    DeleteFileOrDirectory(source, isDirectory: true);
-            }
-            else
-            {
-                File.Copy(source, dest);
-                if (isMove)
-                    DeleteFileOrDirectory(source, isDirectory: false);
-            }
-        }
-
-        private static bool IsSameOrSubdirectory(string sourceDir, string targetDir)
-        {
+            var progress = new Progress<FileOperationProgress>(progressWindow.UpdateProgress);
+            var sw = Stopwatch.StartNew();
+            progressWindow.Show();
+            progressWindow.Activate();
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
             try
             {
-                var sourceFull = Path.GetFullPath(sourceDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                var targetFull = Path.GetFullPath(targetDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (string.Equals(sourceFull, targetFull, StringComparison.OrdinalIgnoreCase))
-                    return true;
+                var result = await FileOperationService.ExecuteAsync(
+                    kind,
+                    sourcePaths,
+                    targetFolder,
+                    progress,
+                    pauseToken,
+                    cts.Token);
 
-                var prefix = sourceFull + Path.DirectorySeparatorChar;
-                return targetFull.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static bool IsSameParentDirectory(string sourcePath, string targetDir)
-        {
-            try
-            {
-                var sourceFull = Path.GetFullPath(sourcePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                var parent = Path.GetDirectoryName(sourceFull)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                var targetFull = Path.GetFullPath(targetDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                return !string.IsNullOrEmpty(parent) &&
-                       string.Equals(parent, targetFull, StringComparison.OrdinalIgnoreCase);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static bool IsSameVolume(string pathA, string pathB)
-        {
-            try
-            {
-                var rootA = Path.GetPathRoot(Path.GetFullPath(pathA));
-                var rootB = Path.GetPathRoot(Path.GetFullPath(pathB));
-                return !string.IsNullOrEmpty(rootA) &&
-                       string.Equals(rootA, rootB, StringComparison.OrdinalIgnoreCase);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static void DeleteFileOrDirectory(string path, bool isDirectory)
-        {
-            if (!isDirectory)
-            {
-                if (!File.Exists(path))
-                    return;
-                try
+                if (!result.WasCancelled)
                 {
-                    var attrs = File.GetAttributes(path);
-                    if ((attrs & FileAttributes.ReadOnly) != 0)
-                        File.SetAttributes(path, attrs & ~FileAttributes.ReadOnly);
+                    var remainingMs = 450 - (int)sw.ElapsedMilliseconds;
+                    if (remainingMs > 0)
+                        await Task.Delay(remainingMs);
                 }
-                catch
-                {
-                    // Best-effort attribute clear before delete.
-                }
-                File.Delete(path);
-                return;
+
+                return result;
             }
-
-            if (!Directory.Exists(path))
-                return;
-
-            var stack = new Stack<DirectoryInfo>();
-            stack.Push(new DirectoryInfo(path));
-            while (stack.Count > 0)
+            finally
             {
-                var dir = stack.Pop();
-                try
-                {
-                    if ((dir.Attributes & FileAttributes.ReadOnly) != 0)
-                        dir.Attributes &= ~FileAttributes.ReadOnly;
-
-                    if ((dir.Attributes & FileAttributes.ReparsePoint) != 0)
-                        continue;
-
-                    foreach (var file in dir.GetFiles())
-                    {
-                        try
-                        {
-                            if ((file.Attributes & FileAttributes.ReadOnly) != 0)
-                                file.Attributes &= ~FileAttributes.ReadOnly;
-                        }
-                        catch
-                        {
-                            // Best-effort attribute clear.
-                        }
-                    }
-
-                    foreach (var sub in dir.GetDirectories())
-                    {
-                        if ((sub.Attributes & FileAttributes.ReparsePoint) == 0)
-                            stack.Push(sub);
-                    }
-                }
-                catch
-                {
-                    // Let Directory.Delete report any fatal permission/lock error.
-                }
-            }
-
-            Directory.Delete(path, recursive: true);
-        }
-
-        private static void CopyDirectory(string sourceDir, string targetDir)
-        {
-            if (IsSameOrSubdirectory(sourceDir, targetDir))
-                throw new InvalidOperationException($"Cannot copy '{sourceDir}' into itself or a subfolder.");
-
-            var dirInfo = new DirectoryInfo(sourceDir);
-            Directory.CreateDirectory(targetDir);
-
-            foreach (var file in dirInfo.GetFiles())
-            {
-                try
-                {
-                    file.CopyTo(Path.Combine(targetDir, file.Name));
-                }
-                catch (Exception ex)
-                {
-                    throw new IOException($"Failed to copy '{file.FullName}': {ex.Message}", ex);
-                }
-            }
-
-            foreach (var subDir in dirInfo.GetDirectories())
-            {
-                if (subDir.Attributes.HasFlag(FileAttributes.ReparsePoint))
-                    continue;
-                CopyDirectory(subDir.FullName, Path.Combine(targetDir, subDir.Name));
+                progressWindow.MarkFinished();
+                progressWindow.Close();
             }
         }
 
@@ -2260,27 +2139,6 @@ namespace ToolkitGUI.Views
 
             SetActivePath(pane, path);
             LoadDirectory(path, pane);
-        }
-
-        private static string GetUniquePath(string path, bool isDirectory = false)
-        {
-            if (!File.Exists(path) && !Directory.Exists(path))
-                return path;
-
-            var trimmed = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var directory = Path.GetDirectoryName(trimmed) ?? string.Empty;
-            var filename = isDirectory ? Path.GetFileName(trimmed) : Path.GetFileNameWithoutExtension(trimmed);
-            var extension = isDirectory ? string.Empty : Path.GetExtension(trimmed);
-            var counter = 1;
-
-            string candidate;
-            do
-            {
-                candidate = Path.Combine(directory, $"{filename} ({counter}){extension}");
-                counter++;
-            } while (File.Exists(candidate) || Directory.Exists(candidate));
-
-            return candidate;
         }
 
         private void SetStatus(string message) => StatusText.Text = message;
