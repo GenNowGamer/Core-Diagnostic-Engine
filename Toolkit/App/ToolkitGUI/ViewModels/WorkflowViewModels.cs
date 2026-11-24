@@ -2025,10 +2025,34 @@ namespace ToolkitGUI.ViewModels
                 ReportPdfPath = _scanReportPaths.PdfPath;
                 OnPropertyChanged(nameof(HasPdfReport));
                 OnPropertyChanged(nameof(CanOpenReport));
+                var doc = document;
+                WorkOrderService.TryRecordWorkflowReport(
+                    new WorkflowExecutionReport
+                    {
+                        WorkflowName = doc.WorkflowName,
+                        EndTime = doc.GeneratedAt,
+                        Status = "Completed",
+                        OverallHealth = doc.OverallHealth,
+                        EnvironmentMode = PowerShellService.IsWinPeEnvironment() ? "WinPE" : "Windows"
+                    },
+                    _scanReportPaths.JsonPath,
+                    reportPdfPath: _scanReportPaths.PdfPath);
                 return;
             }
 
             throw new InvalidOperationException(error ?? "Unknown PDF generation error.");
+        }
+
+        private async Task TryEnsureHijackScanPdfOnCompleteAsync()
+        {
+            try
+            {
+                await EnsureHijackScanPdfAsync();
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"PDF report generation failed: {ex.Message}");
+            }
         }
 
         private TabularScanReportDocument BuildHijackScanReportDocument()
@@ -2243,7 +2267,7 @@ namespace ToolkitGUI.ViewModels
                             _hijackSnapshotPath = summary.SnapshotPath;
                         HasScanResults = true;
                         RefreshDisplayedFindings();
-                        _ = EnsureHijackScanReportsAsync();
+                        _ = TryEnsureHijackScanPdfOnCompleteAsync();
                     });
                     return true;
                 }

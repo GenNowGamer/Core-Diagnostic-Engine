@@ -1169,6 +1169,7 @@ namespace ToolkitGUI.ViewModels
             }
 
             _lastPdfExportError = exportError ?? "Unknown PDF generation error.";
+            AppendLog($"PDF report generation failed: {_lastPdfExportError}");
         }
 
         private async Task<string> ResolveJsonReportPathAsync(WorkflowExecutionReport report)

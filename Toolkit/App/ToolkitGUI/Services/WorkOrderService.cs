@@ -455,10 +455,27 @@ namespace ToolkitGUI.Services
                     return;
 
                 var runs = root["Runs"] as JsonArray ?? new JsonArray();
-                if (!string.IsNullOrWhiteSpace(reportJsonPath) &&
-                    runs.Any(n => string.Equals(n?["ReportJson"]?.GetValue<string>(), reportJsonPath, StringComparison.OrdinalIgnoreCase)))
+                if (!string.IsNullOrWhiteSpace(reportJsonPath))
                 {
-                    return;
+                    var existingRun = runs
+                        .OfType<JsonObject>()
+                        .FirstOrDefault(n => string.Equals(n["ReportJson"]?.GetValue<string>(), reportJsonPath, StringComparison.OrdinalIgnoreCase));
+                    if (existingRun != null)
+                    {
+                        var existingPdf = existingRun["ReportPdf"]?.GetValue<string>();
+                        if (string.IsNullOrWhiteSpace(existingPdf) || !File.Exists(existingPdf))
+                        {
+                            var resolvedPdf = ReportPathHelper.ResolveOperatorPdf(reportPdfPath, reportJsonPath, reportHtmlPath);
+                            if (!string.IsNullOrWhiteSpace(resolvedPdf))
+                            {
+                                existingRun["ReportPdf"] = resolvedPdf;
+                                File.WriteAllText(active.WorkOrderPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                                NotifyChanged();
+                            }
+                        }
+
+                        return;
+                    }
                 }
 
                 var steps = report.Steps ?? new List<WorkflowExecutionStep>();

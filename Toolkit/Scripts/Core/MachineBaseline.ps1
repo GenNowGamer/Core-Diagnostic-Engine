@@ -208,7 +208,7 @@ function Compare-CdeSmartBaselineDelta {
             }) | Out-Null
         }
     }
-    return , @($deltas.ToArray())
+    return @($deltas.ToArray())
 }
 
 function Invoke-HealthBaselineDelta {
@@ -227,6 +227,7 @@ function Invoke-HealthBaselineDelta {
 
     $smartDeltas = @(Compare-CdeSmartBaselineDelta -PriorSmart $prior.smart -CurrentSmart $current.smart)
     foreach ($d in $smartDeltas) {
+        if ($null -eq $d -or [string]::IsNullOrWhiteSpace([string]$d.Key)) { continue }
         $mediaKeys = @('ata_5', 'ata_196', 'ata_197', 'ata_198', 'nvme_media_errors')
         $normalizedKey = ([string]$d.Key) -replace '^d\d+_', ''
         $isMedia = $mediaKeys -contains $normalizedKey

@@ -119,25 +119,28 @@ namespace ToolkitGUI.Services
             string user,
             ActiveWorkOrderInfo? activeCase)
         {
-            container.Row(row =>
+            container.Column(column =>
             {
-                row.Spacing(8);
-                row.RelativeItem().Element(c => SummaryCard(c, "Duration", $"{report.DurationSec:0.0}s"));
-                row.RelativeItem().Element(c => SummaryCard(c, "Environment", string.IsNullOrWhiteSpace(report.EnvironmentMode) ? "—" : report.EnvironmentMode));
-                row.RelativeItem().Element(c => SummaryCard(c, "Workflow status", string.IsNullOrWhiteSpace(report.Status) ? "—" : report.Status));
-                row.RelativeItem().Element(c => SummaryCard(c, "Steps", counts.Total.ToString()));
-                row.RelativeItem().Element(c => SummaryCard(c, "Operator", user));
-            });
-
-            if (activeCase != null)
-            {
-                container.PaddingTop(8).Row(row =>
+                column.Item().Row(row =>
                 {
                     row.Spacing(8);
-                    row.RelativeItem().Element(c => SummaryCard(c, "Case ID", activeCase.CaseId));
-                    row.RelativeItem().Element(c => SummaryCard(c, "Client", string.IsNullOrWhiteSpace(activeCase.ClientName) ? "—" : activeCase.ClientName));
+                    row.RelativeItem().Element(c => SummaryCard(c, "Duration", $"{report.DurationSec:0.0}s"));
+                    row.RelativeItem().Element(c => SummaryCard(c, "Environment", string.IsNullOrWhiteSpace(report.EnvironmentMode) ? "—" : report.EnvironmentMode));
+                    row.RelativeItem().Element(c => SummaryCard(c, "Workflow status", string.IsNullOrWhiteSpace(report.Status) ? "—" : report.Status));
+                    row.RelativeItem().Element(c => SummaryCard(c, "Steps", counts.Total.ToString()));
+                    row.RelativeItem().Element(c => SummaryCard(c, "Operator", user));
                 });
-            }
+
+                if (activeCase != null)
+                {
+                    column.Item().PaddingTop(8).Row(row =>
+                    {
+                        row.Spacing(8);
+                        row.RelativeItem().Element(c => SummaryCard(c, "Case ID", activeCase.CaseId));
+                        row.RelativeItem().Element(c => SummaryCard(c, "Client", string.IsNullOrWhiteSpace(activeCase.ClientName) ? "—" : activeCase.ClientName));
+                    });
+                }
+            });
         }
 
         private static void SummaryCard(IContainer container, string label, string value)

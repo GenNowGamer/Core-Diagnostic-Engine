@@ -14,6 +14,25 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-11-24)
+
+- **Machine Baseline SMART Delta False-Positive Fix (`Scripts\Core\MachineBaseline.ps1`, `Scripts\Tests\Test-MachineBaseline.ps1`)** — Fixed a PowerShell array-wrapping bug that produced phantom `SMART counter increased:` warnings with blank `Previous=`, `Current=`, and `Delta=+` fields when no SMART counters had increased:
+  - Removed the unary comma in `Compare-CdeSmartBaselineDelta` (`return @($deltas.ToArray())`) so an empty delta list is not wrapped as a 1-element array containing `@()`.
+  - Added a defensive guard in `Invoke-HealthBaselineDelta` skipping null or empty-key delta entries.
+  - Added a zero-delta regression assertion in `Scripts\Tests\Test-MachineBaseline.ps1` and verified `Test-MachineBaseline.ps1` (9/9 assertions passing).
+
+- **Automatic Workflow & Hijack Scan PDF Generation + Work Order PDF Backfill (`WorkflowReportPdfService.cs`, `WorkflowViewModels.cs`, `WorkOrderService.cs`, `WorkflowViewModelBase.cs`, `ToolkitGuiCoreTests.cs`)** — Fixed operator PDF generation into `Logs\` when a Work Order is active and ensured scan PDFs are generated automatically on completion:
+  - Fixed a QuestPDF single-child container exception in `WorkflowReportPdfService.ComposeSummaryCards` (wrapped both summary rows inside `container.Column(...)`) that silently prevented workflow PDFs from rendering whenever an active Work Order added the `Case ID` / `Client` row.
+  - Updated `HijackRepairViewModel`'s `SCAN` completion handler to automatically generate the operator PDF in `Logs\` (`TryEnsureHijackScanPdfOnCompleteAsync`) and link `ReportPdf` in the active Work Order instead of writing JSON only.
+  - Updated `WorkOrderService.TryRecordWorkflowReport` to backfill `ReportPdf` on an existing run entry matching `ReportJson` (created by PowerShell's `Add-WorkOrderRun`) when `ReportPdf` is missing or empty.
+  - Added `AppendLog` error reporting in `WorkflowViewModelBase.EnsurePdfReportAsync` so any PDF generation failure is surfaced in the workflow log.
+  - Added unit tests in `App\ToolkitGUI.Tests\ToolkitGuiCoreTests.cs` (`WorkflowReportPdfService_TryGeneratePdf_CreatesNonEmptyPdfFromReport` and `WorkOrderService_TryRecordWorkflowReport_BackfillsReportPdfOnExistingRun`) and verified with `dotnet test` (64/64 passing).
+
+- **Benign Per-User Service Startup Timeout Downgrade (`Config\EventFindingClusters.json`, `Scripts\Core\EventFindingClusters.ps1`, `Scripts\Tests\Test-EventSuppressorPacks.ps1`)** — Prevented routine Windows per-user service startup timeouts (such as `GameDVR and Broadcast User Service_*`) from flagging as actionable `Warn` findings:
+  - Added `benignMessagePatterns` to the `service_startup_failure` cluster in `Config\EventFindingClusters.json` covering `GameDVR and Broadcast User Service`, `BcastDVRUserService`, `CDPUserSvc`, `OneSyncSvc`, `WpnUserService`, `PrintWorkflowUserSvc`, and `UdkUserSvc`.
+  - Updated `Invoke-EventFindingClustering` in `Scripts\Core\EventFindingClusters.ps1` to downgrade `service_startup_failure` findings to `Status = 'Info'`, `Severity = 'Info'`, and `Classification = 'ExpectedLimitation'` when all matched events match `benignMessagePatterns`, while keeping real service failures (e.g., `wuauserv`) at `Warn` / `Medium` / `SingleSignal`.
+  - Added unit tests in `Scripts\Tests\Test-EventSuppressorPacks.ps1` and verified `Test-EventSuppressorPacks.ps1` (7/7 passing) and `Test-HealthFindingsAndEventClusters.ps1` (PASS).
+
 ## Session Update (2026-11-23)
 
 - **Startup Audit & Startup Manager `RunOnce` False-Positive Fix (`Scripts\Core\StartupRisk.ps1`, `Scripts\Tests\Test-StartupAuditReviewUx.ps1`)** — Prevented signed Microsoft `RunOnce` post-update installer/cleanup entries in `Program Files` (such as `msedge_cleanup_{...}` for Microsoft Edge and Copilot) from being flagged for review:

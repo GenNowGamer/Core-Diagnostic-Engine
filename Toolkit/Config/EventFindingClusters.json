@@ -1,4 +1,4 @@
-﻿{
+{
     "version":  2,
     "defaultWindowMinutes":  10,
     "clusters":  [
@@ -483,6 +483,15 @@
                          "suppressors":  [
 
                                          ],
+                         "benignMessagePatterns":  [
+                                                       "GameDVR and Broadcast User Service",
+                                                       "BcastDVRUserService",
+                                                       "CDPUserSvc",
+                                                       "OneSyncSvc",
+                                                       "WpnUserService",
+                                                       "PrintWorkflowUserSvc",
+                                                       "UdkUserSvc"
+                                                   ],
                          "repeatBonus":  10,
                          "maxConfidence":  88,
                          "minRequiredAny":  1,

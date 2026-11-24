@@ -48,6 +48,9 @@ Assert-Eq -Name 'Loaded machineId' -Expected $testId -Actual $loaded.machineId
 $deltas = @(Compare-CdeSmartBaselineDelta -PriorSmart $loaded.smart -CurrentSmart @{ ata_5 = 4; ata_199 = 2 })
 Assert-True -Name 'SMART growth detected' -Condition ($deltas.Count -eq 1 -and $deltas[0].Key -eq 'ata_5' -and $deltas[0].Delta -eq 3)
 
+$noDeltas = @(Compare-CdeSmartBaselineDelta -PriorSmart $loaded.smart -CurrentSmart @{ ata_5 = 1; ata_199 = 2 })
+Assert-Eq -Name 'No SMART growth returns empty' -Expected 0 -Actual $noDeltas.Count
+
 $wf = [PSCustomObject]@{
     WorkflowName  = 'SystemHealthCheck'
     OverallHealth = 'Warning'

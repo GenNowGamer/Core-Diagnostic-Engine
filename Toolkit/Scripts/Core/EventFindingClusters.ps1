@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Correlate Windows event log errors into technician-facing finding clusters.
@@ -376,19 +376,52 @@ function Invoke-EventFindingClustering {
             $evidence = @($evidence) + @('Likely causes: ' + ($causes -join '; '))
         }
 
-        $status = switch -Regex ([string]$cluster.severityFloor) {
+        $severity = [string]$cluster.severityFloor
+        $impact = [string]$cluster.impact
+        $recommendations = @($cluster.recommendations)
+
+        $status = switch -Regex ($severity) {
             '^(?i)critical$' { 'Fail' }
             '^(?i)high$'     { 'Warn' }
             '^(?i)medium$'   { 'Warn' }
             default          { 'Warn' }
         }
 
-        $classification = switch -Regex ([string]$cluster.severityFloor) {
+        $classification = switch -Regex ($severity) {
             '^(?i)critical$' { 'ConfirmedFault' }
             '^(?i)high$' {
                 if ($confidence -ge 90) { 'CorroboratedSuspect' } else { 'SingleSignal' }
             }
             default { 'SingleSignal' }
+        }
+
+        $benignPatterns = @()
+        if ($cluster.PSObject.Properties['benignMessagePatterns'] -and $null -ne $cluster.benignMessagePatterns) {
+            $benignPatterns = @($cluster.benignMessagePatterns | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        }
+        if ($benignPatterns.Count -gt 0 -and $allMatched.Count -gt 0) {
+            $allBenign = $true
+            foreach ($evt in $allMatched) {
+                $msg = [string]$evt.Message
+                $evtBenign = $false
+                foreach ($pat in $benignPatterns) {
+                    if ($msg -like ("*{0}*" -f [string]$pat)) {
+                        $evtBenign = $true
+                        break
+                    }
+                }
+                if (-not $evtBenign) {
+                    $allBenign = $false
+                    break
+                }
+            }
+            if ($allBenign) {
+                $severity = 'Info'
+                $status = 'Info'
+                $classification = 'ExpectedLimitation'
+                $impact = 'A non-critical Windows per-user service timed out or failed to start. This is common on healthy Windows systems and does not affect core OS stability, updates, or security.'
+                $recommendations = @('No action needed unless the associated Windows feature (such as Xbox Game Bar recording) is not working.')
+            }
         }
 
         $actionObjs = @()
@@ -406,13 +439,13 @@ function Invoke-EventFindingClustering {
             -CheckId $CheckId `
             -Subject ([string]$cluster.title) `
             -Finding ([string]$cluster.title) `
-            -Impact ([string]$cluster.impact) `
-            -Severity ([string]$cluster.severityFloor) `
+            -Impact $impact `
+            -Severity $severity `
             -Confidence $confidence `
             -Status $status `
             -Classification $classification `
             -Evidence $evidence `
-            -Recommendations @($cluster.recommendations) `
+            -Recommendations $recommendations `
             -Actions $actionObjs))
     }
 

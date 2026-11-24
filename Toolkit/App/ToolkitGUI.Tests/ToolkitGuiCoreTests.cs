@@ -623,4 +623,126 @@ public class Batch1CriticalRegressionTests
         Assert.True(EnvironmentCapabilityService.IsActionSupported("SystemHealthCheck"));
         Assert.True(EnvironmentCapabilityService.IsActionSupported("NonExistentWorkflowName"));
     }
+
+    [Fact]
+    public void WorkflowReportPdfService_TryGeneratePdf_CreatesNonEmptyPdfFromReport()
+    {
+        var tempPdf = Path.Combine(Path.GetTempPath(), $"cde_pdf_test_{Guid.NewGuid():N}.pdf");
+        try
+        {
+            var realJsonPath = Path.Combine(
+                ReportPathHelper.GetWorkflowDataRoot(),
+                "SystemHealthCheck_20261124_131516.json");
+
+            WorkflowExecutionReport? report = null;
+            if (File.Exists(realJsonPath))
+            {
+                var json = File.ReadAllText(realJsonPath);
+                report = System.Text.Json.JsonSerializer.Deserialize<WorkflowExecutionReport>(
+                    json,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+
+            report ??= new WorkflowExecutionReport
+            {
+                WorkflowName = "SystemHealthCheck",
+                StartTime = DateTime.Now.AddMinutes(-1),
+                EndTime = DateTime.Now,
+                DurationSec = 60,
+                Status = "Completed",
+                OverallHealth = "Healthy",
+                EnvironmentMode = "Windows",
+                Steps = new List<WorkflowExecutionStep>
+                {
+                    new WorkflowExecutionStep
+                    {
+                        Name = "StartupAudit",
+                        Status = "Pass",
+                        Detail = "Total: 10 | Review: 0 | OK: 10",
+                        Output = "All startup items verified."
+                    }
+                }
+            };
+
+            var ok = WorkflowReportPdfService.TryGeneratePdf(report, tempPdf, out var error);
+            Assert.True(ok, error);
+            Assert.True(File.Exists(tempPdf));
+            Assert.True(new FileInfo(tempPdf).Length > 0);
+        }
+        finally
+        {
+            if (File.Exists(tempPdf))
+                File.Delete(tempPdf);
+        }
+    }
+
+    [Fact]
+    public void WorkOrderService_TryRecordWorkflowReport_BackfillsReportPdfOnExistingRun()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"cde_wo_test_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        var originalToolkitRoot = Environment.GetEnvironmentVariable("TOOLKIT_ROOT");
+        try
+        {
+            // Point WorkOrderService at an isolated temporary toolkit root
+            Environment.SetEnvironmentVariable("TOOLKIT_ROOT", tempRoot);
+            Directory.CreateDirectory(Path.Combine(tempRoot, "Scripts", "Core"));
+            File.WriteAllText(Path.Combine(tempRoot, "Scripts", "Core", "Toolkit.Core.psm1"), "");
+            Directory.CreateDirectory(Path.Combine(tempRoot, "CDE", "Runtime", "WorkOrders"));
+            Directory.CreateDirectory(Path.Combine(tempRoot, "CDE", "Runtime", "Data", "workflows"));
+            Directory.CreateDirectory(Path.Combine(tempRoot, "Logs"));
+
+            var caseId = "CDE-20261124-99999";
+            var woPath = Path.Combine(tempRoot, "CDE", "Runtime", "WorkOrders", $"{caseId}.json");
+            var reportJsonPath = Path.Combine(tempRoot, "CDE", "Runtime", "Data", "workflows", "SystemHealthCheck_20261124_120000.json");
+            var reportPdfPath = Path.Combine(tempRoot, "Logs", "SystemHealthCheck_20261124_120000.pdf");
+            File.WriteAllText(reportJsonPath, "{}");
+            File.WriteAllBytes(reportPdfPath, new byte[] { 0x25, 0x50, 0x44, 0x46 }); // %PDF
+
+            var woJson = new System.Text.Json.Nodes.JsonObject
+            {
+                ["CaseId"] = caseId,
+                ["Status"] = "Open",
+                ["Runs"] = new System.Text.Json.Nodes.JsonArray
+                {
+                    new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["WorkflowName"] = "SystemHealthCheck",
+                        ["ReportJson"] = reportJsonPath,
+                        ["ReportPdf"] = ""
+                    }
+                }
+            };
+            File.WriteAllText(woPath, woJson.ToJsonString());
+
+            var pointerPath = Path.Combine(tempRoot, "CDE", "Runtime", "active_work_order.json");
+            File.WriteAllText(pointerPath, new System.Text.Json.Nodes.JsonObject
+            {
+                ["CaseId"] = caseId,
+                ["WorkOrderPath"] = woPath
+            }.ToJsonString());
+
+            var report = new WorkflowExecutionReport
+            {
+                WorkflowName = "SystemHealthCheck",
+                Status = "Completed",
+                OverallHealth = "Healthy",
+                EnvironmentMode = "Windows",
+                EndTime = DateTime.Now
+            };
+
+            WorkOrderService.TryRecordWorkflowReport(report, reportJsonPath, reportPdfPath: reportPdfPath);
+
+            var updated = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(woPath))!.AsObject();
+            var runs = updated["Runs"]!.AsArray();
+            Assert.Single(runs);
+            Assert.Equal(reportPdfPath, runs[0]!["ReportPdf"]!.GetValue<string>());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TOOLKIT_ROOT", originalToolkitRoot);
+            if (Directory.Exists(tempRoot))
+                Directory.Delete(tempRoot, recursive: true);
+        }
+    }
 }
