@@ -16,6 +16,17 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 ## Session Update (2026-11-25)
 
+- **Build & WinPE Script Safeguards (`App\Publish-ToolkitGUI.ps1`, `Scripts\Customize-WinPE.ps1`, `AGENTS.md`)** — Added guardrails so build and WinPE packaging scripts do not silently overwrite local edits or omit new core scripts:
+  - Added a newer-file safety check in `App\Publish-ToolkitGUI.ps1` before syncing `Core Security Tool\CST\` into `Toolkit\Security\CST\` (across top-level CST scripts, `rules\rules.json`, `rules\baselines\*`, and `lib\*`): aborts with an error listing newer destination files (>2 s ahead of source) unless `-Force` is passed.
+  - Updated `Scripts\Customize-WinPE.ps1` to dynamically discover and copy all companion `*.ps1` / `*.psm1` scripts in `Scripts\Core\` (excluding `Toolkit.Core.psm1`, copied as `CDECore.psm1`, and `Sync-HardwareTestCatalog.ps1`) into `boot.wim` instead of a hardcoded 3-file list.
+  - Added `AGENTS.md` documenting canonical source-of-truth folders vs. generated/overwritten paths (`App\*`, `Core Security Tool\CST\*`, `VERSION.json`, `Docs\UserGuide\*`, `EFI\refind\refind_x64.efi`, and `SyncUSB.bat` additive sync behavior).
+  - Verified PowerShell AST syntax on `App\Publish-ToolkitGUI.ps1` and `Scripts\Customize-WinPE.ps1` (0 parse errors).
+
+- **Startup Manager Analysis Column False-Positive Cleanup (`Scripts\Core\StartupRisk.ps1`, `Scripts\Core\StartupCorrelation.ps1`)** — Eliminated noisy yellow warnings on validly signed software across all Startup Manager tabs (**User logon**, **Drivers**, **Extensions**, **Scheduled tasks**, and **Services**) while keeping broken/missing path and unsigned anomaly warnings active:
+  - Updated `Get-FileAnalysisInfo` in `Scripts\Core\StartupRisk.ps1` to evaluate `Get-AuthenticodeSignature` on all resolved files regardless of extension (fixing non-standard binary names such as `C:\Program Files\Docker\Docker\com.docker.service`) and skip `'Modified date predates creation date'` when the file is validly Authenticode-signed, while preserving `Authenticode hash mismatch` and missing/orphaned path warnings.
+  - Updated `Add-StartupEntryCorrelations` in `Scripts\Core\StartupCorrelation.ps1` so `HasAnalysisWarning` and `AnalysisLevel = 'Caution'` are only set for unsigned entries, keeping `Also persists via: ...` informational in the **RELATED** column for signed entries.
+  - Verified directly on `com.docker.service` (`Level = OK`, `Detail = No inconsistencies detected`, `HasWarning = False`) and ran `Scripts\Tests\Test-StartupManagerCoverage.ps1` (70/70 passing).
+
 - **Startup Manager Dedicated Scheduled Tasks Tab & Performance Optimization (`StartupManagerView.xaml/.cs`, `ManagerViewModels.cs`, `StartupManager.ps1`, `StartupScheduledTask.ps1`, `StartupCorrelation.ps1`, `Test-StartupManagerCoverage.ps1`)** — Separated all Windows scheduled tasks out of **User logon** into a dedicated **Scheduled tasks** tab and eliminated multi-minute enumeration delays:
   - Removed `Get-StartupScheduledTaskRows` from `Get-StartupEntries` / `Get-UserLogonEntries` so **User logon** no longer displays scheduled tasks, and added `Get-ScheduledTaskEntries` (`-Action ListScheduledTasks`) with `-IncludeAllTriggers` to surface all trigger types (logon, boot, time/daily, idle, event).
   - Added `TabScheduledTasks` (**Scheduled tasks**) in `StartupManagerView.xaml/.cs` and `LoadScheduledTasksAsync` in `StartupManagerViewModel`, scoping the **Include Microsoft/Windows tasks** checkbox (`IsScheduledTasksTabActive`) to that tab.

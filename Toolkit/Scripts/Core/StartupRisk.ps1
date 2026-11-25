@@ -668,16 +668,15 @@ function Get-FileAnalysisInfo {
             }
         }
 
-        $isDriverStorePath = $resolved -match '\\DriverStore\\'
-        if (-not $isDriverStorePath -and $modified -lt $created.AddDays(-1)) {
-            $warnings.Add('Modified date predates creation date') | Out-Null
+        $sig = Get-AuthenticodeSignature -LiteralPath $resolved -ErrorAction SilentlyContinue
+        $isValidlySigned = ($null -ne $sig -and $sig.Status -eq 'Valid')
+        if ($sig -and $sig.Status -eq 'HashMismatch') {
+            $warnings.Add('Authenticode hash mismatch') | Out-Null
         }
 
-        if (Test-StartupPeExtension -Path $resolved) {
-            $sig = Get-AuthenticodeSignature -LiteralPath $resolved -ErrorAction SilentlyContinue
-            if ($sig -and $sig.Status -eq 'HashMismatch') {
-                $warnings.Add('Authenticode hash mismatch') | Out-Null
-            }
+        $isDriverStorePath = $resolved -match '\\DriverStore\\'
+        if (-not $isDriverStorePath -and -not $isValidlySigned -and $modified -lt $created.AddDays(-1)) {
+            $warnings.Add('Modified date predates creation date') | Out-Null
         }
     } catch {
         $warnings.Add($_.Exception.Message) | Out-Null

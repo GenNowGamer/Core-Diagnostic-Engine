@@ -313,6 +313,40 @@ if ($null -eq $cstSourceDir) {
 $cstRuntimeDir = Join-Path $toolkitRoot 'Security\CST'
 Write-Host "`nSyncing CST runtime files from source..." -ForegroundColor Cyan
 Write-Host ("  Source: {0}" -f $cstSourceDir)
+
+# Guard against silently overwriting newer edits made directly inside Toolkit\Security\CST\
+$cstRelativePaths = [System.Collections.Generic.List[string]]::new()
+foreach ($cstFile in @('CoreSecurityTool.ps1', 'CoreSecurityTool.psm1', 'Cst.KnownGood.ps1', 'Cst.StartupEntryScan.ps1', 'rules\rules.json')) {
+    $cstRelativePaths.Add($cstFile)
+}
+foreach ($subDir in @('rules\baselines', 'lib')) {
+    $srcSubDir = Join-Path $cstSourceDir $subDir
+    if (Test-Path -LiteralPath $srcSubDir) {
+        foreach ($item in (Get-ChildItem -LiteralPath $srcSubDir -Recurse -File -ErrorAction SilentlyContinue)) {
+            $rel = $item.FullName.Substring($cstSourceDir.Length).TrimStart('\')
+            $cstRelativePaths.Add($rel)
+        }
+    }
+}
+
+$newerRuntimeFiles = @()
+foreach ($relPath in $cstRelativePaths) {
+    $srcPath = Join-Path $cstSourceDir $relPath
+    $dstPath = Join-Path $cstRuntimeDir $relPath
+    if ((Test-Path -LiteralPath $srcPath) -and (Test-Path -LiteralPath $dstPath)) {
+        $srcItem = Get-Item -LiteralPath $srcPath
+        $dstItem = Get-Item -LiteralPath $dstPath
+        if ($dstItem.LastWriteTimeUtc -gt $srcItem.LastWriteTimeUtc.AddSeconds(2)) {
+            $newerRuntimeFiles += ("  - {0} (Toolkit: {1:yyyy-MM-dd HH:mm:ss} UTC > Source: {2:yyyy-MM-dd HH:mm:ss} UTC)" -f $relPath, $dstItem.LastWriteTimeUtc, $srcItem.LastWriteTimeUtc)
+        }
+    }
+}
+
+if ($newerRuntimeFiles.Count -gt 0 -and -not $Force) {
+    $details = $newerRuntimeFiles -join "`n"
+    throw "Aborted CST sync: destination files in '$cstRuntimeDir' are newer than '$cstSourceDir':`n$details`nPort these changes back to '$cstSourceDir' first, or re-run Publish-ToolkitGUI.ps1 -Force to overwrite."
+}
+
 foreach ($cstFile in @('CoreSecurityTool.ps1', 'CoreSecurityTool.psm1', 'Cst.KnownGood.ps1', 'Cst.StartupEntryScan.ps1')) {
     $src = Join-Path $cstSourceDir $cstFile
     $dst = Join-Path $cstRuntimeDir $cstFile

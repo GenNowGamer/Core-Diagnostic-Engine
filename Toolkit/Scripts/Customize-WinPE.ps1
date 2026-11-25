@@ -297,10 +297,12 @@ $psModDest   = "$MOUNT_DIR\Windows\System32\WindowsPowerShell\v1.0\Modules\CDECo
 if (Test-Path "$psModSource\Toolkit.Core.psm1") {
     New-Item $psModDest -ItemType Directory -Force | Out-Null
     Copy-Item "$psModSource\Toolkit.Core.psm1" "$psModDest\CDECore.psm1" -Force
-    foreach ($companion in @('OfflineRuntime.ps1', 'WorkOrder.ps1', 'Toolkit.Elevation.psm1')) {
-        if (Test-Path "$psModSource\$companion") {
-            Copy-Item "$psModSource\$companion" "$psModDest\$companion" -Force
-        }
+    $excludedCompanions = @('Toolkit.Core.psm1', 'Sync-HardwareTestCatalog.ps1')
+    $companionFiles = @(Get-ChildItem -LiteralPath $psModSource -File | Where-Object {
+        ($_.Extension -in @('.ps1', '.psm1')) -and ($_.Name -notin $excludedCompanions)
+    })
+    foreach ($companion in $companionFiles) {
+        Copy-Item -LiteralPath $companion.FullName -Destination (Join-Path $psModDest $companion.Name) -Force
     }
     # Create module manifest stub
     $manifest  = "@{"
@@ -310,7 +312,7 @@ if (Test-Path "$psModSource\Toolkit.Core.psm1") {
     $manifest += "`n    Description   = 'CDE Diagnostic Suite Core Module'"
     $manifest += "`n}"
     $manifest | Out-File "$psModDest\CDECore.psd1" -Encoding ASCII
-    Write-OK "Toolkit.Core.psm1 added to WinPE as CDECore module"
+    Write-OK "Toolkit.Core.psm1 added to WinPE as CDECore module ($($companionFiles.Count) companion script(s) copied)"
 } else {
     Write-Host "  (Toolkit.Core.psm1 not found, skipping)"
 }

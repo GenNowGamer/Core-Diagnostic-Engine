@@ -199,7 +199,7 @@ function Add-StartupEntryCorrelations {
             $entry | Add-Member -NotePropertyName CorrelationGroupId -NotePropertyValue $groupId -Force
             $entry | Add-Member -NotePropertyName CorrelationSummary -NotePropertyValue $summary -Force
 
-            if (-not [string]::IsNullOrWhiteSpace($summary)) {
+            if (-not [string]::IsNullOrWhiteSpace($summary) -and -not [bool]$entry.IsSigned) {
                 if ([string]$entry.AnalysisDetail) {
                     $entry.AnalysisDetail = "$summary`n$([string]$entry.AnalysisDetail)"
                 } else {
