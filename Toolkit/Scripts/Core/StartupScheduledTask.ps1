@@ -22,6 +22,17 @@ function Test-IsWindowsPlumbingScheduledTaskPath {
     return ($normalized -match '^\\Microsoft(\\|$)')
 }
 
+function Test-IsWindowsCoreScheduledTaskPath {
+    param([string]$TaskPath)
+
+    $normalized = if ([string]::IsNullOrWhiteSpace($TaskPath)) { '\' } else { $TaskPath }
+    if (-not $normalized.StartsWith('\')) {
+        $normalized = "\$normalized"
+    }
+
+    return ($normalized -match '^\\Microsoft\\Windows(\\|$)')
+}
+
 function Test-ScheduledTaskHasStartupTrigger {
     param($Task)
 
@@ -151,23 +162,32 @@ function Resolve-ComHandlerServerPath {
         }
     }
 
+    if (-not $script:ComHandlerServerPathCache) {
+        $script:ComHandlerServerPathCache = @{}
+    }
+    $cacheKey = $normalized.ToUpperInvariant()
+    if ($script:ComHandlerServerPathCache.ContainsKey($cacheKey)) {
+        return $script:ComHandlerServerPathCache[$cacheKey]
+    }
+
     $roots = @(
-        "HKLM:\SOFTWARE\Classes\CLSID\$normalized",
-        "HKLM:\SOFTWARE\WOW6432Node\Classes\CLSID\$normalized",
-        "HKCU:\SOFTWARE\Classes\CLSID\$normalized"
+        @{ Hive = [Microsoft.Win32.Registry]::LocalMachine; Sub = "SOFTWARE\Classes\CLSID\$normalized" },
+        @{ Hive = [Microsoft.Win32.Registry]::LocalMachine; Sub = "SOFTWARE\WOW6432Node\Classes\CLSID\$normalized" },
+        @{ Hive = [Microsoft.Win32.Registry]::CurrentUser;  Sub = "SOFTWARE\Classes\CLSID\$normalized" }
     )
 
     foreach ($root in $roots) {
-        foreach ($kind in @('InprocServer32', 'LocalServer32', 'InProcServer32')) {
-            $keyPath = Join-Path $root $kind
-            if (-not (Test-Path -LiteralPath $keyPath -ErrorAction SilentlyContinue)) {
-                continue
-            }
-
+        foreach ($kind in @('InprocServer32', 'LocalServer32')) {
+            $raw = ''
+            $regKey = $null
             try {
-                $raw = [string](Get-ItemProperty -LiteralPath $keyPath -ErrorAction Stop).'(default)'
+                $regKey = $root.Hive.OpenSubKey("$($root.Sub)\$kind")
+                if ($null -eq $regKey) { continue }
+                $raw = [string]$regKey.GetValue('')
             } catch {
                 continue
+            } finally {
+                if ($null -ne $regKey) { $regKey.Dispose() }
             }
 
             if ([string]::IsNullOrWhiteSpace($raw)) {
@@ -196,6 +216,7 @@ function Resolve-ComHandlerServerPath {
                 } catch { }
                 $result.Exists = $true
                 $result.Detail = "COM $kind"
+                $script:ComHandlerServerPathCache[$cacheKey] = $result
                 return $result
             }
 
@@ -205,6 +226,7 @@ function Resolve-ComHandlerServerPath {
 
     $packaged = Resolve-PackagedComServerPath -ClassId $normalized
     if ($packaged -and $packaged.Exists) {
+        $script:ComHandlerServerPathCache[$cacheKey] = $packaged
         return $packaged
     }
     if ($packaged -and -not [string]::IsNullOrWhiteSpace($packaged.Detail) -and [string]::IsNullOrWhiteSpace($result.Detail)) {
@@ -217,6 +239,7 @@ function Resolve-ComHandlerServerPath {
         $result.Detail = "COM ClassId not found in registry: $normalized"
     }
 
+    $script:ComHandlerServerPathCache[$cacheKey] = $result
     return $result
 }
 
@@ -237,13 +260,65 @@ function Get-PackagedComInstallLocation {
     }
 
     $installLocation = ''
-    $pkgName = ($PackageFullName -split '_', 2)[0]
-    if (-not [string]::IsNullOrWhiteSpace($pkgName) -and (Get-Command -Name Get-AppxPackage -ErrorAction SilentlyContinue)) {
+
+    # Fast registry lookup (<1ms) before falling back to Get-AppxPackage.
+    $userRepoKey = $null
+    try {
+        $userRepoKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages\$PackageFullName")
+        if ($null -ne $userRepoKey) {
+            $root = [string]$userRepoKey.GetValue('PackageRootFolder')
+            if (-not [string]::IsNullOrWhiteSpace($root)) {
+                $installLocation = $root
+            }
+        }
+    } catch { } finally {
+        if ($null -ne $userRepoKey) { $userRepoKey.Dispose() }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($installLocation)) {
+        foreach ($storeSub in @(
+                "SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Applications\$PackageFullName",
+                "SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\InboxApplications\$PackageFullName"
+            )) {
+            $storeKey = $null
+            try {
+                $storeKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($storeSub)
+                if ($null -eq $storeKey) { continue }
+                $manifestPath = [string]$storeKey.GetValue('Path')
+                if (-not [string]::IsNullOrWhiteSpace($manifestPath)) {
+                    $parentDir = Split-Path -Path $manifestPath -Parent
+                    if (-not [string]::IsNullOrWhiteSpace($parentDir)) {
+                        $installLocation = $parentDir
+                        break
+                    }
+                }
+            } catch { } finally {
+                if ($null -ne $storeKey) { $storeKey.Dispose() }
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($installLocation)) {
+        foreach ($appFolder in @(
+                (Join-Path $env:ProgramFiles "WindowsApps\$PackageFullName"),
+                (Join-Path $env:SystemRoot "SystemApps\$PackageFullName")
+            )) {
+            if (Test-Path -LiteralPath $appFolder -PathType Container -ErrorAction SilentlyContinue) {
+                $installLocation = $appFolder
+                break
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($installLocation) -and -not $script:PackagedComAppxBulkLoaded -and (Get-Command -Name Get-AppxPackage -ErrorAction SilentlyContinue)) {
+        $script:PackagedComAppxBulkLoaded = $true
         try {
-            $pkgs = @(Get-AppxPackage -Name $pkgName -ErrorAction SilentlyContinue)
-            $exact = $pkgs | Where-Object { $_.PackageFullName -eq $PackageFullName } | Select-Object -First 1
-            if ($exact -and -not [string]::IsNullOrWhiteSpace([string]$exact.InstallLocation)) {
-                $installLocation = [string]$exact.InstallLocation
+            foreach ($pkg in @(Get-AppxPackage -ErrorAction SilentlyContinue)) {
+                if ($null -eq $pkg -or [string]::IsNullOrWhiteSpace([string]$pkg.PackageFullName)) { continue }
+                $script:PackagedComInstallLocationCache[[string]$pkg.PackageFullName] = [string]$pkg.InstallLocation
+            }
+            if ($script:PackagedComInstallLocationCache.ContainsKey($PackageFullName)) {
+                $installLocation = [string]$script:PackagedComInstallLocationCache[$PackageFullName]
             }
         } catch { }
     }
@@ -270,19 +345,24 @@ function Resolve-PackagedComServerPath {
     }
 
     $packagedRoots = @(
-        'HKLM:\SOFTWARE\Classes\PackagedCom',
-        'HKCU:\SOFTWARE\Classes\PackagedCom'
+        [Microsoft.Win32.Registry]::LocalMachine,
+        [Microsoft.Win32.Registry]::CurrentUser
     )
 
-    foreach ($pkgRoot in $packagedRoots) {
-        $indexKey = Join-Path $pkgRoot "ClassIndex\$ClassId"
-        if (-not (Test-Path -LiteralPath $indexKey -ErrorAction SilentlyContinue)) {
+    foreach ($hive in $packagedRoots) {
+        $pkgFullNames = @()
+        $indexKey = $null
+        try {
+            $indexKey = $hive.OpenSubKey("SOFTWARE\Classes\PackagedCom\ClassIndex\$ClassId")
+            if ($null -eq $indexKey) { continue }
+            $pkgFullNames = @($indexKey.GetSubKeyNames() | Sort-Object -Descending)
+        } catch {
             continue
+        } finally {
+            if ($null -ne $indexKey) { $indexKey.Dispose() }
         }
 
-        $pkgKeys = @(Get-ChildItem -LiteralPath $indexKey -ErrorAction SilentlyContinue | Sort-Object PSChildName -Descending)
-        foreach ($pkgKey in $pkgKeys) {
-            $pkgFullName = [string]$pkgKey.PSChildName
+        foreach ($pkgFullName in $pkgFullNames) {
             if ([string]::IsNullOrWhiteSpace($pkgFullName)) { continue }
 
             $installLocation = Get-PackagedComInstallLocation -PackageFullName $pkgFullName
@@ -290,34 +370,38 @@ function Resolve-PackagedComServerPath {
                 continue
             }
 
-            $classKey = Join-Path $pkgRoot "Package\$pkgFullName\Class\$ClassId"
-            if (-not (Test-Path -LiteralPath $classKey -ErrorAction SilentlyContinue)) {
-                continue
-            }
-
-            try {
-                $classProps = Get-ItemProperty -LiteralPath $classKey -ErrorAction Stop
-            } catch {
-                continue
-            }
-
             $relTarget = ''
             $kind = ''
-            if ($classProps.PSObject.Properties['DllPath'] -and -not [string]::IsNullOrWhiteSpace([string]$classProps.DllPath)) {
-                $relTarget = [string]$classProps.DllPath
-                $kind = 'PackagedCom (Inproc)'
-            }
-            elseif ($classProps.PSObject.Properties['ServerId'] -and $null -ne $classProps.ServerId -and -not [string]::IsNullOrWhiteSpace([string]$classProps.ServerId)) {
-                $serverKey = Join-Path $pkgRoot "Package\$pkgFullName\Server\$($classProps.ServerId)"
-                if (Test-Path -LiteralPath $serverKey -ErrorAction SilentlyContinue) {
-                    try {
-                        $serverProps = Get-ItemProperty -LiteralPath $serverKey -ErrorAction Stop
-                        if ($serverProps.PSObject.Properties['Executable'] -and -not [string]::IsNullOrWhiteSpace([string]$serverProps.Executable)) {
-                            $relTarget = [string]$serverProps.Executable
-                            $kind = 'PackagedCom (OutOfProc)'
+            $classKey = $null
+            try {
+                $classKey = $hive.OpenSubKey("SOFTWARE\Classes\PackagedCom\Package\$pkgFullName\Class\$ClassId")
+                if ($null -eq $classKey) { continue }
+                $dllPath = [string]$classKey.GetValue('DllPath')
+                if (-not [string]::IsNullOrWhiteSpace($dllPath)) {
+                    $relTarget = $dllPath
+                    $kind = 'PackagedCom (Inproc)'
+                } else {
+                    $serverId = $classKey.GetValue('ServerId')
+                    if ($null -ne $serverId -and -not [string]::IsNullOrWhiteSpace([string]$serverId)) {
+                        $serverKey = $null
+                        try {
+                            $serverKey = $hive.OpenSubKey("SOFTWARE\Classes\PackagedCom\Package\$pkgFullName\Server\$serverId")
+                            if ($null -ne $serverKey) {
+                                $exePath = [string]$serverKey.GetValue('Executable')
+                                if (-not [string]::IsNullOrWhiteSpace($exePath)) {
+                                    $relTarget = $exePath
+                                    $kind = 'PackagedCom (OutOfProc)'
+                                }
+                            }
+                        } catch { } finally {
+                            if ($null -ne $serverKey) { $serverKey.Dispose() }
                         }
-                    } catch { }
+                    }
                 }
+            } catch {
+                continue
+            } finally {
+                if ($null -ne $classKey) { $classKey.Dispose() }
             }
 
             if ([string]::IsNullOrWhiteSpace($relTarget)) { continue }
@@ -371,7 +455,9 @@ function Get-StartupScheduledTaskDisplayPath {
 
 function Get-StartupScheduledTaskRows {
     param(
-        [switch]$IncludeWindowsScheduledTasks
+        [switch]$IncludeWindowsScheduledTasks,
+        [switch]$IncludeAllTriggers,
+        [string]$Category = 'ScheduledTasks'
     )
 
     if (Test-OfflineRegistrySessionActive) {
@@ -387,14 +473,19 @@ function Get-StartupScheduledTaskRows {
     }
 
     foreach ($task in $tasks) {
-        if (-not (Test-ScheduledTaskHasStartupTrigger -Task $task)) {
+        if (-not $IncludeAllTriggers -and -not (Test-ScheduledTaskHasStartupTrigger -Task $task)) {
             continue
         }
 
-        $commandLine = Get-ScheduledTaskStartupCommandLine -Task $task
         $taskPath = [string]$task.TaskPath
-        $taskName = [string]$task.TaskName
         $isWindowsPlumbing = Test-IsWindowsPlumbingScheduledTaskPath -TaskPath $taskPath
+        if ($isWindowsPlumbing -and -not $IncludeWindowsScheduledTasks) {
+            continue
+        }
+
+        $taskName = [string]$task.TaskName
+        $isWindowsCore = Test-IsWindowsCoreScheduledTaskPath -TaskPath $taskPath
+        $commandLine = Get-ScheduledTaskStartupCommandLine -Task $task
 
         $actions = @($task.Actions)
         $action = if ($actions.Count -gt 0) { $actions[0] } else { $null }
@@ -412,10 +503,6 @@ function Get-StartupScheduledTaskRows {
         $executePath = ''
         if ($actionKind -eq 'Exec' -and $null -ne $action) {
             try { $executePath = [string]$action.Execute } catch { }
-        }
-
-        if ($isWindowsPlumbing -and -not $IncludeWindowsScheduledTasks) {
-            continue
         }
 
         $state = [string]$task.State
@@ -442,7 +529,7 @@ function Get-StartupScheduledTaskRows {
         }
 
         $rows.Add(@{
-            Category           = 'StartupItems'
+            Category           = $Category
             RowType            = 'ScheduledTask'
             SourceGroup        = $sourceGroup.Trim()
             Name               = $taskName
@@ -457,9 +544,9 @@ function Get-StartupScheduledTaskRows {
             IsEnabled          = $isEnabled
             ServiceName        = $taskName
             OriginalData       = $state
-            IsCritical         = $isWindowsPlumbing
-            SupportsEnable     = -not $isWindowsPlumbing
-            SupportsDisable    = -not $isWindowsPlumbing
+            IsCritical         = $isWindowsCore
+            SupportsEnable     = -not $isWindowsCore
+            SupportsDisable    = -not $isWindowsCore
             SupportsDelete     = -not $isWindowsPlumbing
             SupportsReset      = $false
             SupportsUndo       = $false
@@ -493,8 +580,8 @@ function Set-StartupScheduledTaskEntryState {
         throw 'PROTECTED_OR_UNSUPPORTED: Scheduled tasks are not supported in offline registry mode.'
     }
 
-    if (Test-IsWindowsPlumbingScheduledTaskPath -TaskPath $TaskPath) {
-        throw 'PROTECTED_OR_UNSUPPORTED: Windows scheduled tasks cannot be modified from Startup Manager.'
+    if (Test-IsWindowsCoreScheduledTaskPath -TaskPath $TaskPath) {
+        throw 'PROTECTED_OR_UNSUPPORTED: Windows core scheduled tasks cannot be modified from Startup Manager.'
     }
 
     $normalizedPath = Resolve-StartupScheduledTaskPath -TaskPath $TaskPath

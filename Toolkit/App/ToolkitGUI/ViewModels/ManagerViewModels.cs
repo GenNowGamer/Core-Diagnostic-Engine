@@ -27,6 +27,7 @@ namespace ToolkitGUI.ViewModels
         public const string TabStartupItems = "StartupItems";
         public const string TabDrivers = "Drivers";
         public const string TabExtensions = "Extensions";
+        public const string TabScheduledTasks = "ScheduledTasks";
         public const string TabServices = "Services";
 
         private bool _isLoading;
@@ -60,8 +61,16 @@ namespace ToolkitGUI.ViewModels
         public string ActiveTab
         {
             get => _activeTab;
-            set { _activeTab = value; OnPropertyChanged(); ApplyFilter(); }
+            set
+            {
+                _activeTab = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsScheduledTasksTabActive));
+                ApplyFilter();
+            }
         }
+
+        public bool IsScheduledTasksTabActive => ActiveTab == TabScheduledTasks;
 
         public string FilterText
         {
@@ -112,6 +121,11 @@ namespace ToolkitGUI.ViewModels
             await LoadStartupCategoryAsync("ListExtensions", "extension entries");
         }
 
+        public async Task LoadScheduledTasksAsync()
+        {
+            await LoadStartupCategoryAsync("ListScheduledTasks", "scheduled task entries");
+        }
+
         public async Task LoadStartupAsync()
         {
             await LoadStartupItemsAsync();
@@ -124,7 +138,7 @@ namespace ToolkitGUI.ViewModels
             StatusText = $"Loading {statusLabel}...";
             try
             {
-                var includeWindowsTasks = string.Equals(action, "ListStartupItems", StringComparison.OrdinalIgnoreCase)
+                var includeWindowsTasks = string.Equals(action, "ListScheduledTasks", StringComparison.OrdinalIgnoreCase)
                     && IncludeWindowsScheduledTasks;
                 var includeArg = includeWindowsTasks ? " -IncludeWindowsScheduledTasks" : string.Empty;
                 var (json, psErr) = await PowerShellService.QueryAsync($"& {QuotedScriptPath} -Action {action}{includeArg}");
@@ -206,6 +220,9 @@ namespace ToolkitGUI.ViewModels
                     break;
                 case TabExtensions:
                     await LoadExtensionsAsync();
+                    break;
+                case TabScheduledTasks:
+                    await LoadScheduledTasksAsync();
                     break;
                 case TabServices:
                     await LoadServicesAsync();

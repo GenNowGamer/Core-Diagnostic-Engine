@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 param(
     [string]$Action  = 'List',
-    # List | ListStartupItems | ListDrivers | ListUserLogon | ListExtensions | Enable | Disable | Delete | EnableEntry | DisableEntry | DeleteEntry | ResetWinlogonEntry | UndoWinlogonEntry | ListServices | StartService | StopService | SetStartType
+    # List | ListStartupItems | ListDrivers | ListUserLogon | ListExtensions | ListScheduledTasks | Enable | Disable | Delete | EnableEntry | DisableEntry | DeleteEntry | ResetWinlogonEntry | UndoWinlogonEntry | ListServices | StartService | StopService | SetStartType
     [string]$Category = '',
     [string]$RowType = '',
     [string]$EntryKey = '',   # registry key path for startup actions
@@ -833,10 +833,6 @@ function Get-StartupEntries {
         $entries.Add((New-StartupRow @msixRow))
     }
 
-    foreach ($taskRow in @(Get-StartupScheduledTaskRows -IncludeWindowsScheduledTasks:$IncludeWindowsScheduledTasks)) {
-        $entries.Add((New-StartupRow @taskRow))
-    }
-
     Finalize-StartupEntryList -Entries $entries
 }
 
@@ -1013,7 +1009,13 @@ function Get-UserLogonEntries {
         $entries.Add((New-StartupRow @msixRow))
     }
 
-    foreach ($taskRow in @(Get-StartupScheduledTaskRows -IncludeWindowsScheduledTasks:$IncludeWindowsScheduledTasks)) {
+    Finalize-StartupEntryList -Entries $entries
+}
+
+function Get-ScheduledTaskEntries {
+    $entries = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($taskRow in @(Get-StartupScheduledTaskRows -IncludeWindowsScheduledTasks:$IncludeWindowsScheduledTasks -IncludeAllTriggers -Category 'ScheduledTasks')) {
         $entries.Add((New-StartupRow @taskRow))
     }
 
@@ -1440,6 +1442,7 @@ switch ($Action) {
     'ListDrivers'  { Get-DriversEntries }
     'ListUserLogon' { Get-UserLogonEntries }
     'ListExtensions' { Get-ExtensionsEntries }
+    'ListScheduledTasks' { Get-ScheduledTaskEntries }
     'ListServices' { Get-Services }
     'EnableEntry' {
         try {

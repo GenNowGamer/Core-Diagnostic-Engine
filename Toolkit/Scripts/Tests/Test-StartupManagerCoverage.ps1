@@ -68,6 +68,9 @@ Assert-True -Name 'Logon trigger detected' -Condition (Test-ScheduledTaskHasStar
 Assert-True -Name 'Idle trigger not startup' -Condition (-not (Test-ScheduledTaskHasStartupTrigger -Task $idleTask))
 
 Assert-True -Name 'Microsoft task path detected' -Condition (Test-IsWindowsPlumbingScheduledTaskPath -TaskPath '\Microsoft\Windows\MemoryDiagnostic\')
+Assert-True -Name 'Microsoft app task path detected as Microsoft plumbing' -Condition (Test-IsWindowsPlumbingScheduledTaskPath -TaskPath '\Microsoft\VisualStudio\Updates\')
+Assert-True -Name 'Windows core task path detected' -Condition (Test-IsWindowsCoreScheduledTaskPath -TaskPath '\Microsoft\Windows\MemoryDiagnostic\')
+Assert-True -Name 'Microsoft app task path not Windows core' -Condition (-not (Test-IsWindowsCoreScheduledTaskPath -TaskPath '\Microsoft\VisualStudio\Updates\'))
 Assert-True -Name 'Vendor task path not Microsoft plumbing' -Condition (-not (Test-IsWindowsPlumbingScheduledTaskPath -TaskPath '\AcmeUpdater\'))
 
 $comResolved = Resolve-ComHandlerServerPath -ClassId '{B7F5B442-EBF8-46CD-9F0B-D8E45ED43492}'
@@ -271,6 +274,17 @@ if ($msftLike.Count -gt 0) {
         (@($msftLike | Where-Object { $_.SupportsDelete }).Count -eq 0)
     )
 }
+
+$allTriggerRows = @(Get-StartupScheduledTaskRows -IncludeWindowsScheduledTasks -IncludeAllTriggers -Category 'ScheduledTasks')
+Assert-True -Name 'IncludeAllTriggers returns at least as many tasks as startup-only' -Condition (
+    $allTriggerRows.Count -ge $allRows.Count
+)
+Assert-True -Name 'StartupManager ListStartupItems excludes ScheduledTask rows' -Condition (
+    $startupScriptText -notmatch 'function Get-StartupEntries[\s\S]{0,600}Get-StartupScheduledTaskRows'
+)
+Assert-True -Name 'StartupManager wires ListScheduledTasks action' -Condition (
+    $startupScriptText -match "'ListScheduledTasks'"
+)
 # Driver ImagePath NT prefix + BootExecute resolution
 function ConvertFrom-JsonArraySafe {
     param([string]$Json)

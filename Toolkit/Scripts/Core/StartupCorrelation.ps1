@@ -69,10 +69,12 @@ function Get-StartupCorrelationTokens {
             }
             [void]$tokens.Add($target.ResolvedPath)
         } else {
-            $bareLeaf = [System.IO.Path]::GetFileNameWithoutExtension($candidate)
-            if (-not [string]::IsNullOrWhiteSpace($bareLeaf)) {
-                [void]$tokens.Add($bareLeaf)
-            }
+            try {
+                $bareLeaf = [System.IO.Path]::GetFileNameWithoutExtension($candidate)
+                if (-not [string]::IsNullOrWhiteSpace($bareLeaf)) {
+                    [void]$tokens.Add($bareLeaf)
+                }
+            } catch { }
         }
     }
 

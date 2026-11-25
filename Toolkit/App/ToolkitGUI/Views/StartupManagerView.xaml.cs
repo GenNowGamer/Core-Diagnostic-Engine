@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -64,6 +64,11 @@ namespace ToolkitGUI.Views
             await SetActiveStartupTabAsync(StartupManagerViewModel.TabExtensions, _vm.LoadExtensionsAsync, TabExtensions);
         }
 
+        private async void TabScheduledTasks_Click(object sender, RoutedEventArgs e)
+        {
+            await SetActiveStartupTabAsync(StartupManagerViewModel.TabScheduledTasks, _vm.LoadScheduledTasksAsync, TabScheduledTasks);
+        }
+
         private async void TabServices_Click(object sender, RoutedEventArgs e)
         {
             _vm.ActiveTab = StartupManagerViewModel.TabServices;
@@ -87,6 +92,7 @@ namespace ToolkitGUI.Views
             TabStartup.Style = (Style)FindResource("TabBtnStyle");
             TabDrivers.Style = (Style)FindResource("TabBtnStyle");
             TabExtensions.Style = (Style)FindResource("TabBtnStyle");
+            TabScheduledTasks.Style = (Style)FindResource("TabBtnStyle");
             TabServices.Style = (Style)FindResource("TabBtnStyle");
             activeButton.Style = (Style)FindResource("TabBtnActiveStyle");
         }
@@ -96,8 +102,8 @@ namespace ToolkitGUI.Views
             if (!IsLoaded)
                 return;
 
-            if (_vm.ActiveTab == StartupManagerViewModel.TabStartupItems)
-                await _vm.LoadStartupItemsAsync();
+            if (_vm.ActiveTab == StartupManagerViewModel.TabScheduledTasks)
+                await _vm.LoadScheduledTasksAsync();
         }
 
         private void Enable_Click(object sender, RoutedEventArgs e)

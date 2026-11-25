@@ -14,6 +14,16 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 **Source repository:** [GenNowGamer/Core-Diagnostic-Engine](https://github.com/GenNowGamer/Core-Diagnostic-Engine) (private). Clone is source-only; run `App/Publish-ToolkitGUI.ps1` after clone and acquire large binaries per `Tools/PLACEHOLDER_ACQUISITION.md`.
 
+## Session Update (2026-11-25)
+
+- **Startup Manager Dedicated Scheduled Tasks Tab & Performance Optimization (`StartupManagerView.xaml/.cs`, `ManagerViewModels.cs`, `StartupManager.ps1`, `StartupScheduledTask.ps1`, `StartupCorrelation.ps1`, `Test-StartupManagerCoverage.ps1`)** — Separated all Windows scheduled tasks out of **User logon** into a dedicated **Scheduled tasks** tab and eliminated multi-minute enumeration delays:
+  - Removed `Get-StartupScheduledTaskRows` from `Get-StartupEntries` / `Get-UserLogonEntries` so **User logon** no longer displays scheduled tasks, and added `Get-ScheduledTaskEntries` (`-Action ListScheduledTasks`) with `-IncludeAllTriggers` to surface all trigger types (logon, boot, time/daily, idle, event).
+  - Added `TabScheduledTasks` (**Scheduled tasks**) in `StartupManagerView.xaml/.cs` and `LoadScheduledTasksAsync` in `StartupManagerViewModel`, scoping the **Include Microsoft/Windows tasks** checkbox (`IsScheduledTasksTabActive`) to that tab.
+  - Added `Test-IsWindowsCoreScheduledTaskPath` (`\Microsoft\Windows\...`) so core Windows OS tasks remain read-only while Microsoft application tasks outside `\Microsoft\Windows\` (such as `\Microsoft\VisualStudio\Updates\BackgroundDownload`) can be enabled/disabled while remaining delete-protected.
+  - Guarded `GetFileNameWithoutExtension` in `Scripts\Core\StartupCorrelation.ps1` against command-line strings containing illegal path characters.
+  - Optimized `Scripts\Core\StartupScheduledTask.ps1` by early-skipping hidden `\Microsoft\*` tasks before COM resolution, caching `Resolve-ComHandlerServerPath` by CLSID, and replacing slow PowerShell Registry Provider calls with direct `[Microsoft.Win32.Registry]` lookups and fast Appx/WindowsApps/SystemApps paths (cutting load times from ~3–5 minutes down to ~6.2 s unchecked and ~10.7 s checked).
+  - Verified with `dotnet build App\ToolkitGUI\ToolkitGUI.csproj` (0 errors), `Scripts\Tests\Test-StartupManagerCoverage.ps1` (70/70 passing), `ListStartupItems` (0 scheduled task rows), and `ListScheduledTasks -IncludeWindowsScheduledTasks` (212 tasks, 0 stderr errors).
+
 ## Session Update (2026-11-24)
 
 - **Machine Baseline SMART Delta False-Positive Fix (`Scripts\Core\MachineBaseline.ps1`, `Scripts\Tests\Test-MachineBaseline.ps1`)** — Fixed a PowerShell array-wrapping bug that produced phantom `SMART counter increased:` warnings with blank `Previous=`, `Current=`, and `Delta=+` fields when no SMART counters had increased:
