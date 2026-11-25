@@ -41,11 +41,13 @@
                             Style="{StaticResource NavMenuButtonStyle}"
                             ToolTip="Open CDE tools menu"
                             Click="NavMenu_Click"
+                            VerticalAlignment="Center"
                             Margin="8,0,0,0">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image Source="/ToolkitGUI;component/Assets/appicon_1024.png"
-                                   Width="18"
-                                   Height="18"
+                                   Width="36"
+                                   Height="36"
+                                   RenderOptions.BitmapScalingMode="HighQuality"
                                    VerticalAlignment="Center"
                                    Margin="0,0,8,0"/>
                             <TextBlock Text="Tools" FontSize="13" FontWeight="SemiBold"

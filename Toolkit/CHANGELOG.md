@@ -16,6 +16,11 @@ The project mirrors the architecture of the proven MRI diagnostic platform while
 
 ## Session Update (2026-11-25)
 
+- **Title Bar CDE Logo Sizing & Clarity (`App\ToolkitGUI\MainWindow.xaml`, `App\ToolkitGUI\App.xaml`)** — Enlarged the top-left CDE logo in the 44px navy title bar so the hexagon emblem and "CDE" lettering are clearly legible while fitting cleanly inside the ribbon:
+  - Increased the `BtnNavMenu` logo `<Image>` (`Assets/appicon_1024.png`) from `18×18` to `36×36`, added `RenderOptions.BitmapScalingMode="HighQuality"`, and set `VerticalAlignment="Center"` on `BtnNavMenu`.
+  - Reduced `NavMenuButtonStyle` vertical padding in `App\ToolkitGUI\App.xaml` from `8,6` to `8,2` so the button fits comfortably within the 44px title bar height.
+  - Verified with `dotnet build App\ToolkitGUI\ToolkitGUI.csproj` (0 errors).
+
 - **Build & WinPE Script Safeguards (`App\Publish-ToolkitGUI.ps1`, `Scripts\Customize-WinPE.ps1`, `AGENTS.md`)** — Added guardrails so build and WinPE packaging scripts do not silently overwrite local edits or omit new core scripts:
   - Added a newer-file safety check in `App\Publish-ToolkitGUI.ps1` before syncing `Core Security Tool\CST\` into `Toolkit\Security\CST\` (across top-level CST scripts, `rules\rules.json`, `rules\baselines\*`, and `lib\*`): aborts with an error listing newer destination files (>2 s ahead of source) unless `-Force` is passed.
   - Updated `Scripts\Customize-WinPE.ps1` to dynamically discover and copy all companion `*.ps1` / `*.psm1` scripts in `Scripts\Core\` (excluding `Toolkit.Core.psm1`, copied as `CDECore.psm1`, and `Sync-HardwareTestCatalog.ps1`) into `boot.wim` instead of a hardcoded 3-file list.
